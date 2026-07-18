@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">청각 소음 알림</string>
+
+    <string name="header_title">소음 알림 테스트</string>
+    <string name="header_subtitle">60dB 이상이 5초 이상 지속되면 손전등과 진동으로 알려드려요</string>
+
+    <string name="label_current_db">현재 측정 데시벨</string>
+    <string name="label_elapsed">60dB 이상 유지 시간</string>
+    <string name="label_status">알림 상태</string>
+
+    <string name="unit_db">dB</string>
+    <string name="unit_sec">초 / 5.0초</string>
+
+    <string name="status_idle">대기 중</string>
+    <string name="status_monitoring">측정 중…</string>
+    <string name="status_triggered">🔔 알림 발동!</string>
+
+    <string name="btn_start">측정 시작</string>
+    <string name="btn_stop">측정 중지</string>
+
+    <string name="permission_denied">마이크 및 카메라 권한이 필요합니다. 설정에서 권한을 허용한 뒤 다시 시도해주세요.</string>
+</resources>
