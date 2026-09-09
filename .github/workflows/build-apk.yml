@@ -54,12 +54,32 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # 태그를 밀면 바로 내려받을 수 있는 링크가 생긴다.
+      # Actions 아티팩트는 zip 이고 로그인해야 받을 수 있다. 휴대폰에서 바로 누를 수
+      # 있는 링크가 필요해서, 최신 빌드를 apk-latest 릴리스에 덮어쓴다.
+      # 태그(v*)로 빌드하면 그 태그 이름으로 정식 릴리스를 만든다.
       - name: 릴리스에 붙이기
-        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/spell-keyboard-debug.apk \
-            --title "맞춤법 키보드 $GITHUB_REF_NAME" \
-            --notes "실시간 맞춤법·띄어쓰기 교정 키보드 디버그 빌드. 설치 후 앱을 열어 키보드를 활성화하세요."
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+            title="맞춤법 키보드 $tag"
+            extra=""
+          else
+            tag="apk-latest"
+            title="맞춤법 키보드 (최신 빌드)"
+            extra="--prerelease"
+            # 굴러가는 릴리스라 이전 것을 태그까지 지우고 다시 만든다.
+            gh release delete "$tag" --yes --cleanup-tag || true
+          fi
+
+          gh release create "$tag" dist/spell-keyboard-debug.apk \
+            --target "$GITHUB_SHA" \
+            --title "$title" \
+            $extra \
+            --notes "실시간 맞춤법·띄어쓰기 교정 키보드 디버그 빌드입니다.
+
+          설치 후 앱을 열어 (1) 시스템 설정에서 키보드를 켜고 (2) 입력기로 선택하세요.
+
+          커밋: $GITHUB_SHA"
