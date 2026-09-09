@@ -15,3 +15,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "DeafNoiseAlert"
 include(":app")
+include(":core")
+include(":keyboard")
