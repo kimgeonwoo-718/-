@@ -1,0 +1,65 @@
+name: Build APK
+
+on:
+  push:
+    branches:
+      - main
+      - "claude/**"
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 맞춤법 키보드 APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17 설치
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: 교정 엔진 단위 테스트
+        run: ./gradlew :core:test --no-daemon
+
+      - name: 디버그 APK 빌드
+        run: ./gradlew :keyboard:assembleDebug --no-daemon
+
+      - name: APK 모으기
+        id: collect
+        run: |
+          set -euo pipefail
+          apk=$(find keyboard/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          if [ -z "$apk" ]; then
+            echo "APK 를 찾지 못했다" >&2
+            exit 1
+          fi
+          mkdir -p dist
+          cp "$apk" dist/spell-keyboard-debug.apk
+          ls -lh dist/
+
+      - name: APK 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: spell-keyboard-debug-apk
+          path: dist/spell-keyboard-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # 태그를 밀면 바로 내려받을 수 있는 링크가 생긴다.
+      - name: 릴리스에 붙이기
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/spell-keyboard-debug.apk \
+            --title "맞춤법 키보드 $GITHUB_REF_NAME" \
+            --notes "실시간 맞춤법·띄어쓰기 교정 키보드 디버그 빌드. 설치 후 앱을 열어 키보드를 활성화하세요."

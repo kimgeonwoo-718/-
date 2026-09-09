@@ -189,7 +189,9 @@ class KeyboardView @JvmOverloads constructor(
             marginEnd = dp(2)
         }
 
-    private fun keyView(label: String, background: StateListDrawable, onPress: () -> Unit): TextView =
+    // 파라미터 이름을 background 로 두면 apply 블록 안에서 TextView 자신의
+    // background 프로퍼티가 먼저 잡힌다. 조용히 배경이 사라지므로 이름을 달리한다.
+    private fun keyView(label: String, keyFace: StateListDrawable, onPress: () -> Unit): TextView =
         TextView(context).apply {
             text = label
             gravity = Gravity.CENTER
@@ -197,7 +199,7 @@ class KeyboardView @JvmOverloads constructor(
             setTextSize(TypedValue.COMPLEX_UNIT_SP, if (label.length > 1) 14f else 19f)
             isClickable = true
             isFocusable = false
-            setBackground(background)
+            background = keyFace
             setOnClickListener { onPress() }
         }
 
