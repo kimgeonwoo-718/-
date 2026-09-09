@@ -46,6 +46,29 @@ jobs:
           cp "$apk" dist/spell-keyboard-debug.apk
           ls -lh dist/
 
+      # 사이드로드한 키보드는 Play Protect 가 경고를 띄운다. 경고를 없앨 수는 없지만,
+      # 빌드된 APK 가 실제로 무슨 권한을 갖는지는 증명할 수 있다.
+      - name: APK 권한 감사
+        run: |
+          set -euo pipefail
+          aapt2=$(find "$ANDROID_HOME/build-tools" -name aapt2 -type f | sort -V | tail -n 1)
+
+          echo "===== 패키지 정보 ====="
+          "$aapt2" dump badging dist/spell-keyboard-debug.apk | grep -E "^package:|^application-label:|^sdkVersion|^targetSdkVersion"
+
+          echo
+          echo "===== 선언된 권한 ====="
+          perms=$("$aapt2" dump badging dist/spell-keyboard-debug.apk | grep -E "^uses-permission" || true)
+          if [ -z "$perms" ]; then
+            echo "선언된 권한 없음 (인터넷 권한 없음 = 어떤 데이터도 밖으로 나갈 수 없음)"
+          else
+            echo "$perms"
+          fi
+
+          echo
+          echo "===== SHA-256 ====="
+          sha256sum dist/spell-keyboard-debug.apk
+
       - name: APK 업로드
         uses: actions/upload-artifact@v4
         with:
