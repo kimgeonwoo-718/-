@@ -8,6 +8,11 @@
     <string name="status_idle">타이핑하면 어절이 끝날 때마다 교정합니다</string>
     <string name="status_corrected">%1$s → %2$s · 백스페이스로 되돌리기</string>
     <string name="status_disabled">이 입력란에서는 교정하지 않습니다</string>
+    <string name="status_checked">검사함: %1$s · 고칠 것 없음</string>
+    <string name="status_unreadable">커서 앞 글자를 읽지 못했습니다</string>
+    <string name="status_reverted">되돌렸습니다</string>
+    <string name="selftest_title">엔진 자체 점검</string>
+    <string name="selftest_run">교정 엔진 점검하기</string>
 
     <string name="setup_intro">타이핑을 따라가며 맞춤법과 띄어쓰기를 고쳐 주는 키보드입니다. 어절이 끝나는 순간(스페이스·문장부호·엔터) 커서 앞 몇 어절을 검사합니다.</string>
     <string name="setup_step_1">1. 시스템 설정에서 키보드 켜기</string>

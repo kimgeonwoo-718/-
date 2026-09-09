@@ -68,6 +68,10 @@ class CorrectionEngine(
         )
     }
 
+    /** [correctTail] 이 실제로 검사하는 구간. 진단 표시에 쓴다. */
+    fun tailWindow(textBeforeCursor: String, maxWords: Int = DEFAULT_WINDOW_WORDS): String =
+        textBeforeCursor.substring(windowStart(textBeforeCursor, maxWords))
+
     private fun applyWordRules(text: String, sink: MutableList<Correction>): String =
         buildString {
             for (token in TOKEN.findAll(text)) {

@@ -78,6 +78,28 @@
             android:text="@string/setting_auto_correct" />
 
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:text="@string/selftest_title"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/selftest_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/selftest_run" />
+
+        <TextView
+            android:id="@+id/selftest_output"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:fontFamily="monospace"
+            android:textSize="13sp" />
+
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"

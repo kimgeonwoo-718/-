@@ -71,18 +71,9 @@ class KeyboardView @JvmOverloads constructor(
         render()
     }
 
-    /** 상단 줄에 방금 고친 내용을 보여준다. null 이면 기본 안내로 되돌린다. */
-    fun showCorrection(before: String?, after: String?) {
-        statusView.text = if (before == null || after == null) {
-            context.getString(R.string.status_idle)
-        } else {
-            context.getString(R.string.status_corrected, before.trim(), after.trim())
-        }
-    }
-
-    /** 교정이 꺼진 입력란(비밀번호 등)임을 알린다. */
-    fun showCorrectionDisabled() {
-        statusView.text = context.getString(R.string.status_disabled)
+    /** 상단 줄 문구를 바꾼다. 무엇을 검사했고 무엇을 고쳤는지 보여주는 자리다. */
+    fun showStatus(text: String) {
+        statusView.text = text
     }
 
     fun setMode(newMode: KeyboardMode) {
