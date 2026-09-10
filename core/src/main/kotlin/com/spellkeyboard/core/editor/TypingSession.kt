@@ -199,8 +199,12 @@ class TypingSession(
      * 편집기가 못 읽어 주면 우리가 써 넣은 사본으로 대신한다. 사본은 우리 입력만
      * 담고 있어서 사용자가 다른 방법으로 넣은 글자는 빠져 있지만, 방금 친 어절을
      * 고치는 데에는 그걸로 충분하다.
+     *
+     * AI 전체 교정도 이걸 쓴다. 거기서 `InputConnection` 을 직접 읽으면, 되읽기가
+     * 안 되는 앱(인스타그램 등)에서는 "교정할 글이 없습니다" 만 뜨고 영영 동작하지
+     * 않는다 — 온디바이스 교정은 되는데 AI 만 안 되는 모습으로 나타난다.
      */
-    private fun readBeforeCursor(editor: Editor, maxChars: Int): String {
+    fun readBeforeCursor(editor: Editor, maxChars: Int): String {
         val fromEditor = editor.textBeforeCursor(maxChars)
         if (fromEditor.isNotEmpty()) return fromEditor
         return mirror.toString().takeLast(maxChars)

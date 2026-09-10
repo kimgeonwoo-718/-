@@ -45,6 +45,14 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     /** 요청마다 매기는 번호. 시간 초과로 포기한 뒤 뒤늦게 온 응답을 걸러낸다. */
     private val aiRequestId = AtomicInteger(0)
 
+    /**
+     * 이 입력란이 교정해도 되는 곳인가 (비밀번호·이메일이 아닌가).
+     *
+     * 자동 교정 스위치와는 별개다. 스위치를 껐다고 AI 버튼까지 사라지면 안 된다 —
+     * 실시간 교정은 싫지만 다 쓰고 한 번에 손보고 싶은 사람이 있다.
+     */
+    private var fieldCorrectable = true
+
     /** `InputConnection` 을 core 의 [Editor] 로 감싼 어댑터. */
     private class ConnectionEditor(private val ic: InputConnection) : Editor {
 
@@ -118,7 +126,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onStartInput(info: EditorInfo?, restarting: Boolean) {
         super.onStartInput(info, restarting)
         session.reset()
-        session.correctionEnabled = Prefs.autoCorrectEnabled(this) && isCorrectableField(info)
+        fieldCorrectable = isCorrectableField(info)
+        session.correctionEnabled = Prefs.autoCorrectEnabled(this) && fieldCorrectable
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
@@ -131,7 +140,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             }
         )
         // 비밀번호 입력란에서는 AI 교정도 내놓지 않는다. 그 글이 서버로 나가면 안 된다.
-        keyboard?.setAiAvailable(Prefs.aiAvailable(this) && session.correctionEnabled)
+        // 다만 자동 교정 스위치와는 묶지 않는다 — 그건 실시간 교정만 끄는 스위치다.
+        keyboard?.setAiAvailable(Prefs.aiAvailable(this) && fieldCorrectable)
     }
 
     override fun onFinishInput() {
@@ -221,12 +231,27 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      * 손발이 묶이지 않게. 뒤늦게 응답이 와도 번호가 안 맞으면 조용히 버린다.
      */
     override fun onAiCorrect() {
-        if (aiBusy) return
-        val connection = currentInputConnection ?: return
+        // 아래 세 가지는 예전에 조용히 return 했다. 그러면 눌러도 **아무 일도 안 일어나고**,
+        // 사용자에게는 "AI 가 작동 안 함" 으로만 보인다. 원인을 가릴 수가 없다.
+        if (aiBusy) {
+            keyboard?.showStatus(getString(R.string.ai_busy))
+            return
+        }
+        val connection = currentInputConnection
+        if (connection == null) {
+            keyboard?.showStatus(getString(R.string.ai_no_connection))
+            return
+        }
         val apiKey = Prefs.apiKey(this)
-        if (apiKey.isEmpty()) return
+        if (apiKey.isEmpty()) {
+            keyboard?.showStatus(getString(R.string.ai_no_key))
+            return
+        }
 
-        val before = connection.getTextBeforeCursor(AI_CONTEXT_CHARS, 0)?.toString().orEmpty()
+        // 되읽기가 안 되는 앱에서는 우리가 써 넣은 사본으로 대신한다. 온디바이스 교정이
+        // 쓰는 것과 같은 폴백이다 — 이게 없으면 그런 앱에서 AI 만 영영 안 된다.
+        val editor = ConnectionEditor(connection)
+        val before = session.readBeforeCursor(editor, AI_CONTEXT_CHARS)
         val after = connection.getTextAfterCursor(AI_CONTEXT_CHARS, 0)?.toString().orEmpty()
         val original = before + after
         if (original.isBlank()) {

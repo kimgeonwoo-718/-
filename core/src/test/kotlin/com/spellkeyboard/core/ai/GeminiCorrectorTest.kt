@@ -3,6 +3,7 @@ package com.spellkeyboard.core.ai
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class GeminiCorrectorTest {
@@ -274,6 +275,61 @@ class GeminiCorrectorTest {
                 listOf("gemini-embedding-001", "imagen-4.0-generate-001", "gemini-2.0-flash-tts")
             )
         )
+    }
+
+    // --- 진단 -----------------------------------------------------------------
+
+    @Test
+    fun `진단은 키가 없으면 거기서 멈춘다`() {
+        val transport = ScriptedTransport(ok("안 불려야 한다"))
+        val checks = GeminiCorrector("", transport = transport).diagnose()
+
+        assertEquals(1, checks.size, "키가 없으면 네트워크를 만질 이유가 없다")
+        assertFalse(checks.first().ok)
+        assertEquals(0, transport.urls.size)
+    }
+
+    @Test
+    fun `진단은 연결이 막히면 그 단계를 짚는다`() {
+        val transport = ScriptedTransport(
+            GeminiCorrector.HttpResponse(
+                403,
+                "{\"error\":{\"message\":\"API key not valid\"}}"
+            )
+        )
+        val checks = GeminiCorrector("bad-key", transport = transport).diagnose()
+
+        val connection = checks.first { it.name == "서버 연결" }
+        assertFalse(connection.ok)
+        assertContains(connection.detail, "API key not valid")
+        // 연결이 안 되는데 그 뒤 단계를 재 볼 이유가 없다.
+        assertEquals("서버 연결", checks.last().name)
+    }
+
+    @Test
+    fun `진단은 끝까지 통과하면 교정 결과를 보여준다`() {
+        val transport = ScriptedTransport(
+            modelList("gemini-2.5-flash"),
+            ok("안녕하세요 오늘 날씨가 좋아요")
+        )
+        val checks = GeminiCorrector("key", transport = transport).diagnose()
+
+        assertTrue(checks.all { it.ok }, "전부 통과해야 한다: $checks")
+        assertContains(checks.last().detail, "안녕하세요 오늘 날씨가 좋아요")
+    }
+
+    @Test
+    fun `진단은 모델이 갈렸으면 새 이름을 알려준다`() {
+        val transport = ScriptedTransport(
+            modelList("gemini-3.0-flash"),          // 목록 조회
+            noSuchModel("gemini-2.5-flash"),        // 첫 교정 시도 — 거절
+            modelList("gemini-3.0-flash"),          // 갈아 끼우려고 다시 조회
+            ok("고침")
+        )
+        val checks = GeminiCorrector("key", transport = transport).diagnose()
+
+        val swap = checks.first { it.name == "모델 자동 교체" }
+        assertContains(swap.detail, "gemini-3.0-flash")
     }
 
     @Test

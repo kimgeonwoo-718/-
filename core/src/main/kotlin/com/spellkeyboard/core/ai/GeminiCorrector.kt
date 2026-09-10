@@ -154,6 +154,63 @@ class GeminiCorrector(
         return corrected
     }
 
+    // --- 진단 -----------------------------------------------------------------
+
+    /** 진단 한 단계의 결과. */
+    data class Check(val name: String, val ok: Boolean, val detail: String)
+
+    /**
+     * AI 경로를 처음부터 끝까지 밟아 보고 **어디서 끊기는지** 알려준다.
+     *
+     * 실기기 로그를 볼 수 없는 상황에서 "AI 가 작동 안 함" 은 원인이 열 가지다 —
+     * 키가 틀렸는지, 네트워크가 막혔는지, 모델 이름이 없는 것인지, 안전 필터에
+     * 걸린 것인지. 한 번 눌러 그걸 가르자고 만든 것이다. 추측으로 고치는 것보다
+     * 진단을 손에 쥐는 편이 언제나 빠르다.
+     */
+    fun diagnose(sample: String = DIAGNOSTIC_SAMPLE): List<Check> {
+        val checks = ArrayList<Check>()
+
+        checks += if (apiKey.isBlank()) {
+            Check("API 키", false, "비어 있음 — 설정에서 키를 넣고 저장하세요")
+        } else {
+            Check("API 키", true, "${apiKey.length}자 (${apiKey.take(6)}…)")
+        }
+        if (apiKey.isBlank()) return checks
+
+        // 목록 조회는 키와 네트워크를 한꺼번에 본다. 실패하면 그 아래는 볼 것도 없다.
+        val models = runCatching { readModels(listModels()) }
+        val available = models.getOrElse { error ->
+            checks += Check("서버 연결", false, describe(error))
+            return checks
+        }
+        checks += Check("서버 연결", true, "쓸 수 있는 모델 ${available.size}개")
+
+        val known = activeModel in available
+        checks += Check(
+            "모델 '$activeModel'",
+            known,
+            if (known) "목록에 있음" else "목록에 없음 — 교정할 때 자동으로 갈아 끼웁니다"
+        )
+        pickModel(available, exclude = null)?.let {
+            checks += Check("추천 모델", true, it)
+        }
+
+        val before = activeModel
+        val corrected = correct(sample)
+        checks += corrected.fold(
+            onSuccess = { Check("실제 교정", true, "\"$sample\" → \"$it\"") },
+            onFailure = { Check("실제 교정", false, describe(it)) }
+        )
+        // 자동 교체가 일어났으면 그게 제일 쓸모 있는 정보다 — 설정에 박아 두면 된다.
+        if (activeModel != before) {
+            checks += Check("모델 자동 교체", true, "$before → $activeModel (이 이름을 저장하세요)")
+        }
+        return checks
+    }
+
+    private fun describe(error: Throwable): String =
+        error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+
     /** 안드로이드와 JVM 양쪽에 있는 것만 쓴다. */
     class HttpTransport : Transport {
         override fun send(
@@ -195,6 +252,9 @@ class GeminiCorrector(
          * 이 값이 낡으면 앱에서 다른 이름을 넣으면 된다.
          */
         const val DEFAULT_MODEL = "gemini-2.5-flash"
+
+        /** 진단에서 실제로 한 번 보내 보는 문장. 짧고, 틀린 데가 분명한 것. */
+        const val DIAGNOSTIC_SAMPLE = "안녕하새요 오늘 날시가 조아요"
 
         private const val MAX_OUTPUT_TOKENS = 4096
         private const val MODEL_PAGE_SIZE = 200

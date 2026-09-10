@@ -57,10 +57,11 @@ class SetupActivity : AppCompatActivity() {
         val modelsOutput = findViewById<TextView>(R.id.models_output)
         findViewById<Button>(R.id.list_models).setOnClickListener {
             val key = apiKeyField.text.toString().trim()
+            val model = modelField.text.toString().trim()
             modelsOutput.setText(R.string.setting_listing_models)
-            // 모델 이름을 추측하는 대신 API 에 물어본다. 키마다 쓸 수 있는 것이 다르다.
+            // 네트워크를 타므로 UI 스레드에서 하면 화면이 멎는다.
             Thread {
-                val report = describeModels(key)
+                val report = runDiagnosis(key, model.ifEmpty { GeminiCorrector.DEFAULT_MODEL })
                 runOnUiThread { modelsOutput.text = report }
             }.start()
         }
@@ -106,23 +107,25 @@ class SetupActivity : AppCompatActivity() {
         }
     }
 
-    /** 이 키로 실제로 쓸 수 있는 모델을 물어본다. */
-    private fun describeModels(apiKey: String): String {
+    /**
+     * AI 경로를 끝까지 밟아 보고 어디서 막히는지 보여준다.
+     *
+     * "AI 가 작동 안 함" 만으로는 원인이 열 가지다. 한 번 눌러 그걸 가른다.
+     */
+    private fun runDiagnosis(apiKey: String, model: String): String {
         if (apiKey.isEmpty()) return getString(R.string.setting_api_key_hint)
 
-        val result = GeminiCorrector(apiKey).availableModels()
-        val models = result.getOrElse { error ->
+        val corrector = GeminiCorrector(apiKey, model)
+        val checks = runCatching { corrector.diagnose() }.getOrElse { error ->
             return getString(
                 R.string.setting_models_failed,
                 error.message ?: error.javaClass.simpleName
             )
         }
-        if (models.isEmpty()) return getString(R.string.setting_models_empty)
-
-        // 이름이 열 개도 넘게 온다. 교정에 쓸 만한 것을 짚어 준다.
-        val recommended = GeminiCorrector.pickModel(models)
-        val listing = models.joinToString("\n") { if (it == recommended) "★ $it" else "  $it" }
-        return getString(R.string.setting_models_header) + "\n\n" + listing
+        return checks.joinToString("\n") { check ->
+            val mark = if (check.ok) "OK  " else "실패"
+            "$mark ${check.name}\n     ${check.detail}"
+        }
     }
 
     /**

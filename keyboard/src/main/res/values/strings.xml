@@ -18,6 +18,9 @@
     <string name="ai_failed">AI 교정 실패: %1$s</string>
     <string name="ai_quota_spent">오늘 무료 AI 교정 %1$d회를 다 썼습니다. 자동 교정은 계속 쓸 수 있습니다.</string>
     <string name="ai_remaining_suffix"> · 오늘 %1$d회 남음</string>
+    <string name="ai_busy">이미 교정하는 중입니다</string>
+    <string name="ai_no_connection">입력란과 연결되지 않았습니다</string>
+    <string name="ai_no_key">설정에서 Gemini API 키를 넣어 주세요</string>
     <string name="ai_timeout">응답이 없어 그만뒀습니다. 네트워크를 확인해 주세요.</string>
     <string name="ai_empty">교정할 글이 없습니다</string>
     <string name="setting_plan">요금제</string>
@@ -30,8 +33,8 @@
     <string name="setting_api_key_save">저장</string>
     <string name="setting_model">모델 (비우면 기본값)</string>
     <string name="setting_model_hint">gemini-2.5-flash</string>
-    <string name="setting_list_models">이 키로 쓸 수 있는 모델 보기</string>
-    <string name="setting_listing_models">모델 목록을 받아오는 중…</string>
+    <string name="setting_list_models">AI 연결 진단 (어디서 막히는지 확인)</string>
+    <string name="setting_listing_models">진단하는 중… (최대 20초)</string>
     <string name="setting_models_failed">모델 목록 실패: %1$s</string>
     <string name="setting_models_empty">쓸 수 있는 모델이 없습니다</string>
     <string name="setting_models_header">★ 표시가 교정에 쓰기 좋은 것입니다. 이름 하나를 모델 칸에 넣고 저장하세요.</string>
