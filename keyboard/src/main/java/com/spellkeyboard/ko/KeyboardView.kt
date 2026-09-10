@@ -15,6 +15,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 
 /**
  * 소프트 키보드 화면.
@@ -37,6 +38,9 @@ class KeyboardView @JvmOverloads constructor(
         fun onLongPressChar(c: Char)
 
         fun onAction(action: KeyAction)
+
+        /** 문장 전체를 Claude API 로 교정한다. */
+        fun onAiCorrect()
     }
 
     var listener: Listener? = null
@@ -45,6 +49,7 @@ class KeyboardView @JvmOverloads constructor(
     private var shifted = false
 
     private val statusView: TextView
+    private val aiButton: TextView
     private val rowContainer: LinearLayout
     private val repeatHandler = Handler(Looper.getMainLooper())
 
@@ -68,7 +73,28 @@ class KeyboardView @JvmOverloads constructor(
             maxLines = 1
             text = context.getString(R.string.status_idle)
         }
-        addView(statusView, LayoutParams(LayoutParams.MATCH_PARENT, dp(30)))
+        aiButton = TextView(context).apply {
+            text = context.getString(R.string.ai_correct)
+            gravity = Gravity.CENTER
+            setPadding(dp(12), 0, dp(12), 0)
+            setTextColor(color(R.color.key_text))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            background = roundRect(color(R.color.key_background))
+            isVisible = false
+        }
+        attachKeyTouch(aiButton, onPress = { listener?.onAiCorrect() })
+
+        val statusRow = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            addView(statusView, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+            addView(
+                aiButton,
+                LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).apply {
+                    marginStart = dp(6)
+                }
+            )
+        }
+        addView(statusRow, LayoutParams(LayoutParams.MATCH_PARENT, dp(34)))
 
         rowContainer = LinearLayout(context).apply { orientation = VERTICAL }
         addView(rowContainer, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
@@ -79,6 +105,11 @@ class KeyboardView @JvmOverloads constructor(
     /** 상단 줄 문구를 바꾼다. 무엇을 검사했고 무엇을 고쳤는지 보여주는 자리다. */
     fun showStatus(text: String) {
         statusView.text = text
+    }
+
+    /** API 키가 설정돼 있을 때만 AI 교정 버튼을 띄운다. */
+    fun setAiAvailable(available: Boolean) {
+        aiButton.isVisible = available
     }
 
     fun setMode(newMode: KeyboardMode) {

@@ -7,7 +7,9 @@ import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.CompoundButton
+import android.widget.EditText
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.spellkeyboard.core.correct.CorrectionEngine
 import com.spellkeyboard.core.spacing.Spacer
@@ -33,6 +35,13 @@ class SetupActivity : AppCompatActivity() {
         findViewById<Button>(R.id.pick_button).setOnClickListener {
             val manager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             manager.showInputMethodPicker()
+        }
+
+        val apiKeyField = findViewById<EditText>(R.id.api_key_field)
+        apiKeyField.setText(Prefs.apiKey(this))
+        findViewById<Button>(R.id.api_key_save).setOnClickListener {
+            Prefs.setApiKey(this, apiKeyField.text.toString())
+            Toast.makeText(this, R.string.setting_api_key_saved, Toast.LENGTH_LONG).show()
         }
 
         val output = findViewById<TextView>(R.id.selftest_output)

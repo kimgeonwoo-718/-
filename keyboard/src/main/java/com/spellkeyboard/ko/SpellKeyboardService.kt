@@ -1,10 +1,13 @@
 package com.spellkeyboard.ko
 
 import android.inputmethodservice.InputMethodService
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import com.spellkeyboard.core.ai.AiCorrector
 import com.spellkeyboard.core.editor.CorrectionEvent
 import com.spellkeyboard.core.editor.Editor
 import com.spellkeyboard.core.editor.TypingSession
@@ -27,6 +30,14 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private val session = TypingSession()
     private var keyboard: KeyboardView? = null
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var corrector: AiCorrector? = null
+    private var correctorKey: String? = null
+
+    /** AI 교정은 한 번에 하나만. 연타로 요청이 겹치면 글이 꼬인다. */
+    @Volatile
+    private var aiBusy = false
 
     /** `InputConnection` 을 core 의 [Editor] 로 감싼 어댑터. */
     private class ConnectionEditor(private val ic: InputConnection) : Editor {
@@ -105,6 +116,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 getString(R.string.status_disabled)
             }
         )
+        // 비밀번호 입력란에서는 AI 교정도 내놓지 않는다. 그 글이 서버로 나가면 안 된다.
+        keyboard?.setAiAvailable(Prefs.aiAvailable(this) && session.correctionEnabled)
     }
 
     override fun onFinishInput() {
@@ -180,6 +193,75 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
+    // --- AI 교정 -------------------------------------------------------------
+
+    /**
+     * 입력란의 글 전체를 Claude API 로 교정한다.
+     *
+     * 실시간 경로가 아니다. 왕복이 수백 ms 라 타이핑을 따라갈 수 없어서, 사용자가
+     * 버튼을 눌렀을 때만 돈다. 네트워크는 이 순간에만 쓴다.
+     */
+    override fun onAiCorrect() {
+        if (aiBusy) return
+        val connection = currentInputConnection ?: return
+        val apiKey = Prefs.apiKey(this)
+        if (apiKey.isEmpty()) return
+
+        val before = connection.getTextBeforeCursor(AI_CONTEXT_CHARS, 0)?.toString().orEmpty()
+        val after = connection.getTextAfterCursor(AI_CONTEXT_CHARS, 0)?.toString().orEmpty()
+        val original = before + after
+        if (original.isBlank()) {
+            keyboard?.showStatus(getString(R.string.ai_empty))
+            return
+        }
+
+        aiBusy = true
+        keyboard?.showStatus(getString(R.string.ai_running))
+        Thread {
+            val result = runCatching { corrector(apiKey) }
+                .mapCatching { it.correct(original).getOrThrow() }
+            mainHandler.post {
+                aiBusy = false
+                result
+                    .onSuccess { applyAiResult(before, after, it) }
+                    .onFailure {
+                        keyboard?.showStatus(
+                            getString(R.string.ai_failed, it.message ?: it.javaClass.simpleName)
+                        )
+                    }
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun applyAiResult(before: String, after: String, corrected: String) {
+        if (corrected == before + after) {
+            keyboard?.showStatus(getString(R.string.ai_unchanged))
+            return
+        }
+        val connection = currentInputConnection ?: return
+        connection.beginBatchEdit()
+        connection.deleteSurroundingText(before.length, after.length)
+        connection.commitText(corrected, 1)
+        connection.endBatchEdit()
+        // 글을 통째로 갈아 끼웠으니 조합 상태와 사본을 버린다.
+        session.reset()
+        keyboard?.showStatus(getString(R.string.ai_done))
+    }
+
+    /** OkHttp 클라이언트를 매번 새로 만들 이유가 없어 키가 바뀔 때만 다시 만든다. */
+    @Synchronized
+    private fun corrector(apiKey: String): AiCorrector {
+        val cached = corrector
+        if (cached != null && correctorKey == apiKey) return cached
+        return AiCorrector(apiKey).also {
+            corrector = it
+            correctorKey = apiKey
+        }
+    }
+
     private fun switchMode(editor: Editor, target: KeyboardMode) {
         session.commitPending(editor)
         val current = keyboard?.currentMode() ?: KeyboardMode.KOREAN
@@ -233,6 +315,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private companion object {
         const val DICTIONARY_DIR = "spacing"
+
+        /** AI 교정에 실어 보낼 커서 앞뒤 최대 글자 수. */
+        const val AI_CONTEXT_CHARS = 2000
 
         val SENSITIVE_VARIATIONS = setOf(
             InputType.TYPE_TEXT_VARIATION_PASSWORD,

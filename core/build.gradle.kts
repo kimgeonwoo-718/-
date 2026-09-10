@@ -17,6 +17,9 @@ kotlin {
 }
 
 dependencies {
+    // Claude API. AI 교정은 사용자가 버튼을 눌렀을 때만 도는 선택 기능이다.
+    implementation("com.anthropic:anthropic-java:2.34.0")
+
     testImplementation(kotlin("test"))
 }
 

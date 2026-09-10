@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!--
+      AI 교정에만 쓴다. 기본은 꺼져 있고, 사용자가 자기 API 키를 넣고 버튼을 눌렀을
+      때만 네트워크를 탄다. 온디바이스 교정은 이 권한 없이도 그대로 동작한다.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
