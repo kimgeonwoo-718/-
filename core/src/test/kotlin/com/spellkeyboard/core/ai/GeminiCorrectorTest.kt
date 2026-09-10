@@ -277,6 +277,82 @@ class GeminiCorrectorTest {
         )
     }
 
+    // --- 서버 혼잡 재시도 -------------------------------------------------------
+
+    private fun overloaded() = GeminiCorrector.HttpResponse(
+        503,
+        "{\"error\":{\"code\":503,\"message\":\"This model is currently experiencing " +
+            "high demand. Spikes in demand are usually temporary. Please try again later.\"," +
+            "\"status\":\"UNAVAILABLE\"}}"
+    )
+
+    /** 기다리지 않는 교정기. 테스트가 실제로 잠들 이유가 없다. */
+    private fun corrector(
+        transport: GeminiCorrector.Transport,
+        model: String = GeminiCorrector.DEFAULT_MODEL
+    ) = GeminiCorrector("key", model = model, transport = transport, sleep = {})
+
+    @Test
+    fun `서버가 붐비면 잠시 뒤 다시 보낸다`() {
+        val transport = ScriptedTransport(overloaded(), ok("안녕하세요"))
+
+        assertEquals("안녕하세요", corrector(transport).correct("안녕하새요").getOrNull())
+        assertEquals(2, transport.urls.size, "한 번 실패했다고 포기하면 안 된다")
+    }
+
+    @Test
+    fun `재시도 사이에 점점 오래 기다린다`() {
+        val waits = mutableListOf<Long>()
+        val transport = ScriptedTransport(overloaded(), overloaded(), ok("고침"))
+        GeminiCorrector("key", transport = transport, sleep = { waits += it })
+            .correct("원문")
+
+        assertEquals(listOf(600L, 1200L), waits)
+    }
+
+    @Test
+    fun `계속 붐비면 다른 모델로 옮겨 본다`() {
+        val transport = ScriptedTransport(
+            overloaded(),                          // 1차
+            overloaded(),                          // 재시도 1
+            overloaded(),                          // 재시도 2
+            modelList("gemini-2.0-flash"),         // 한가한 모델 찾기
+            ok("고침")
+        )
+        val corrector = corrector(transport)
+
+        assertEquals("고침", corrector.correct("원문").getOrNull())
+        assertEquals("gemini-2.0-flash", corrector.activeModel)
+    }
+
+    @Test
+    fun `키가 틀린 것은 재시도하지 않는다`() {
+        val transport = ScriptedTransport(
+            GeminiCorrector.HttpResponse(400, "{\"error\":{\"message\":\"API key not valid\"}}")
+        )
+        assertTrue(corrector(transport).correct("원문").isFailure)
+        assertEquals(1, transport.urls.size, "다시 보내 봐야 똑같이 틀린다")
+    }
+
+    // --- 오류 문구 --------------------------------------------------------------
+
+    @Test
+    fun `서버 메시지를 짧은 한국어로 바꾼다`() {
+        assertContains(
+            GeminiCorrector.explain(
+                "This model is currently experiencing high demand. " +
+                    "Spikes in demand are usually temporary."
+            ),
+            "붐빕니다"
+        )
+        assertContains(GeminiCorrector.explain("API key not valid"), "API 키")
+        assertContains(GeminiCorrector.explain("Quota exceeded"), "한도")
+        assertContains(GeminiCorrector.explain("models/x is not found"), "모델")
+        // 모르는 메시지는 원문을 그대로 둔다 — 삼키면 원인을 잃는다.
+        assertEquals("뭔가 새로운 오류", GeminiCorrector.explain("뭔가 새로운 오류"))
+        assertEquals("알 수 없는 오류", GeminiCorrector.explain(null))
+    }
+
     // --- 진단 -----------------------------------------------------------------
 
     @Test
@@ -301,7 +377,8 @@ class GeminiCorrectorTest {
 
         val connection = checks.first { it.name == "서버 연결" }
         assertFalse(connection.ok)
-        assertContains(connection.detail, "API key not valid")
+        // 진단 화면도 번역된 문구를 쓴다 — 영어 원문은 좁은 화면에서 잘린다.
+        assertContains(connection.detail, "API 키")
         // 연결이 안 되는데 그 뒤 단계를 재 볼 이유가 없다.
         assertEquals("서버 연결", checks.last().name)
     }

@@ -296,8 +296,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                         applyAiResult(before, after, it)
                     }
                     .onFailure {
+                        // 영어 원문을 그대로 실으면 두 줄에서 잘려 정작 원인이 안 보인다.
                         keyboard?.showStatus(
-                            getString(R.string.ai_failed, it.message ?: it.javaClass.simpleName)
+                            getString(R.string.ai_failed, GeminiCorrector.explain(it.message))
                         )
                     }
             }

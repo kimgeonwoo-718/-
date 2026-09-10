@@ -25,7 +25,9 @@ import java.net.URL
 class GeminiCorrector(
     private val apiKey: String,
     model: String = DEFAULT_MODEL,
-    private val transport: Transport = HttpTransport()
+    private val transport: Transport = HttpTransport(),
+    /** 재시도 사이에 쉬는 방법. 테스트에서 실제로 기다리지 않게 갈아 끼운다. */
+    private val sleep: (Long) -> Unit = { Thread.sleep(it) }
 ) {
 
     /**
@@ -57,16 +59,50 @@ class GeminiCorrector(
         require(text.isNotBlank()) { "고칠 글이 없다" }
 
         val body = buildRequest(text)
-        val response = transport.send("POST", endpoint(), apiKey, body)
-        if (!looksLikeBadModel(response)) return@runCatching readCorrection(response)
+        val response = sendWithRetry(body)
+        if (!worthSwitchingModel(response)) return@runCatching readCorrection(response)
 
         // 갈아 끼울 이름을 못 찾으면 원래 응답을 읽혀 원래 이유를 그대로 알린다.
         val replacement =
             runCatching { pickModel(readModels(listModels()), exclude = activeModel) }.getOrNull()
             ?: return@runCatching readCorrection(response)
         activeModel = replacement
-        readCorrection(transport.send("POST", endpoint(), apiKey, body))
+        readCorrection(sendWithRetry(body))
     }
+
+    /**
+     * 보내고, 잠깐 기다렸다 다시 보낸다.
+     *
+     * 구글은 붐빌 때 503 과 함께 "This model is currently experiencing high demand.
+     * Spikes in demand are usually temporary" 를 돌려준다. **말 그대로 잠깐이라
+     * 한 번 실패했다고 포기하면 안 된다.** 429(요청이 몰림)와 5xx 도 같은 부류다.
+     *
+     * 호출하는 쪽 워치독이 20 초라 그 안에 끝나게 짧게 두 번만 더 시도한다.
+     */
+    private fun sendWithRetry(body: String): HttpResponse {
+        var response = transport.send("POST", endpoint(), apiKey, body)
+        var wait = FIRST_RETRY_MS
+        repeat(MAX_RETRIES) {
+            if (!isTransient(response)) return response
+            sleep(wait)
+            wait *= 2
+            response = transport.send("POST", endpoint(), apiKey, body)
+        }
+        return response
+    }
+
+    /** 잠시 뒤면 풀릴 오류인가. 서버가 붐비거나 요청이 몰린 경우다. */
+    internal fun isTransient(response: HttpResponse): Boolean =
+        response.code in TRANSIENT_CODES
+
+    /**
+     * 모델을 갈아 끼워 볼 만한 응답인가.
+     *
+     * 없는 이름일 때뿐 아니라 **그 모델만 붐빌 때도** 갈아 끼운다. 모델마다 여유가
+     * 달라서, 붐비는 모델을 붙들고 기다리는 것보다 한가한 쪽으로 옮기는 편이 빠르다.
+     */
+    private fun worthSwitchingModel(response: HttpResponse): Boolean =
+        looksLikeBadModel(response) || isTransient(response)
 
     /**
      * 이 키로 쓸 수 있는 모델 이름들.
@@ -209,7 +245,7 @@ class GeminiCorrector(
     }
 
     private fun describe(error: Throwable): String =
-        error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+        explain(error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName)
 
     /** 안드로이드와 JVM 양쪽에 있는 것만 쓴다. */
     class HttpTransport : Transport {
@@ -243,6 +279,41 @@ class GeminiCorrector(
     }
 
     companion object {
+
+        /**
+         * 서버 메시지를 짧은 한국어로 바꾼다.
+         *
+         * 키보드 상태줄은 두 줄뿐이라 영어 원문을 그대로 실으면 잘려서, 정작 원인이
+         * 적힌 뒷부분이 안 보인다. 실제로 "This model models/gemini-2.5-flash" 까지만
+         * 보이는 바람에 모델 이름 문제로 잘못 짚고 며칠을 썼다.
+         */
+        fun explain(raw: String?): String {
+            val message = raw?.trim().orEmpty()
+            if (message.isEmpty()) return "알 수 없는 오류"
+            val lower = message.lowercase()
+            return when {
+                "high demand" in lower || "overloaded" in lower || "unavailable" in lower ->
+                    "구글 서버가 지금 붐빕니다. 잠시 후 다시 눌러 주세요."
+
+                "api key not valid" in lower || "api_key_invalid" in lower ->
+                    "API 키가 올바르지 않습니다. 설정에서 다시 확인해 주세요."
+
+                "permission" in lower || "denied" in lower ->
+                    "이 키로는 쓸 수 없습니다. 키 권한을 확인해 주세요."
+
+                "quota" in lower || "resource_exhausted" in lower || "rate limit" in lower ->
+                    "구글 API 사용 한도를 넘었습니다. 잠시 후 다시 시도해 주세요."
+
+                "is not found" in lower || "not supported" in lower ->
+                    "모델을 찾을 수 없습니다. 설정에서 AI 연결 진단을 눌러 보세요."
+
+                "safety" in lower || "차단" in message ->
+                    "안전 필터에 걸려 교정하지 못했습니다."
+
+                else -> message
+            }
+        }
+
         private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
         /**
@@ -258,6 +329,12 @@ class GeminiCorrector(
 
         private const val MAX_OUTPUT_TOKENS = 4096
         private const val MODEL_PAGE_SIZE = 200
+
+        /** 잠시 뒤면 풀리는 HTTP 상태. 429 는 요청이 몰림, 5xx 는 서버 쪽 사정. */
+        private val TRANSIENT_CODES = setOf(429, 500, 502, 503, 504)
+
+        private const val MAX_RETRIES = 2
+        private const val FIRST_RETRY_MS = 600L
 
         // 모델 이름이 낡았으면 한 번의 교정 요청 안에서 최대 세 번(POST, 목록,
         // 재시도 POST) 오간다. 하나가 느긋하게 굴면 셋을 합쳐 참기 힘든 시간이
