@@ -39,7 +39,7 @@ class KeyboardView @JvmOverloads constructor(
 
         fun onAction(action: KeyAction)
 
-        /** 문장 전체를 Claude API 로 교정한다. */
+        /** 문장 전체를 Gemini API 로 교정한다. */
         fun onAiCorrect()
     }
 
@@ -69,8 +69,10 @@ class KeyboardView @JvmOverloads constructor(
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), 0, dp(10), 0)
             setTextColor(color(R.color.status_text))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            maxLines = 1
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            // 서버 오류 메시지가 잘리면 원인을 알 수 없다. 두 줄까지 보여준다.
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
             text = context.getString(R.string.status_idle)
         }
         aiButton = TextView(context).apply {
@@ -94,7 +96,7 @@ class KeyboardView @JvmOverloads constructor(
                 }
             )
         }
-        addView(statusRow, LayoutParams(LayoutParams.MATCH_PARENT, dp(34)))
+        addView(statusRow, LayoutParams(LayoutParams.MATCH_PARENT, dp(42)))
 
         rowContainer = LinearLayout(context).apply { orientation = VERTICAL }
         addView(rowContainer, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))

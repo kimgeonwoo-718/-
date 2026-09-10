@@ -111,6 +111,22 @@
             android:layout_marginTop="6dp"
             android:text="@string/setting_api_key_save" />
 
+        <Button
+            android:id="@+id/list_models"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/setting_list_models" />
+
+        <TextView
+            android:id="@+id/models_output"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:fontFamily="monospace"
+            android:textIsSelectable="true"
+            android:textSize="13sp" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

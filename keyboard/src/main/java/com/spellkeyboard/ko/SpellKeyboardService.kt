@@ -219,10 +219,13 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         keyboard?.showStatus(getString(R.string.ai_running))
         val model = Prefs.model(this)
         Thread {
-            val result = runCatching { corrector(apiKey, model) }
-                .mapCatching { it.correct(original).getOrThrow() }
+            val engine = runCatching { corrector(apiKey, model) }
+            val result = engine.mapCatching { it.correct(original).getOrThrow() }
+            // 이름이 낡아 거절당하면 엔진이 스스로 갈아 끼운다. 그 결과를 받아 둔다.
+            val used = engine.getOrNull()?.activeModel
             mainHandler.post {
                 aiBusy = false
+                if (used != null && used != model) rememberModel(used)
                 result
                     .onSuccess { applyAiResult(before, after, it) }
                     .onFailure {
@@ -250,6 +253,17 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 글을 통째로 갈아 끼웠으니 조합 상태와 사본을 버린다.
         session.reset()
         keyboard?.showStatus(getString(R.string.ai_done))
+    }
+
+    /**
+     * 엔진이 스스로 찾아낸 모델 이름을 설정에도 남긴다.
+     *
+     * 이러지 않으면 켤 때마다 낡은 이름으로 한 번 헛걸음한 뒤에야 통한다.
+     */
+    @Synchronized
+    private fun rememberModel(model: String) {
+        Prefs.setModel(this, model)
+        correctorSettings = correctorSettings?.copy(second = model)
     }
 
     /** 설정이 그대로면 만들어 둔 것을 다시 쓴다. */

@@ -11,6 +11,7 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.spellkeyboard.core.ai.GeminiCorrector
 import com.spellkeyboard.core.correct.CorrectionEngine
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
@@ -47,6 +48,17 @@ class SetupActivity : AppCompatActivity() {
             Toast.makeText(this, R.string.setting_api_key_saved, Toast.LENGTH_LONG).show()
         }
 
+        val modelsOutput = findViewById<TextView>(R.id.models_output)
+        findViewById<Button>(R.id.list_models).setOnClickListener {
+            val key = apiKeyField.text.toString().trim()
+            modelsOutput.setText(R.string.setting_listing_models)
+            // 모델 이름을 추측하는 대신 API 에 물어본다. 키마다 쓸 수 있는 것이 다르다.
+            Thread {
+                val report = describeModels(key)
+                runOnUiThread { modelsOutput.text = report }
+            }.start()
+        }
+
         val output = findViewById<TextView>(R.id.selftest_output)
         findViewById<Button>(R.id.selftest_button).setOnClickListener {
             output.setText(R.string.selftest_running)
@@ -63,6 +75,25 @@ class SetupActivity : AppCompatActivity() {
                 Prefs.setAutoCorrectEnabled(this@SetupActivity, checked)
             }
         }
+    }
+
+    /** 이 키로 실제로 쓸 수 있는 모델을 물어본다. */
+    private fun describeModels(apiKey: String): String {
+        if (apiKey.isEmpty()) return getString(R.string.setting_api_key_hint)
+
+        val result = GeminiCorrector(apiKey).availableModels()
+        val models = result.getOrElse { error ->
+            return getString(
+                R.string.setting_models_failed,
+                error.message ?: error.javaClass.simpleName
+            )
+        }
+        if (models.isEmpty()) return getString(R.string.setting_models_empty)
+
+        // 이름이 열 개도 넘게 온다. 교정에 쓸 만한 것을 짚어 준다.
+        val recommended = GeminiCorrector.pickModel(models)
+        val listing = models.joinToString("\n") { if (it == recommended) "★ $it" else "  $it" }
+        return getString(R.string.setting_models_header) + "\n\n" + listing
     }
 
     /**
