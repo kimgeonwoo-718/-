@@ -2,14 +2,19 @@ package com.spellkeyboard.ko
 
 import android.content.Context
 import com.spellkeyboard.core.ai.GeminiCorrector
+import com.spellkeyboard.core.billing.AiQuota
+import com.spellkeyboard.core.billing.Tier
 
-/** 키보드 설정. 지금은 자동 교정 on/off 하나뿐이다. */
+/** 키보드 설정. */
 object Prefs {
 
     private const val FILE = "spell_keyboard"
     private const val KEY_AUTO_CORRECT = "auto_correct"
     private const val KEY_API_KEY = "gemini_api_key"
     private const val KEY_MODEL = "gemini_model"
+    private const val KEY_TIER = "tier"
+    private const val KEY_QUOTA_DAY = "quota_day"
+    private const val KEY_QUOTA_USED = "quota_used"
 
     fun autoCorrectEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_AUTO_CORRECT, true)
@@ -47,6 +52,39 @@ object Prefs {
 
     /** 키가 있어야 AI 교정 버튼이 뜬다. */
     fun aiAvailable(context: Context): Boolean = apiKey(context).isNotEmpty()
+
+    /**
+     * 요금제.
+     *
+     * 결제가 아직 없어서 설정에서 손으로 바꾼다. 결제가 붙으면 그쪽이 이 값을 세우고,
+     * 나머지 코드는 손댈 것이 없다.
+     */
+    fun tier(context: Context): Tier =
+        runCatching { Tier.valueOf(prefs(context).getString(KEY_TIER, "").orEmpty()) }
+            .getOrDefault(Tier.FREE)
+
+    fun setTier(context: Context, tier: Tier) {
+        prefs(context).edit().putString(KEY_TIER, tier.name).apply()
+    }
+
+    /** AI 전체 교정 사용량. 온디바이스 교정은 여기 걸리지 않는다. */
+    fun quota(context: Context): AiQuota = AiQuota(QuotaStore(context.applicationContext))
+
+    private class QuotaStore(private val context: Context) : AiQuota.Store {
+        // Prefs. 를 붙여 둔다 — 안 붙이면 바로 위 tier() 를 부르는 것처럼 읽힌다.
+        override fun tier(): Tier = Prefs.tier(context)
+
+        override fun day(): Long = prefs(context).getLong(KEY_QUOTA_DAY, 0L)
+
+        override fun used(): Int = prefs(context).getInt(KEY_QUOTA_USED, 0)
+
+        override fun save(day: Long, used: Int) {
+            prefs(context).edit()
+                .putLong(KEY_QUOTA_DAY, day)
+                .putInt(KEY_QUOTA_USED, used)
+                .apply()
+        }
+    }
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)

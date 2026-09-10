@@ -8,6 +8,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import com.spellkeyboard.core.ai.GeminiCorrector
+import com.spellkeyboard.core.billing.AiQuota
 import com.spellkeyboard.core.editor.CorrectionEvent
 import com.spellkeyboard.core.editor.Editor
 import com.spellkeyboard.core.editor.TypingSession
@@ -233,6 +234,13 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             return
         }
 
+        // 하루치를 다 썼는지는 보내기 전에 본다. 다 쓰고 나서 막으면 요금만 나간다.
+        val quota = Prefs.quota(this)
+        if (!quota.canUse()) {
+            keyboard?.showStatus(getString(R.string.ai_quota_spent, AiQuota.FREE_DAILY_LIMIT))
+            return
+        }
+
         aiBusy = true
         keyboard?.showStatus(getString(R.string.ai_running))
         val model = Prefs.model(this)
@@ -256,7 +264,12 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 aiBusy = false
                 if (used != null && used != model) rememberModel(used)
                 result
-                    .onSuccess { applyAiResult(before, after, it) }
+                    .onSuccess {
+                        // 성공했을 때만 깎는다. 실패한 요청까지 세면 사용자는 아무것도
+                        // 못 받고 하루치만 잃는다.
+                        quota.consume()
+                        applyAiResult(before, after, it)
+                    }
                     .onFailure {
                         keyboard?.showStatus(
                             getString(R.string.ai_failed, it.message ?: it.javaClass.simpleName)
@@ -271,7 +284,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private fun applyAiResult(before: String, after: String, corrected: String) {
         if (corrected == before + after) {
-            keyboard?.showStatus(getString(R.string.ai_unchanged))
+            keyboard?.showStatus(getString(R.string.ai_unchanged) + remainingSuffix())
             return
         }
         val connection = currentInputConnection ?: return
@@ -281,7 +294,17 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         connection.endBatchEdit()
         // 글을 통째로 갈아 끼웠으니 조합 상태와 사본을 버린다.
         session.reset()
-        keyboard?.showStatus(getString(R.string.ai_done))
+        keyboard?.showStatus(getString(R.string.ai_done) + remainingSuffix())
+    }
+
+    /**
+     * " · 오늘 3회 남음" 처럼 뒤에 붙일 문구.
+     *
+     * 무제한이면 빈 문자열이다 — 구독자에게 횟수를 들이밀 이유가 없다.
+     */
+    private fun remainingSuffix(): String {
+        val remaining = Prefs.quota(this).status().remaining ?: return ""
+        return getString(R.string.ai_remaining_suffix, remaining)
     }
 
     /**

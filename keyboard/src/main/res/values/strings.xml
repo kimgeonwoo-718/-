@@ -16,8 +16,15 @@
     <string name="ai_done">AI 교정 완료</string>
     <string name="ai_unchanged">AI 가 보기에 고칠 것이 없습니다</string>
     <string name="ai_failed">AI 교정 실패: %1$s</string>
+    <string name="ai_quota_spent">오늘 무료 AI 교정 %1$d회를 다 썼습니다. 자동 교정은 계속 쓸 수 있습니다.</string>
+    <string name="ai_remaining_suffix"> · 오늘 %1$d회 남음</string>
     <string name="ai_timeout">응답이 없어 그만뒀습니다. 네트워크를 확인해 주세요.</string>
     <string name="ai_empty">교정할 글이 없습니다</string>
+    <string name="setting_plan">요금제</string>
+    <string name="setting_plan_subscriber">구독 (월 2,990원) — AI 전체 교정 무제한</string>
+    <string name="setting_plan_note">결제는 아직 붙이지 않았습니다. 지금은 이 스위치로 두 요금제를 직접 켜 보며 동작을 확인합니다. 자동 교정(온디바이스)은 요금제와 상관없이 언제나 무제한입니다.</string>
+    <string name="setting_quota_free">오늘 남은 AI 전체 교정: %1$d / %2$d회</string>
+    <string name="setting_quota_unlimited">AI 전체 교정: 무제한</string>
     <string name="setting_api_key">Gemini API 키 (AI 교정용)</string>
     <string name="setting_api_key_hint">AIza… (비워 두면 AI 교정이 꺼집니다)</string>
     <string name="setting_api_key_save">저장</string>
