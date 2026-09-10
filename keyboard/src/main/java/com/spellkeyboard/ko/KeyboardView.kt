@@ -9,6 +9,7 @@ import android.os.Looper
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.widget.LinearLayout
@@ -31,6 +32,10 @@ class KeyboardView @JvmOverloads constructor(
 
     interface Listener {
         fun onChar(c: Char)
+
+        /** 길게 눌러 나온 대체 글자. 방금 넣은 글자를 이것으로 바꾼다. */
+        fun onLongPressChar(c: Char)
+
         fun onAction(action: KeyAction)
     }
 
@@ -103,6 +108,9 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     private fun render() {
+        // 화면을 다시 그리면 누르고 있던 키의 뷰가 사라진다. 예약해 둔 길게 누르기나
+        // 반복 입력이 그대로 살아 있으면 손을 뗀 뒤에 글자가 튀어나온다.
+        repeatHandler.removeCallbacksAndMessages(null)
         rowContainer.removeAllViews()
         val rows = KeyboardLayout.rowsFor(mode, shifted)
 
@@ -154,7 +162,14 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     private fun LinearLayout.addCharKey(c: Char) {
-        addView(keyView(c.toString(), keyBackground(false)) { listener?.onChar(c) }, keyParams(1f))
+        val alternate = KeyboardLayout.longPressOf(c)
+        val view = keyView(c.toString(), keyBackground(false))
+        attachKeyTouch(
+            view,
+            onPress = { listener?.onChar(c) },
+            onLongPress = alternate?.let { alt -> { listener?.onLongPressChar(alt) } }
+        )
+        addView(view, keyParams(1f))
     }
 
     private fun LinearLayout.addActionKey(
@@ -164,8 +179,13 @@ class KeyboardView @JvmOverloads constructor(
         repeatable: Boolean = false,
         accent: Boolean = false
     ) {
-        val view = keyView(label, keyBackground(true, accent)) { listener?.onAction(action) }
-        if (repeatable) attachBackspaceRepeat(view)
+        val view = keyView(label, keyBackground(true, accent))
+        attachKeyTouch(
+            view,
+            onPress = { listener?.onAction(action) },
+            onLongPress = null,
+            repeatable = repeatable
+        )
         addView(view, keyParams(weight))
     }
 
@@ -182,31 +202,55 @@ class KeyboardView @JvmOverloads constructor(
 
     // 파라미터 이름을 background 로 두면 apply 블록 안에서 TextView 자신의
     // background 프로퍼티가 먼저 잡힌다. 조용히 배경이 사라지므로 이름을 달리한다.
-    private fun keyView(label: String, keyFace: StateListDrawable, onPress: () -> Unit): TextView =
+    private fun keyView(label: String, keyFace: StateListDrawable): TextView =
         TextView(context).apply {
             text = label
             gravity = Gravity.CENTER
             setTextColor(color(R.color.key_text))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, if (label.length > 1) 14f else 19f)
-            isClickable = true
             isFocusable = false
             background = keyFace
-            setOnClickListener { onPress() }
+            // 누름 시점에 처리하느라 onClick 을 쓰지 않는다. 화면 낭독기가 키를
+            // 읽을 수 있도록 라벨은 남겨 둔다.
+            contentDescription = label
         }
 
-    /** 길게 누르면 반복 입력되는 백스페이스. */
+    /**
+     * 키를 손가락에 붙인다.
+     *
+     * **누르는 순간(ACTION_DOWN)에 입력한다.** onClick 은 손을 뗄 때까지 기다리고
+     * 이동 거리까지 따져서, 빨리 치면 눌린 게 씹힌 것처럼 느껴진다. 시중 키보드가
+     * 전부 누름 시점에 반응하는 이유다. 진동도 같이 준다 — 반응이 왔다는 신호가
+     * 빠를수록 키보드가 가볍게 느껴진다.
+     */
     @SuppressLint("ClickableViewAccessibility")
-    private fun attachBackspaceRepeat(view: View) {
-        view.setOnTouchListener { _, event ->
+    private fun attachKeyTouch(
+        view: View,
+        onPress: () -> Unit,
+        onLongPress: (() -> Unit)? = null,
+        repeatable: Boolean = false
+    ) {
+        val longPress = onLongPress?.let { Runnable { it() } }
+        view.setOnTouchListener { target, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN ->
-                    repeatHandler.postDelayed(repeatBackspace, REPEAT_DELAY_MS)
+                MotionEvent.ACTION_DOWN -> {
+                    target.isPressed = true
+                    target.performHapticFeedback(
+                        HapticFeedbackConstants.KEYBOARD_TAP,
+                        HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                    )
+                    onPress()
+                    longPress?.let { repeatHandler.postDelayed(it, LONG_PRESS_MS) }
+                    if (repeatable) repeatHandler.postDelayed(repeatBackspace, REPEAT_DELAY_MS)
+                }
 
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    target.isPressed = false
+                    longPress?.let { repeatHandler.removeCallbacks(it) }
                     repeatHandler.removeCallbacks(repeatBackspace)
+                }
             }
-            // false 를 돌려줘야 첫 입력은 평소대로 onClick 으로 들어간다.
-            false
+            true
         }
     }
 
@@ -237,8 +281,9 @@ class KeyboardView @JvmOverloads constructor(
     ).toInt()
 
     private companion object {
-        const val KEY_HEIGHT_DP = 48
+        const val KEY_HEIGHT_DP = 52
         const val REPEAT_DELAY_MS = 400L
         const val REPEAT_INTERVAL_MS = 55L
+        const val LONG_PRESS_MS = 320L
     }
 }

@@ -68,6 +68,23 @@ class TypingSession(
         editor.endBatch()
     }
 
+    /**
+     * 방금 넣은 자모를 [jamo] 로 바꾼다. 키를 길게 눌러 쌍자음을 낼 때 쓴다.
+     *
+     * 누르는 순간 이미 예사소리가 들어갔으므로, 조합을 한 단계 되돌린 뒤 다시 넣는다.
+     * 오토마타가 조합 중인 상태라 편집기의 확정된 글자는 건드리지 않는다.
+     */
+    fun replaceLastJamo(editor: Editor, jamo: Char) {
+        val undone = automata.backspace() ?: return
+        editor.setComposingText(undone.composing)
+
+        val output = automata.press(jamo)
+        editor.beginBatch()
+        if (output.committed.isNotEmpty()) commit(editor, output.committed)
+        editor.setComposingText(output.composing)
+        editor.endBatch()
+    }
+
     /** 자모가 아닌 문자. 문장부호면 어절이 끝난 것으로 보고 교정한다. */
     fun pressText(editor: Editor, c: Char) {
         commitPending(editor)

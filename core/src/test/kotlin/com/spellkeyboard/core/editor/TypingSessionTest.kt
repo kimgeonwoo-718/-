@@ -194,6 +194,33 @@ class TypingSessionTest {
         assertEquals("나는 됐다 ", blind.text)
     }
 
+    // --- 길게 눌러 쌍자음 ------------------------------------------------------
+
+    @Test
+    fun `방금 넣은 자모를 쌍자음으로 바꾼다`() {
+        session.pressJamo(editor, 'ㄱ')
+        session.replaceLastJamo(editor, 'ㄲ')
+        assertEquals("ㄲ", editor.text)
+    }
+
+    @Test
+    fun `받침으로 들어간 자모도 바꾼다`() {
+        type("ㄱㅏㄱ")
+        assertEquals("각", editor.text)
+
+        session.replaceLastJamo(editor, 'ㄲ')
+        assertEquals("갂", editor.text)
+    }
+
+    @Test
+    fun `앞에 확정된 글자는 건드리지 않는다`() {
+        type("ㄱㅏㄴㄷ")
+        assertEquals("간ㄷ", editor.text)
+
+        session.replaceLastJamo(editor, 'ㄸ')
+        assertEquals("간ㄸ", editor.text)
+    }
+
     // --- 편집 묶음 -------------------------------------------------------------
 
     @Test

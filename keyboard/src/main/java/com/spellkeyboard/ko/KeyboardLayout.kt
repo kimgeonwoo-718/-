@@ -49,6 +49,19 @@ object KeyboardLayout {
         ".,?!'"
     )
 
+    /**
+     * 길게 눌렀을 때 나오는 글자.
+     *
+     * 두벌식에서 쌍자음은 시프트로만 넣을 수 있어 한 글자 치는 데 두 번 눌러야 한다.
+     * 길게 누르기를 열어 두면 시프트를 거치지 않고 바로 넣을 수 있다.
+     */
+    private val LONG_PRESS = mapOf(
+        'ㄱ' to 'ㄲ', 'ㄷ' to 'ㄸ', 'ㅂ' to 'ㅃ', 'ㅅ' to 'ㅆ', 'ㅈ' to 'ㅉ',
+        'ㅐ' to 'ㅒ', 'ㅔ' to 'ㅖ'
+    )
+
+    fun longPressOf(c: Char): Char? = LONG_PRESS[c]
+
     fun rowsFor(mode: KeyboardMode, shifted: Boolean): List<String> = when (mode) {
         KeyboardMode.KOREAN -> if (shifted) KOREAN_SHIFTED else KOREAN
         KeyboardMode.ENGLISH -> if (shifted) ENGLISH.map { it.uppercase() } else ENGLISH

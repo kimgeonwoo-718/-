@@ -147,6 +147,16 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
+    /** 길게 눌러 나온 대체 글자. 방금 넣은 자모를 이것으로 갈아 끼운다. */
+    override fun onLongPressChar(c: Char) {
+        val editor = editor() ?: return
+        if (keyboard?.currentMode() == KeyboardMode.KOREAN && Hangul.isJamo(c)) {
+            session.replaceLastJamo(editor, c)
+        } else {
+            session.pressText(editor, c)
+        }
+    }
+
     override fun onAction(action: KeyAction) {
         val editor = editor() ?: return
         when (action) {
@@ -206,12 +216,18 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         keyboard?.showStatus(text)
     }
 
-    /** 비밀번호·이메일·URL 처럼 교정하면 안 되는 입력란인지 판별한다. */
+    /**
+     * 교정하면 안 되는 입력란인지 판별한다.
+     *
+     * 좁게 잡는다. 비밀번호·이메일·URL 처럼 사람이 쓴 문장이 아닌 것만 뺀다.
+     * 검색창(FILTER)이나 NO_SUGGESTIONS 플래그까지 막았더니 인스타그램 검색처럼
+     * 멀쩡한 입력란에서 교정이 통째로 꺼졌다. 그 플래그는 "추천 단어를 띄우지 말라"는
+     * 뜻이지 "맞춤법을 고치지 말라"는 뜻이 아니고, 한국어 앱들이 습관적으로 켜 둔다.
+     */
     private fun isCorrectableField(info: EditorInfo?): Boolean {
         if (info == null) return false
         val type = info.inputType
         if (type and InputType.TYPE_MASK_CLASS != InputType.TYPE_CLASS_TEXT) return false
-        if (type and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0) return false
         return (type and InputType.TYPE_MASK_VARIATION) !in SENSITIVE_VARIATIONS
     }
 
@@ -224,8 +240,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
             InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
             InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
-            InputType.TYPE_TEXT_VARIATION_URI,
-            InputType.TYPE_TEXT_VARIATION_FILTER
+            InputType.TYPE_TEXT_VARIATION_URI
         )
     }
 }

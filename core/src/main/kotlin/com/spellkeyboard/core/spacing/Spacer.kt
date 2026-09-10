@@ -52,10 +52,33 @@ class Spacer(private val dictionary: SpacingDictionary) {
      * @return 띄어쓰기를 넣은 문자열. 나눌 것이 없거나 분석에 실패하면 null.
      */
     fun space(word: String): String? {
-        if (word.length < MIN_SYLLABLES || word.length > MAX_SYLLABLES) return null
+        if (word.length < MIN_SYLLABLES) return null
+        val analysis = analyze(word, allowSpaces = true) ?: return null
+        val spaced = render(word, analysis)
+        return if (spaced == word) null else spaced
+    }
+
+    /**
+     * 이 어절이 형태소 분석기 눈에 얼마나 자연스러운지.
+     *
+     * 낮을수록 자연스럽다. 분석 자체가 안 되면 [UNANALYZABLE].
+     * 맞춤법 후보를 고를 때 이 값을 비교한다.
+     */
+    fun cost(word: String): Int =
+        analyzeCost(word, allowSpaces = false) ?: UNANALYZABLE
+
+    private fun analyze(word: String, allowSpaces: Boolean): List<Pair<Int, Boolean>>? {
+        if (word.isEmpty() || word.length > MAX_SYLLABLES) return null
         if (word.none { it in HANGUL_SYLLABLES }) return null
         if (word.any { it.isWhitespace() }) return null
 
+        return runAnalysis(word, allowSpaces)?.first
+    }
+
+    private fun runAnalysis(
+        word: String,
+        allowSpaces: Boolean
+    ): Pair<List<Pair<Int, Boolean>>, Int>? {
         val jamo = StringBuilder()
         val syllableBoundary = BooleanArray(word.length * 3 + 1)
         syllableBoundary[0] = true
@@ -84,14 +107,20 @@ class Spacer(private val dictionary: SpacingDictionary) {
                 if (key < 0) continue
 
                 for (morph in dictionary.morphStart(key) until dictionary.morphEnd(key)) {
-                    relax(here, lattice, i, length, morph, syllableBoundary)
+                    relax(here, lattice, i, length, morph, syllableBoundary, allowSpaces)
                 }
             }
         }
 
-        val pieces = backtrack(lattice, jamo.length) ?: return null
-        val spaced = render(word, pieces)
-        return if (spaced == word) null else spaced
+        return backtrack(lattice, jamo.length, allowSpaces)
+    }
+
+    /** [analyze] 와 같은 탐색이지만 경로 대신 비용만 돌려준다. */
+    private fun analyzeCost(word: String, allowSpaces: Boolean): Int? {
+        if (word.isEmpty() || word.length > MAX_SYLLABLES) return null
+        if (word.none { it in HANGUL_SYLLABLES }) return null
+        if (word.any { it.isWhitespace() }) return null
+        return runAnalysis(word, allowSpaces)?.second
     }
 
     private fun relax(
@@ -100,7 +129,8 @@ class Spacer(private val dictionary: SpacingDictionary) {
         at: Int,
         length: Int,
         morph: Int,
-        syllableBoundary: BooleanArray
+        syllableBoundary: BooleanArray,
+        allowSpaces: Boolean
     ) {
         val head = dictionary.headTag(morph)
         val leftContext = dictionary.leftContext(morph)
@@ -125,10 +155,11 @@ class Spacer(private val dictionary: SpacingDictionary) {
                     mayAttach = true; maySpace = false
                 }
                 mustSpace(previousTag, head) -> {
-                    mayAttach = false; maySpace = true
+                    // 띄어 쓸 수 없는 상황이면 이 경로 자체가 성립하지 않는다.
+                    mayAttach = false; maySpace = allowSpaces
                 }
                 else -> {
-                    mayAttach = true; maySpace = true
+                    mayAttach = true; maySpace = allowSpaces
                 }
             }
 
@@ -168,7 +199,11 @@ class Spacer(private val dictionary: SpacingDictionary) {
         return nominal[previousTag] && verbal[headTag]
     }
 
-    private fun backtrack(lattice: Array<HashMap<Int, Node>?>, end: Int): List<Pair<Int, Boolean>>? {
+    private fun backtrack(
+        lattice: Array<HashMap<Int, Node>?>,
+        end: Int,
+        @Suppress("UNUSED_PARAMETER") allowSpaces: Boolean
+    ): Pair<List<Pair<Int, Boolean>>, Int>? {
         val last = lattice[end] ?: return null
         var bestCost = Int.MAX_VALUE
         var bestContext = -1
@@ -191,7 +226,7 @@ class Spacer(private val dictionary: SpacingDictionary) {
             context = node.fromContext
         }
         pieces.reverse()
-        return pieces
+        return pieces to bestCost
     }
 
     /** 자모 길이로 나온 조각을 원문 음절로 되돌린다. */
@@ -223,6 +258,9 @@ class Spacer(private val dictionary: SpacingDictionary) {
     companion object {
         /** 어절을 하나 더 만드는 값. 낮추면 잘게 쪼개고 높이면 붙여 쓴다. */
         private const val SPACE_PENALTY = 2000
+
+        /** 분석이 아예 안 될 때의 비용. 어떤 실제 비용보다도 크다. */
+        const val UNANALYZABLE = 1_000_000
 
         private const val MIN_SYLLABLES = 3
         private const val MAX_SYLLABLES = 24
