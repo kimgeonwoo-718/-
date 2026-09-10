@@ -198,8 +198,12 @@ class GeminiCorrector(
 
         private const val MAX_OUTPUT_TOKENS = 4096
         private const val MODEL_PAGE_SIZE = 200
-        private const val CONNECT_TIMEOUT_MS = 10_000
-        private const val READ_TIMEOUT_MS = 30_000
+
+        // 모델 이름이 낡았으면 한 번의 교정 요청 안에서 최대 세 번(POST, 목록,
+        // 재시도 POST) 오간다. 하나가 느긋하게 굴면 셋을 합쳐 참기 힘든 시간이
+        // 된다 — 호출하는 쪽의 워치독(20 초)에 맞춰 하나당 짧게 끊는다.
+        private const val CONNECT_TIMEOUT_MS = 5_000
+        private const val READ_TIMEOUT_MS = 8_000
 
         /** 글을 만들어 내지 않거나 다른 입력을 받는 것들. 교정에는 못 쓴다. */
         private val NOT_FOR_TEXT =

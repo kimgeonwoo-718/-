@@ -14,7 +14,9 @@ import com.spellkeyboard.core.editor.TypingSession
 import com.spellkeyboard.core.hangul.Hangul
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
+import com.spellkeyboard.core.spacing.Speller
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 실시간 교정 키보드.
@@ -38,6 +40,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     /** AI 교정은 한 번에 하나만. 연타로 요청이 겹치면 글이 꼬인다. */
     @Volatile
     private var aiBusy = false
+
+    /** 요청마다 매기는 번호. 시간 초과로 포기한 뒤 뒤늦게 온 응답을 걸러낸다. */
+    private val aiRequestId = AtomicInteger(0)
 
     /** `InputConnection` 을 core 의 [Editor] 로 감싼 어댑터. */
     private class ConnectionEditor(private val ic: InputConnection) : Editor {
@@ -82,12 +87,20 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      * 처음 한 번은 50MB 를 풀어야 해서 몇 초 걸린다. 그동안에도 규칙 교정은
      * 그대로 동작하고, 준비되면 조용히 끼워 넣는다. 사전을 못 열어도
      * 키보드는 계속 쓸 수 있어야 하므로 실패는 삼킨다.
+     *
+     * `Speller` 도 여기서 같이 끼워 넣는다 — 같은 사전(`Spacer`)의 분석 비용을
+     * 갖다 쓰는 것뿐이라 새로 여는 게 없다. **이걸 빼먹으면 '잇는대요' 처럼
+     * 사전에 없는 오타는 타이핑 중에 하나도 안 잡힌다** — 실시간 교정에서 가장
+     * 눈에 띄는 실수라 특히 조심한다.
      */
     private fun loadSpacingDictionary() {
         val target = File(filesDir, DICTIONARY_DIR)
         Thread {
             runCatching { Spacer(SpacingDictionary.open(target)) }
-                .onSuccess { session.engine.spacer = it }
+                .onSuccess {
+                    session.engine.spacer = it
+                    session.engine.speller = Speller(it)
+                }
         }.apply {
             isDaemon = true
             priority = Thread.MIN_PRIORITY
@@ -196,10 +209,15 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     // --- AI 교정 -------------------------------------------------------------
 
     /**
-     * 입력란의 글 전체를 Claude API 로 교정한다.
+     * 입력란의 글 전체를 Gemini API 로 교정한다.
      *
      * 실시간 경로가 아니다. 왕복이 수백 ms 라 타이핑을 따라갈 수 없어서, 사용자가
      * 버튼을 눌렀을 때만 돈다. 네트워크는 이 순간에만 쓴다.
+     *
+     * **화면이 "교정하는 중…" 에서 영영 멈춰 있으면 안 된다.** 요청마다 번호를 매겨
+     * 두고, [AI_WATCHDOG_MS] 가 지나도 그 번호가 안 돌아오면 포기하고 버튼을 풀어
+     * 준다 — 네트워크가 막힌 곳(방화벽, 기내 모드, 죽은 와이파이)에서도 사용자가
+     * 손발이 묶이지 않게. 뒤늦게 응답이 와도 번호가 안 맞으면 조용히 버린다.
      */
     override fun onAiCorrect() {
         if (aiBusy) return
@@ -218,12 +236,23 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         aiBusy = true
         keyboard?.showStatus(getString(R.string.ai_running))
         val model = Prefs.model(this)
+        val requestId = aiRequestId.incrementAndGet()
+
+        mainHandler.postDelayed({
+            if (aiBusy && aiRequestId.get() == requestId) {
+                aiBusy = false
+                keyboard?.showStatus(getString(R.string.ai_timeout))
+            }
+        }, AI_WATCHDOG_MS)
+
         Thread {
             val engine = runCatching { corrector(apiKey, model) }
             val result = engine.mapCatching { it.correct(original).getOrThrow() }
             // 이름이 낡아 거절당하면 엔진이 스스로 갈아 끼운다. 그 결과를 받아 둔다.
             val used = engine.getOrNull()?.activeModel
             mainHandler.post {
+                // 이미 시간 초과로 포기했거나 그 사이 새 요청이 시작됐으면 버린다.
+                if (aiRequestId.get() != requestId) return@post
                 aiBusy = false
                 if (used != null && used != model) rememberModel(used)
                 result
@@ -334,6 +363,15 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
         /** AI 교정에 실어 보낼 커서 앞뒤 최대 글자 수. */
         const val AI_CONTEXT_CHARS = 2000
+
+        /**
+         * "교정하는 중…" 을 이보다 오래 붙잡지 않는다.
+         *
+         * 모델 이름이 틀려 갈아 끼우는 경우 요청이 최대 세 번 오간다. 통신부 쪽
+         * 타임아웃(연결+읽기)을 다 더해도 이 값 안에 끝나게 맞춰 뒀다 — 못 끝내면
+         * 화면만 풀어 주고 응답은 늦게 와도 버린다.
+         */
+        const val AI_WATCHDOG_MS = 20_000L
 
         val SENSITIVE_VARIATIONS = setOf(
             InputType.TYPE_TEXT_VARIATION_PASSWORD,

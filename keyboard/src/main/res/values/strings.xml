@@ -16,6 +16,7 @@
     <string name="ai_done">AI 교정 완료</string>
     <string name="ai_unchanged">AI 가 보기에 고칠 것이 없습니다</string>
     <string name="ai_failed">AI 교정 실패: %1$s</string>
+    <string name="ai_timeout">응답이 없어 그만뒀습니다. 네트워크를 확인해 주세요.</string>
     <string name="ai_empty">교정할 글이 없습니다</string>
     <string name="setting_api_key">Gemini API 키 (AI 교정용)</string>
     <string name="setting_api_key_hint">AIza… (비워 두면 AI 교정이 꺼집니다)</string>
