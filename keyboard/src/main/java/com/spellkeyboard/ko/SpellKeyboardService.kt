@@ -53,6 +53,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      */
     private var fieldCorrectable = true
 
+    /** 모델 목록을 이미 받아 뒀는가. 키보드가 뜰 때마다 다시 받을 이유는 없다. */
+    @Volatile
+    private var aiWarmed = false
+
     /** `InputConnection` 을 core 의 [Editor] 로 감싼 어댑터. */
     private class ConnectionEditor(private val ic: InputConnection) : Editor {
 
@@ -141,7 +145,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         )
         // 비밀번호 입력란에서는 AI 교정도 내놓지 않는다. 그 글이 서버로 나가면 안 된다.
         // 다만 자동 교정 스위치와는 묶지 않는다 — 그건 실시간 교정만 끄는 스위치다.
-        keyboard?.setAiAvailable(Prefs.aiAvailable(this) && fieldCorrectable)
+        val aiOn = Prefs.aiAvailable(this) && fieldCorrectable
+        keyboard?.setAiAvailable(aiOn)
+        if (aiOn) warmUpAi()
     }
 
     override fun onFinishInput() {
@@ -331,6 +337,28 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private fun remainingSuffix(): String {
         val remaining = Prefs.quota(this).status().remaining ?: return ""
         return getString(R.string.ai_remaining_suffix, remaining)
+    }
+
+    /**
+     * 모델 목록을 미리 받아 둔다.
+     *
+     * 붐비는 모델을 만났을 때 곧장 한가한 쪽으로 옮기려면 후보를 알고 있어야 하는데,
+     * 그걸 버튼 누른 뒤에 받으면 왕복이 그대로 대기 시간이 된다. 키보드가 뜰 때
+     * 미리 받아 두면 정작 누르는 순간에는 공짜다. 실패해도 그냥 넘어간다 —
+     * 목록이 없으면 지금 모델로 그대로 시도할 뿐이다.
+     */
+    private fun warmUpAi() {
+        if (aiWarmed) return
+        aiWarmed = true
+        val apiKey = Prefs.apiKey(this)
+        val model = Prefs.model(this)
+        Thread {
+            runCatching { corrector(apiKey, model).prefetchModels() }
+        }.apply {
+            isDaemon = true
+            priority = Thread.MIN_PRIORITY
+            start()
+        }
     }
 
     /**

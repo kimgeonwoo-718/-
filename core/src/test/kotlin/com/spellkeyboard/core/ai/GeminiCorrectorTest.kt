@@ -211,8 +211,9 @@ class GeminiCorrectorTest {
         val transport = ScriptedTransport(
             GeminiCorrector.HttpResponse(
                 400,
-                "{\"error\":{\"code\":400,\"message\":\"This model models/gemini-2.5-flash " +
-                    "is not supported\",\"status\":\"INVALID_ARGUMENT\"}}"
+                "{\"error\":{\"code\":400,\"message\":\"This model models/" +
+                    GeminiCorrector.DEFAULT_MODEL + " is not supported\"," +
+                    "\"status\":\"INVALID_ARGUMENT\"}}"
             ),
             modelList("gemini-2.0-flash"),
             ok("고침")
@@ -257,7 +258,7 @@ class GeminiCorrectorTest {
     fun `교정에 쓸 만한 모델을 고른다`() {
         // 최신 세대 > flash > 정식 출시본 순.
         assertEquals(
-            "gemini-3.0-flash",
+            "gemini-3.0-flash-lite",
             GeminiCorrector.pickModel(
                 listOf(
                     "gemini-3.0-flash",
@@ -293,45 +294,73 @@ class GeminiCorrectorTest {
     ) = GeminiCorrector("key", model = model, transport = transport, sleep = {})
 
     @Test
-    fun `서버가 붐비면 잠시 뒤 다시 보낸다`() {
-        val transport = ScriptedTransport(overloaded(), ok("안녕하세요"))
-
-        assertEquals("안녕하세요", corrector(transport).correct("안녕하새요").getOrNull())
-        assertEquals(2, transport.urls.size, "한 번 실패했다고 포기하면 안 된다")
-    }
-
-    @Test
-    fun `재시도 사이에 점점 오래 기다린다`() {
+    fun `붐비면 기다리지 않고 다른 모델로 옮긴다`() {
         val waits = mutableListOf<Long>()
-        val transport = ScriptedTransport(overloaded(), overloaded(), ok("고침"))
-        GeminiCorrector("key", transport = transport, sleep = { waits += it })
-            .correct("원문")
+        val transport = ScriptedTransport(
+            modelList("gemini-2.5-flash-lite", "gemini-2.0-flash-lite"), // 미리 받아 둔 목록
+            overloaded(),                                               // 1차 — 붐빔
+            ok("안녕하세요")                                             // 옮긴 모델에서 성공
+        )
+        val corrector = GeminiCorrector("key", transport = transport, sleep = { waits += it })
+        corrector.prefetchModels()
 
-        assertEquals(listOf(600L, 1200L), waits)
+        assertEquals("안녕하세요", corrector.correct("안녕하새요").getOrNull())
+        assertEquals(emptyList(), waits, "옮길 모델이 있으면 기다릴 이유가 없다")
     }
 
     @Test
-    fun `계속 붐비면 다른 모델로 옮겨 본다`() {
+    fun `목록을 미리 받아 두면 교정할 때 다시 받지 않는다`() {
+        val transport = ScriptedTransport(modelList("gemini-2.0-flash-lite"), ok("고침"))
+        val corrector = corrector(transport)
+        corrector.prefetchModels()
+        val afterPrefetch = transport.urls.size
+
+        corrector.correct("원문")
+        corrector.correct("원문 둘")
+
+        // 교정 두 번에 요청 두 번. 목록을 다시 받았다면 더 늘었을 것이다.
+        assertEquals(afterPrefetch + 2, transport.urls.size)
+    }
+
+    @Test
+    fun `쓸 만한 모델이 전부 붐비면 그제야 한 번 쉬었다 다시 본다`() {
+        val waits = mutableListOf<Long>()
         val transport = ScriptedTransport(
-            overloaded(),                          // 1차
-            overloaded(),                          // 재시도 1
-            overloaded(),                          // 재시도 2
-            modelList("gemini-2.0-flash"),         // 한가한 모델 찾기
+            modelList("gemini-2.5-flash-lite"),  // 옮겨 갈 곳이 하나뿐
+            overloaded(),                        // 기본 모델 — 붐빔
+            overloaded(),                        // 옮겨 간 모델도 붐빔
             ok("고침")
         )
-        val corrector = corrector(transport)
+        val corrector = GeminiCorrector("key", transport = transport, sleep = { waits += it })
+        corrector.prefetchModels()
 
         assertEquals("고침", corrector.correct("원문").getOrNull())
-        assertEquals("gemini-2.0-flash", corrector.activeModel)
+        assertEquals(listOf(700L), waits, "마지막에 딱 한 번만 쉰다")
     }
 
     @Test
-    fun `키가 틀린 것은 재시도하지 않는다`() {
+    fun `키가 틀린 것은 모델을 옮기지도 기다리지도 않는다`() {
         val transport = ScriptedTransport(
             GeminiCorrector.HttpResponse(400, "{\"error\":{\"message\":\"API key not valid\"}}")
         )
         assertTrue(corrector(transport).correct("원문").isFailure)
         assertEquals(1, transport.urls.size, "다시 보내 봐야 똑같이 틀린다")
+    }
+
+    @Test
+    fun `교정에는 가볍고 덜 붐비는 모델을 고른다`() {
+        // lite 가 빠르고 싸고 덜 붐빈다. 맞춤법 교정에 큰 모델이 필요 없다.
+        assertEquals(
+            "gemini-2.5-flash-lite",
+            GeminiCorrector.pickModel(
+                listOf(
+                    "gemini-2.5-pro",
+                    "gemini-2.5-flash",
+                    "gemini-2.5-flash-lite",
+                    "gemini-2.0-flash-lite"
+                )
+            )
+        )
     }
 
     // --- 오류 문구 --------------------------------------------------------------
@@ -386,7 +415,7 @@ class GeminiCorrectorTest {
     @Test
     fun `진단은 끝까지 통과하면 교정 결과를 보여준다`() {
         val transport = ScriptedTransport(
-            modelList("gemini-2.5-flash"),
+            modelList(GeminiCorrector.DEFAULT_MODEL),
             ok("안녕하세요 오늘 날씨가 좋아요")
         )
         val checks = GeminiCorrector("key", transport = transport).diagnose()

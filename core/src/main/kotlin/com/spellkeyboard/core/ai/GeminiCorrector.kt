@@ -40,6 +40,10 @@ class GeminiCorrector(
     var activeModel: String = model.trim().ifEmpty { DEFAULT_MODEL }
         private set
 
+    /** 한 번 받아 둔 모델 목록. 교정할 때마다 다시 받으면 그게 대기 시간이 된다. */
+    @Volatile
+    private var cachedModels: List<String>? = null
+
     /** HTTP 호출부. 테스트에서 갈아 끼울 수 있게 열어 둔다. */
     fun interface Transport {
         fun send(method: String, url: String, apiKey: String, body: String?): HttpResponse
@@ -59,36 +63,53 @@ class GeminiCorrector(
         require(text.isNotBlank()) { "고칠 글이 없다" }
 
         val body = buildRequest(text)
-        val response = sendWithRetry(body)
-        if (!worthSwitchingModel(response)) return@runCatching readCorrection(response)
+        var response = transport.send("POST", endpoint(), apiKey, body)
 
-        // 갈아 끼울 이름을 못 찾으면 원래 응답을 읽혀 원래 이유를 그대로 알린다.
-        val replacement =
-            runCatching { pickModel(readModels(listModels()), exclude = activeModel) }.getOrNull()
-            ?: return@runCatching readCorrection(response)
-        activeModel = replacement
-        readCorrection(sendWithRetry(body))
+        // 붐비거나 없는 이름이면 **기다리지 말고 다른 모델로 옮긴다.**
+        //
+        // 예전에는 같은 모델에 600ms, 1200ms 를 쉬며 다시 보냈다. 그런데 0.6 초 뒤에도
+        // 그 모델은 여전히 붐빈다 — 셋 중 하나만 성공하면서 4 초가 걸린 이유가 그것이다.
+        // 모델마다 여유가 달라서, 한가한 쪽을 찾아가는 편이 빠르고 잘 된다.
+        val tried = linkedSetOf(activeModel)
+        var hops = 0
+        while (worthSwitchingModel(response) && hops < MAX_MODEL_HOPS) {
+            val next = candidates().firstOrNull { it !in tried } ?: break
+            tried += next
+            activeModel = next
+            hops++
+            response = transport.send("POST", endpoint(), apiKey, body)
+        }
+
+        // 쓸 만한 모델이 전부 붐빌 때만 그제야 한 번 쉬었다 다시 본다.
+        if (isTransient(response)) {
+            sleep(RETRY_MS)
+            response = transport.send("POST", endpoint(), apiKey, body)
+        }
+        readCorrection(response)
     }
 
     /**
-     * 보내고, 잠깐 기다렸다 다시 보낸다.
+     * 옮겨 갈 만한 모델을 좋은 순서로.
      *
-     * 구글은 붐빌 때 503 과 함께 "This model is currently experiencing high demand.
-     * Spikes in demand are usually temporary" 를 돌려준다. **말 그대로 잠깐이라
-     * 한 번 실패했다고 포기하면 안 된다.** 429(요청이 몰림)와 5xx 도 같은 부류다.
-     *
-     * 호출하는 쪽 워치독이 20 초라 그 안에 끝나게 짧게 두 번만 더 시도한다.
+     * 목록은 자주 바뀌지 않아서 한 번 받아 두고 계속 쓴다. 교정할 때마다 다시 받으면
+     * 그 왕복이 고스란히 사용자 대기 시간이 된다.
      */
-    private fun sendWithRetry(body: String): HttpResponse {
-        var response = transport.send("POST", endpoint(), apiKey, body)
-        var wait = FIRST_RETRY_MS
-        repeat(MAX_RETRIES) {
-            if (!isTransient(response)) return response
-            sleep(wait)
-            wait *= 2
-            response = transport.send("POST", endpoint(), apiKey, body)
-        }
-        return response
+    private fun candidates(): List<String> =
+        runCatching { models() }.getOrNull().orEmpty()
+            .filter { isTextModel(it) }
+            .sortedByDescending { rank(it) }
+
+    private fun models(): List<String> =
+        cachedModels ?: readModels(listModels()).also { cachedModels = it }
+
+    /**
+     * 모델 목록을 미리 받아 둔다.
+     *
+     * 붐빌 때 곧장 옮기려면 후보를 이미 알고 있어야 한다. 키보드가 뜰 때 백그라운드에서
+     * 한 번 불러 두면, 정작 사용자가 버튼을 누르는 순간에는 그 왕복이 없다.
+     */
+    fun prefetchModels() {
+        runCatching { models() }
     }
 
     /** 잠시 뒤면 풀릴 오류인가. 서버가 붐비거나 요청이 몰린 경우다. */
@@ -98,8 +119,7 @@ class GeminiCorrector(
     /**
      * 모델을 갈아 끼워 볼 만한 응답인가.
      *
-     * 없는 이름일 때뿐 아니라 **그 모델만 붐빌 때도** 갈아 끼운다. 모델마다 여유가
-     * 달라서, 붐비는 모델을 붙들고 기다리는 것보다 한가한 쪽으로 옮기는 편이 빠르다.
+     * 없는 이름일 때뿐 아니라 **그 모델만 붐빌 때도** 갈아 끼운다.
      */
     private fun worthSwitchingModel(response: HttpResponse): Boolean =
         looksLikeBadModel(response) || isTransient(response)
@@ -319,10 +339,10 @@ class GeminiCorrector(
         /**
          * 기본 모델.
          *
-         * 모델 이름은 구글 쪽에서 계속 바뀐다. 설정에서 바꿀 수 있게 열어 뒀으니
-         * 이 값이 낡으면 앱에서 다른 이름을 넣으면 된다.
+         * 맞춤법 교정에는 lite 로 충분하고, 빠르고 싸고 덜 붐빈다. 이름이 낡았거나
+         * 이 키로 못 쓰면 목록을 받아 스스로 옮겨 가므로 크게 틀려도 복구된다.
          */
-        const val DEFAULT_MODEL = "gemini-2.5-flash"
+        const val DEFAULT_MODEL = "gemini-2.0-flash-lite"
 
         /** 진단에서 실제로 한 번 보내 보는 문장. 짧고, 틀린 데가 분명한 것. */
         const val DIAGNOSTIC_SAMPLE = "안녕하새요 오늘 날시가 조아요"
@@ -333,8 +353,11 @@ class GeminiCorrector(
         /** 잠시 뒤면 풀리는 HTTP 상태. 429 는 요청이 몰림, 5xx 는 서버 쪽 사정. */
         private val TRANSIENT_CODES = setOf(429, 500, 502, 503, 504)
 
-        private const val MAX_RETRIES = 2
-        private const val FIRST_RETRY_MS = 600L
+        /** 다른 모델로 옮겨 볼 최대 횟수. 늘릴수록 대기 시간이 길어진다. */
+        private const val MAX_MODEL_HOPS = 2
+
+        /** 쓸 만한 모델이 전부 붐빌 때 마지막으로 한 번 쉬는 시간. */
+        private const val RETRY_MS = 700L
 
         // 모델 이름이 낡았으면 한 번의 교정 요청 안에서 최대 세 번(POST, 목록,
         // 재시도 POST) 오간다. 하나가 느긋하게 굴면 셋을 합쳐 참기 힘든 시간이
@@ -365,14 +388,26 @@ class GeminiCorrector(
         /**
          * 고를 만한 정도. 클수록 먼저다.
          *
-         * 교정은 짧은 글 한 덩어리라 값싸고 빠른 flash 계열이 맞다. 같은 계열이면 최신이,
-         * 같은 세대면 미리보기보다 정식 출시본이 낫다 — 미리보기는 예고 없이 사라진다.
+         * ## lite 를 **더** 쳐주는 이유
+         *
+         * 맞춤법 교정은 기계적인 일이라 큰 모델이 필요 없다. 반면 lite 계열은
+         *
+         * - 훨씬 빠르다 — 사용자가 버튼을 누르고 기다리는 시간이 그대로 줄어든다
+         * - 훨씬 싸다 — 구독료로 API 값을 대는 구조라 이게 곧 마진이다
+         * - 훨씬 덜 붐빈다 — 쓰는 사람이 적어서 503 을 훨씬 덜 만난다
+         *
+         * 실기기에서 `gemini-2.5-flash` 가 셋 중 둘은 "high demand" 로 거절당했다.
+         * 이 일에 그만한 모델을 쓸 이유가 없다.
+         *
+         * 같은 계열이면 최신이, 같은 세대면 미리보기보다 정식 출시본이 낫다 —
+         * 미리보기는 예고 없이 사라진다.
          */
         internal fun rank(name: String): Int {
             val lower = name.lowercase()
             var score = ((VERSION.find(lower)?.value?.toDoubleOrNull() ?: 0.0) * 100).toInt()
             if (lower.contains("flash")) score += 40
-            if (lower.contains("lite")) score -= 15
+            if (lower.contains("lite")) score += 25
+            if (lower.contains("pro")) score -= 30
             if (lower.contains("preview") || lower.contains("exp")) score -= 20
             return score
         }
