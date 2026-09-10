@@ -9,6 +9,9 @@ import com.spellkeyboard.core.editor.CorrectionEvent
 import com.spellkeyboard.core.editor.Editor
 import com.spellkeyboard.core.editor.TypingSession
 import com.spellkeyboard.core.hangul.Hangul
+import com.spellkeyboard.core.spacing.Spacer
+import com.spellkeyboard.core.spacing.SpacingDictionary
+import java.io.File
 
 /**
  * 실시간 교정 키보드.
@@ -59,6 +62,26 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onCreate() {
         super.onCreate()
         session.onEvent = ::showEvent
+        loadSpacingDictionary()
+    }
+
+    /**
+     * 띄어쓰기 사전을 백그라운드에서 연다.
+     *
+     * 처음 한 번은 50MB 를 풀어야 해서 몇 초 걸린다. 그동안에도 규칙 교정은
+     * 그대로 동작하고, 준비되면 조용히 끼워 넣는다. 사전을 못 열어도
+     * 키보드는 계속 쓸 수 있어야 하므로 실패는 삼킨다.
+     */
+    private fun loadSpacingDictionary() {
+        val target = File(filesDir, DICTIONARY_DIR)
+        Thread {
+            runCatching { Spacer(SpacingDictionary.open(target)) }
+                .onSuccess { session.engine.spacer = it }
+        }.apply {
+            isDaemon = true
+            priority = Thread.MIN_PRIORITY
+            start()
+        }
     }
 
     override fun onCreateInputView(): View =
@@ -193,6 +216,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     private companion object {
+        const val DICTIONARY_DIR = "spacing"
+
         val SENSITIVE_VARIATIONS = setOf(
             InputType.TYPE_TEXT_VARIATION_PASSWORD,
             InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,

@@ -10,7 +10,8 @@ import com.spellkeyboard.core.hangul.HangulAutomata
  * 그 덕에 "스페이스를 눌렀을 때 실제로 무슨 일이 벌어지는가"를 전부 단위 테스트로 확인한다.
  */
 class TypingSession(
-    private val engine: CorrectionEngine = CorrectionEngine()
+    /** 교정 엔진. 사전이 늦게 올라오므로 밖에서 [CorrectionEngine.spacer] 를 끼울 수 있게 공개한다. */
+    val engine: CorrectionEngine = CorrectionEngine()
 ) {
 
     private val automata = HangulAutomata()

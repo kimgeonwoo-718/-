@@ -13,14 +13,15 @@
     <string name="status_reverted">되돌렸습니다</string>
     <string name="selftest_title">엔진 자체 점검</string>
     <string name="selftest_run">교정 엔진 점검하기</string>
+    <string name="selftest_running">사전을 여는 중… (처음 한 번은 몇 초 걸립니다)</string>
 
-    <string name="setup_intro">타이핑을 따라가며 맞춤법과 띄어쓰기를 고쳐 주는 키보드입니다. 어절이 끝나는 순간(스페이스·문장부호·엔터) 커서 앞 몇 어절을 검사합니다.</string>
+    <string name="setup_intro">타이핑을 따라가며 맞춤법과 띄어쓰기를 고쳐 주는 키보드입니다. 어절이 끝나는 순간(스페이스·문장부호·엔터) 커서 앞 몇 어절을 검사합니다. 붙여 쓴 문장도 형태소 분석으로 나눕니다.</string>
     <string name="setup_step_1">1. 시스템 설정에서 키보드 켜기</string>
     <string name="setup_open_settings">입력기 설정 열기</string>
     <string name="setup_step_2">2. 입력기로 선택하기</string>
     <string name="setup_pick_keyboard">키보드 선택창 열기</string>
     <string name="setup_step_3">3. 여기서 시험해 보기</string>
-    <string name="setup_test_hint">예: 할수있다 / 됬다 / 왠만하면 / 먹을때</string>
+    <string name="setup_test_hint">예: 아버지가방에들어가신다 / 할수있다 / 됬다 / 왠만하면</string>
 
     <string name="setting_auto_correct">자동 교정 사용</string>
 

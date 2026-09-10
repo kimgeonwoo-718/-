@@ -10,6 +10,9 @@ import android.widget.CompoundButton
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.spellkeyboard.core.correct.CorrectionEngine
+import com.spellkeyboard.core.spacing.Spacer
+import com.spellkeyboard.core.spacing.SpacingDictionary
+import java.io.File
 
 /**
  * 키보드를 켜고 시험해 보는 화면.
@@ -34,7 +37,12 @@ class SetupActivity : AppCompatActivity() {
 
         val output = findViewById<TextView>(R.id.selftest_output)
         findViewById<Button>(R.id.selftest_button).setOnClickListener {
-            output.text = runSelfTest()
+            output.setText(R.string.selftest_running)
+            // 사전을 처음 여는 데 몇 초 걸린다. UI 스레드에서 하면 화면이 멎는다.
+            Thread {
+                val report = runSelfTest()
+                runOnUiThread { output.text = report }
+            }.start()
         }
 
         findViewById<CompoundButton>(R.id.auto_correct_switch).apply {
@@ -53,11 +61,22 @@ class SetupActivity : AppCompatActivity() {
      */
     private fun runSelfTest(): String {
         val engine = CorrectionEngine()
-        return SAMPLES.joinToString("\n") { (input, expected) ->
+        val dictionary = runCatching {
+            Spacer(SpacingDictionary.open(File(filesDir, "spacing")))
+        }
+        engine.spacer = dictionary.getOrNull()
+
+        val lines = SAMPLES.map { (input, expected) ->
             val actual = engine.correct(input).text
             val mark = if (actual == expected) "OK  " else "FAIL"
             "$mark $input -> $actual"
         }
+        val header = if (dictionary.isSuccess) {
+            "띄어쓰기 사전: 준비됨"
+        } else {
+            "띄어쓰기 사전: 열지 못함 (규칙만 동작)"
+        }
+        return (listOf(header) + lines).joinToString("\n")
     }
 
     private companion object {
@@ -68,6 +87,8 @@ class SetupActivity : AppCompatActivity() {
             "먹을때" to "먹을 때",
             "할께요" to "할게요",
             "너때문에" to "너 때문에",
+            "아버지가방에들어가신다" to "아버지 가방에 들어가신다",
+            "오늘은날씨가좋아서기분이좋다" to "오늘은 날씨가 좋아서 기분이 좋다",
             "안녕하세요" to "안녕하세요"
         )
     }

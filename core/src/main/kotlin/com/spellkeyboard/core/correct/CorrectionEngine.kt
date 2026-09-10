@@ -1,5 +1,7 @@
 package com.spellkeyboard.core.correct
 
+import com.spellkeyboard.core.spacing.Spacer
+
 /** [CorrectionEngine.correct] 의 결과. */
 data class CorrectionResult(
     val original: String,
@@ -30,7 +32,12 @@ data class TailCorrection(
  */
 class CorrectionEngine(
     private val wordRules: List<TextRule> = SpellingRules.WORD,
-    private val textRules: List<TextRule> = SpellingRules.CONTEXT + SpacingRules.DEFAULT
+    private val textRules: List<TextRule> = SpellingRules.CONTEXT + SpacingRules.DEFAULT,
+    /**
+     * 일반 띄어쓰기 복원기. 사전을 푸는 데 시간이 걸려 나중에 끼워 넣을 수 있게 열어 둔다.
+     * null 이면 규칙만으로 동작한다 — 패턴은 고치지만 '아버지가방에' 류는 손대지 못한다.
+     */
+    @Volatile var spacer: Spacer? = null
 ) {
 
     /** 문자열 전체를 교정한다. */
@@ -39,6 +46,7 @@ class CorrectionEngine(
 
         val sink = mutableListOf<Correction>()
         var current = applyWordRules(text, sink)
+        current = applySpacer(current, sink)
         current = applyTextRules(current, sink)
         // 띄어쓰기 교정으로 새 어절이 드러날 수 있어 어절 규칙을 한 번 더 돌린다.
         current = applyWordRules(current, sink)
@@ -83,6 +91,27 @@ class CorrectionEngine(
                 }
             }
         }
+
+    /** 붙여 쓴 덩어리를 어절로 나눈다. 사전이 아직 안 올라왔으면 아무것도 하지 않는다. */
+    private fun applySpacer(text: String, sink: MutableList<Correction>): String {
+        val spacer = this.spacer ?: return text
+        return buildString {
+            for (token in TOKEN.findAll(text)) {
+                val value = token.value
+                if (value.isBlank()) {
+                    append(value)
+                    continue
+                }
+                val spaced = spacer.space(value)
+                if (spaced == null) {
+                    append(value)
+                } else {
+                    sink += Correction(value, spaced, "띄어쓰기")
+                    append(spaced)
+                }
+            }
+        }
+    }
 
     private fun applyTextRules(text: String, sink: MutableList<Correction>): String =
         textRules.fold(text) { acc, rule -> rule.apply(acc, sink) }
