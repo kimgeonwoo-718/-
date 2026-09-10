@@ -94,6 +94,16 @@
             android:inputType="textPassword"
             android:maxLines="1" />
 
+        <EditText
+            android:id="@+id/model_field"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:hint="@string/setting_model_hint"
+            android:importantForAutofill="no"
+            android:inputType="text"
+            android:maxLines="1" />
+
         <Button
             android:id="@+id/api_key_save"
             android:layout_width="match_parent"

@@ -7,7 +7,7 @@ import android.text.InputType
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
-import com.spellkeyboard.core.ai.AiCorrector
+import com.spellkeyboard.core.ai.GeminiCorrector
 import com.spellkeyboard.core.editor.CorrectionEvent
 import com.spellkeyboard.core.editor.Editor
 import com.spellkeyboard.core.editor.TypingSession
@@ -32,8 +32,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private var keyboard: KeyboardView? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var corrector: AiCorrector? = null
-    private var correctorKey: String? = null
+    private var corrector: GeminiCorrector? = null
+    private var correctorSettings: Pair<String, String>? = null
 
     /** AI 교정은 한 번에 하나만. 연타로 요청이 겹치면 글이 꼬인다. */
     @Volatile
@@ -217,8 +217,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
         aiBusy = true
         keyboard?.showStatus(getString(R.string.ai_running))
+        val model = Prefs.model(this)
         Thread {
-            val result = runCatching { corrector(apiKey) }
+            val result = runCatching { corrector(apiKey, model) }
                 .mapCatching { it.correct(original).getOrThrow() }
             mainHandler.post {
                 aiBusy = false
@@ -251,14 +252,15 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         keyboard?.showStatus(getString(R.string.ai_done))
     }
 
-    /** OkHttp 클라이언트를 매번 새로 만들 이유가 없어 키가 바뀔 때만 다시 만든다. */
+    /** 설정이 그대로면 만들어 둔 것을 다시 쓴다. */
     @Synchronized
-    private fun corrector(apiKey: String): AiCorrector {
+    private fun corrector(apiKey: String, model: String): GeminiCorrector {
+        val settings = apiKey to model
         val cached = corrector
-        if (cached != null && correctorKey == apiKey) return cached
-        return AiCorrector(apiKey).also {
+        if (cached != null && correctorSettings == settings) return cached
+        return GeminiCorrector(apiKey, model).also {
             corrector = it
-            correctorKey = apiKey
+            correctorSettings = settings
         }
     }
 

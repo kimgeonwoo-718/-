@@ -38,9 +38,12 @@ class SetupActivity : AppCompatActivity() {
         }
 
         val apiKeyField = findViewById<EditText>(R.id.api_key_field)
+        val modelField = findViewById<EditText>(R.id.model_field)
         apiKeyField.setText(Prefs.apiKey(this))
+        modelField.setText(Prefs.model(this))
         findViewById<Button>(R.id.api_key_save).setOnClickListener {
             Prefs.setApiKey(this, apiKeyField.text.toString())
+            Prefs.setModel(this, modelField.text.toString())
             Toast.makeText(this, R.string.setting_api_key_saved, Toast.LENGTH_LONG).show()
         }
 
