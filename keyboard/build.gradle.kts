@@ -36,6 +36,25 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    packaging {
+        resources {
+            // Anthropic SDK 가 Apache HttpComponents 를 끌고 오는데, 그 jar 들이
+            // 저마다 같은 이름의 메타데이터를 담고 있어 APK 로 합칠 때 충돌한다.
+            // 실행에 쓰이지 않는 파일들이라 빼면 된다.
+            excludes += setOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/INDEX.LIST",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/LICENSE.md",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/NOTICE.md",
+                "META-INF/{AL2.0,LGPL2.1}"
+            )
+        }
+    }
 }
 
 dependencies {
