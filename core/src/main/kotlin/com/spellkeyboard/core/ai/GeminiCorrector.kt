@@ -322,8 +322,14 @@ class GeminiCorrector(
     private fun describe(error: Throwable): String =
         explain(error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName)
 
-    /** 안드로이드와 JVM 양쪽에 있는 것만 쓴다. */
-    class HttpTransport : Transport {
+    /**
+     * 안드로이드와 JVM 양쪽에 있는 것만 쓴다.
+     *
+     * @param extraHeaders 요청마다 같이 실을 헤더. 앱에 키를 내장할 때 앱 신원
+     *   (`X-Android-Package`, `X-Android-Cert`)을 여기로 보낸다 — 구글 콘솔에서 키를
+     *   "이 앱에서만" 으로 제한해 두면, 추출된 키는 이 헤더 없이는 쓸 수 없다.
+     */
+    class HttpTransport(private val extraHeaders: Map<String, String> = emptyMap()) : Transport {
         override fun send(
             method: String,
             url: String,
@@ -338,6 +344,7 @@ class GeminiCorrector(
                 // 키를 URL 이 아니라 헤더에 싣는다. 주소창이나 로그에 남지 않게.
                 setRequestProperty("x-goog-api-key", apiKey)
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                extraHeaders.forEach { (name, value) -> setRequestProperty(name, value) }
             }
             try {
                 body?.let { payload ->

@@ -30,8 +30,31 @@ jobs:
       - name: 교정 엔진 단위 테스트
         run: ./gradlew :core:test --no-daemon
 
+      # 서명 키를 고정한다. 없으면 러너가 매번 새 디버그 키를 만들어 덮어쓰기 설치가
+      # 안 되고, 내장 API 키의 앱 제한(서명 SHA-1)도 매번 어긋난다.
+      - name: 서명 키 준비
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/signing.jks"
+            echo "서명 키: 비밀값에서 복원"
+          else
+            echo "서명 키: 없음 — 러너의 임시 디버그 키를 쓴다 (매번 바뀜)"
+          fi
+
       - name: 디버그 APK 빌드
-        run: ./gradlew :keyboard:assembleDebug --no-daemon
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          KEYSTORE_FILE: ${{ runner.temp }}/signing.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${GEMINI_API_KEY:-}" ]; then echo "내장 키: 있음"; else echo "내장 키: 없음 — 사용자 키만 동작"; fi
+          ./gradlew :keyboard:assembleDebug --no-daemon
 
       - name: APK 모으기
         id: collect

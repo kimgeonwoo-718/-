@@ -46,7 +46,8 @@ class SetupActivity : AppCompatActivity() {
 
         val apiKeyField = findViewById<EditText>(R.id.api_key_field)
         val modelField = findViewById<EditText>(R.id.model_field)
-        apiKeyField.setText(Prefs.apiKey(this))
+        // 내장 키는 보여주지 않는다. 사용자가 직접 넣은 것만 되돌려 준다.
+        apiKeyField.setText(Prefs.userApiKey(this))
         modelField.setText(Prefs.model(this))
         findViewById<Button>(R.id.api_key_save).setOnClickListener {
             Prefs.setApiKey(this, apiKeyField.text.toString())
@@ -112,17 +113,28 @@ class SetupActivity : AppCompatActivity() {
      *
      * "AI 가 작동 안 함" 만으로는 원인이 열 가지다. 한 번 눌러 그걸 가른다.
      */
-    private fun runDiagnosis(apiKey: String, model: String): String {
-        if (apiKey.isEmpty()) return getString(R.string.setting_api_key_hint)
+    private fun runDiagnosis(typedKey: String, model: String): String {
+        // 칸이 비었으면 내장 키로 본다 — 키보드가 실제로 그렇게 동작한다.
+        val apiKey = typedKey.ifEmpty { BuiltInKey.value }
+        if (apiKey.isEmpty()) return getString(R.string.diag_no_key_at_all)
 
-        val corrector = GeminiCorrector(apiKey, model)
+        val source = if (typedKey.isEmpty()) {
+            getString(R.string.diag_key_builtin)
+        } else {
+            getString(R.string.diag_key_own)
+        }
+        val identity = AppIdentity.signingSha1(this) ?: "?"
+
+        val transport = GeminiCorrector.HttpTransport(AppIdentity.headers(this))
+        val corrector = GeminiCorrector(apiKey, model, transport)
         val checks = runCatching { corrector.diagnose() }.getOrElse { error ->
             return getString(
                 R.string.setting_models_failed,
                 error.message ?: error.javaClass.simpleName
             )
         }
-        return checks.joinToString("\n") { check ->
+        val header = "키 출처: $source\n앱 서명 SHA-1: $identity\n(구글 콘솔 앱 제한에 이 값을 적습니다)\n"
+        return header + checks.joinToString("\n") { check ->
             val mark = if (check.ok) "OK  " else "실패"
             "$mark ${check.name}\n     ${check.detail}"
         }

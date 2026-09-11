@@ -360,8 +360,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
 
         // 하루치를 다 썼는지는 보내기 전에 본다. 다 쓰고 나서 막으면 요금만 나간다.
-        val quota = Prefs.quota(this)
-        if (!quota.canUse()) {
+        // 자기 키를 넣은 사람은 구글에 직접 값을 내니 한도가 없다.
+        val quota = if (Prefs.usingOwnKey(this)) null else Prefs.quota(this)
+        if (quota != null && !quota.canUse()) {
             keyboard?.showStatus(getString(R.string.ai_quota_spent, AiQuota.FREE_DAILY_LIMIT))
             return
         }
@@ -392,7 +393,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                     .onSuccess {
                         // 성공했을 때만 깎는다. 실패한 요청까지 세면 사용자는 아무것도
                         // 못 받고 하루치만 잃는다.
-                        quota.consume()
+                        quota?.consume()
                         applyAiResult(before, after, it)
                     }
                     .onFailure {
@@ -429,6 +430,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      * 무제한이면 빈 문자열이다 — 구독자에게 횟수를 들이밀 이유가 없다.
      */
     private fun remainingSuffix(): String {
+        if (Prefs.usingOwnKey(this)) return ""
         val remaining = Prefs.quota(this).status().remaining ?: return ""
         return getString(R.string.ai_remaining_suffix, remaining)
     }
@@ -472,7 +474,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         val settings = apiKey to model
         val cached = corrector
         if (cached != null && correctorSettings == settings) return cached
-        return GeminiCorrector(apiKey, model).also {
+        // 앱 신원을 헤더로 같이 보낸다. 내장 키를 구글 콘솔에서 이 앱에만 묶어 두면
+        // 이 헤더 없이는 거절당한다 — 추출된 키를 아무 데서나 쓰는 것을 막는 장치다.
+        val transport = GeminiCorrector.HttpTransport(AppIdentity.headers(this))
+        return GeminiCorrector(apiKey, model, transport).also {
             corrector = it
             correctorSettings = settings
         }

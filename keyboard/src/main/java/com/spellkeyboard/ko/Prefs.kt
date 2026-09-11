@@ -26,13 +26,21 @@ object Prefs {
     }
 
     /**
-     * Gemini API 키. 사용자가 직접 넣는다.
+     * 실제로 쓸 Gemini API 키.
      *
-     * 앱 전용 저장소에 둔다. APK 에 키를 박아 넣으면 누구나 꺼내 쓸 수 있어서,
-     * 개인이 쓰는 앱에서는 각자 자기 키를 넣는 쪽이 맞다.
+     * 사용자가 자기 키를 넣었으면 그것, 아니면 앱에 내장된 키([BuiltInKey]). 자기 키를
+     * 넣은 사람은 구글에 직접 값을 내니 하루 한도를 걸지 않는다 — 한도는 내장 키를
+     * 쓸 때만 센다.
      */
     fun apiKey(context: Context): String =
+        userApiKey(context).ifEmpty { BuiltInKey.value }
+
+    /** 사용자가 직접 넣은 키. 설정 화면에 되돌려 보여줄 때 쓴다 — 내장 키는 안 보여준다. */
+    fun userApiKey(context: Context): String =
         prefs(context).getString(KEY_API_KEY, "").orEmpty().trim()
+
+    /** 자기 키를 쓰는가. 그러면 요금은 본인 몫이라 하루 한도가 없다. */
+    fun usingOwnKey(context: Context): Boolean = userApiKey(context).isNotEmpty()
 
     fun setApiKey(context: Context, key: String) {
         prefs(context).edit().putString(KEY_API_KEY, key.trim()).apply()
@@ -52,7 +60,7 @@ object Prefs {
         prefs(context).edit().putString(KEY_MODEL, model.trim()).apply()
     }
 
-    /** 키가 있어야 AI 교정 버튼이 뜬다. */
+    /** 키가 있어야 AI 교정 버튼이 뜬다. 내장 키가 있으면 늘 뜬다. */
     fun aiAvailable(context: Context): Boolean = apiKey(context).isNotEmpty()
 
     /**

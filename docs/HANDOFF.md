@@ -105,3 +105,34 @@ AI 교정에만 쓴다 (온디바이스 교정은 네트워크 없이 동작).
 - **로직은 안드로이드 밖에 둔다.** `TypingSession` + `FakeEditor` 로 "스페이스를 눌렀을 때
   화면이 어떻게 바뀌는가" 를 JVM 테스트로 재현할 수 있다. 실기기 로그가 없는 환경에서
   이게 유일한 방어선이다.
+
+---
+
+## 내장 API 키 — 배포 전에 할 것 (2026-09-11)
+
+앱이 사용자 키 없이도 AI 교정을 하려면 CI 에 비밀값을 넣어야 한다. 소스에는 키가 없다.
+
+저장소 → Settings → Secrets and variables → Actions → New repository secret:
+
+| 이름 | 값 |
+|---|---|
+| `GEMINI_API_KEY` | Gemini API 키 |
+| `KEYSTORE_BASE64` | 아래 명령으로 만든 서명 키를 base64 로 |
+| `KEYSTORE_PASSWORD` | 키스토어 비밀번호 |
+| `KEY_ALIAS` | `spellkeyboard` |
+| `KEY_PASSWORD` | 키 비밀번호 (키스토어와 같아도 됨) |
+
+서명 키 만들기 (한 번만, 파일은 안전한 곳에 보관 — 잃으면 기존 설치 위에 업데이트 못 함):
+
+    keytool -genkeypair -v -keystore spellkeyboard.jks -alias spellkeyboard \
+      -keyalg RSA -keysize 2048 -validity 10000
+    base64 -w0 spellkeyboard.jks   # 이 출력을 KEYSTORE_BASE64 에
+
+서명을 고정하면 (1) 매번 지우고 설치할 필요가 없어지고 (2) 아래 앱 제한이 동작한다.
+
+**진짜 방어 — 구글 콘솔에서 키를 앱에 묶기.** APK 에 든 키는 반드시 추출된다.
+console.cloud.google.com → API 및 서비스 → 사용자 인증 정보 → 해당 키 →
+애플리케이션 제한사항: Android 앱 → 패키지 `com.spellkeyboard.ko`,
+SHA-1 은 앱의 "AI 연결 진단" 화면 맨 위에 찍힌 값. 이걸 걸면 추출된 키는 우리 앱
+서명 없이는 거절당한다. (Gemini API 가 이 제한을 존중하는지는 이 환경에서 검증하지
+못했다 — 걸고 나서 진단이 계속 OK 인지 확인할 것.)
