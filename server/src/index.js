@@ -105,7 +105,9 @@ async function proxy(fetchImpl, env, url, method, body) {
     method,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'x-goog-api-key': env.GEMINI_API_KEY,
+      // 사람이 붙여넣은 비밀값이라 끝에 줄바꿈이 딸려 온 적이 있다. 헤더에 줄바꿈이
+      // 들어가면 fetch 가 예외를 던져 500 이 된다.
+      'x-goog-api-key': env.GEMINI_API_KEY.trim(),
     },
     body,
   });

@@ -124,8 +124,23 @@ jobs:
           echo "서버 주소: $url"
           echo "이 주소를 GitHub 변수 AI_SERVER_URL 에 넣으면 다음 APK 빌드부터 앱이 서버를 쓴다."
           # 막 정한 주소는 DNS 가 퍼지는 데 잠깐 걸린다. 몇 번 두드려 보고, 안 되면 실패로 치지 않는다.
+          ok=false
           for i in 1 2 3 4 5 6; do
-            if curl -fsS --max-time 10 "$url/health"; then echo; echo "health: OK"; exit 0; fi
+            if curl -fsS --max-time 10 "$url/health"; then echo; echo "health: OK"; ok=true; break; fi
             sleep 10
           done
-          echo "health 응답이 아직 없다 — 몇 분 뒤 브라우저에서 $url/health 를 열어 보면 된다"
+          if [ "$ok" != true ]; then
+            echo "health 응답이 아직 없다 — 몇 분 뒤 브라우저에서 $url/health 를 열어 보면 된다"
+            exit 0
+          fi
+          # 앱이 맨 처음 하는 일이 모델 목록 받기다. 이게 막히면 교정도, 모델 갈아타기도
+          # 전부 막힌다. 구글이 뭐라고 하는지 원문 앞부분을 그대로 남긴다 (키는 안 찍힌다).
+          echo "----- 모델 목록 (앱과 같은 요청) -----"
+          curl -sS --max-time 20 -w '\nHTTP %{http_code}\n' "$url/v1beta/models?pageSize=3" | head -c 1200
+          echo
+          echo "----- 교정 한 번 (설치 ID 는 CI 전용) -----"
+          curl -sS --max-time 30 -w '\nHTTP %{http_code}\n' -X POST \
+            -H 'Content-Type: application/json' -H 'X-Install-Id: ci-smoke-test-0000' \
+            --data '{"contents":[{"parts":[{"text":"안녕하새요 라고만 답해"}]}]}' \
+            "$url/v1beta/models/gemini-2.5-flash-lite:generateContent" | head -c 1200
+          echo
