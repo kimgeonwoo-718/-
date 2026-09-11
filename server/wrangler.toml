@@ -1,0 +1,23 @@
+name = "spell-keyboard"
+main = "src/index.js"
+compatibility_date = "2024-09-01"
+
+# 사용량과 캐시. 무료 등급 D1 은 하루 쓰기 10 만 건이라 KV(1 천 건)보다 한참 여유 있다.
+# database_id 는 CI 가 만들거나 찾아서 채워 넣는다 (deploy-worker.yml).
+[[d1_databases]]
+binding = "DB"
+database_name = "spell-keyboard"
+database_id = "DATABASE_ID_PLACEHOLDER"
+
+[vars]
+PLAY_PACKAGE = "com.spellkeyboard.ko"
+FREE_DAILY_LIMIT = "5"
+IP_DAILY_LIMIT = "300"
+
+# 지난 사용량과 만료된 캐시를 매일 새벽에 치운다.
+[triggers]
+crons = ["0 18 * * *"]
+
+# 비밀값은 여기 두지 않는다. CI 가 wrangler secret put 으로 넣는다:
+#   GEMINI_API_KEY         구글 Gemini 키
+#   PLAY_SERVICE_ACCOUNT   Play Developer API 서비스 계정 JSON (없으면 전부 무료로 본다)

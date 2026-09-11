@@ -27,8 +27,31 @@ class GeminiCorrector(
     model: String = DEFAULT_MODEL,
     private val transport: Transport = HttpTransport(),
     /** 재시도 사이에 쉬는 방법. 테스트에서 실제로 기다리지 않게 갈아 끼운다. */
-    private val sleep: (Long) -> Unit = { Thread.sleep(it) }
+    private val sleep: (Long) -> Unit = { Thread.sleep(it) },
+    /**
+     * 요청을 보낼 곳. 기본은 구글이고, 앱에 키가 없을 때는 우리 중계 서버다.
+     *
+     * 중계 서버는 구글과 똑같은 경로를 열어 두므로 호스트만 바뀐다. 모델 고르기·숙고
+     * 끄기·붐빌 때 갈아타기는 어느 쪽으로 보내든 그대로다 — 서버가 얇은 이유다.
+     */
+    private val baseUrl: String = GOOGLE_BASE_URL
 ) {
+
+    /** 중계 서버를 거치는가. 그러면 키는 서버에 있고 앱은 빈 키로 보낸다. */
+    val viaProxy: Boolean get() = baseUrl != GOOGLE_BASE_URL
+
+    /**
+     * 마지막 응답이 알려 준 요금 상태.
+     *
+     * 중계 서버가 `X-Plan`, `X-Quota-Remaining` 헤더로 실어 준다. 구글 직통이면 null.
+     * 폰에 저장된 숫자는 누구나 고칠 수 있으니 서버가 준 것을 그대로 보여주기 위해 있다.
+     */
+    @Volatile
+    var lastQuota: Quota? = null
+        private set
+
+    /** 서버가 알려 준 요금 상태. [remaining]/[limit] 는 무제한이면 null. */
+    data class Quota(val remaining: Int?, val limit: Int?, val plan: String?)
 
     /**
      * 지금 쓰는 모델 이름.
@@ -58,7 +81,12 @@ class GeminiCorrector(
         fun send(method: String, url: String, apiKey: String, body: String?): HttpResponse
     }
 
-    data class HttpResponse(val code: Int, val body: String)
+    /** @property headers 응답 헤더. 이름은 소문자. 테스트에서는 비워 둬도 된다. */
+    data class HttpResponse(
+        val code: Int,
+        val body: String,
+        val headers: Map<String, String> = emptyMap()
+    )
 
     /**
      * [text] 의 맞춤법과 띄어쓰기를 고친다.
@@ -101,7 +129,18 @@ class GeminiCorrector(
             sleep(RETRY_MS)
             response = attempt(body)
         }
+        noteQuota(response)
         readCorrection(response)
+    }
+
+    /** 중계 서버가 헤더로 실어 준 요금 상태를 기억한다. 한도 초과(402)에도 실려 온다. */
+    private fun noteQuota(response: HttpResponse) {
+        val plan = response.headers["x-plan"] ?: return
+        lastQuota = Quota(
+            remaining = response.headers["x-quota-remaining"]?.toIntOrNull(),
+            limit = response.headers["x-quota-limit"]?.toIntOrNull(),
+            plan = plan
+        )
     }
 
     /**
@@ -182,7 +221,7 @@ class GeminiCorrector(
     fun availableModels(): Result<List<String>> = runCatching { readModels(listModels()) }
 
     private fun listModels(): HttpResponse =
-        transport.send("GET", "$BASE_URL?pageSize=$MODEL_PAGE_SIZE", apiKey, null)
+        transport.send("GET", "$baseUrl?pageSize=$MODEL_PAGE_SIZE", apiKey, null)
 
     internal fun readModels(response: HttpResponse): List<String> {
         val parsed = runCatching { Json.parse(response.body) }.getOrNull()
@@ -219,7 +258,7 @@ class GeminiCorrector(
             "message"
         ) as? String
 
-    internal fun endpoint(): String = "$BASE_URL/$activeModel:generateContent"
+    internal fun endpoint(): String = "$baseUrl/$activeModel:generateContent"
 
     internal fun buildRequest(text: String): String = buildString {
         append("""{"system_instruction":{"parts":[{"text":""")
@@ -279,12 +318,12 @@ class GeminiCorrector(
     fun diagnose(sample: String = DIAGNOSTIC_SAMPLE): List<Check> {
         val checks = ArrayList<Check>()
 
-        checks += if (apiKey.isBlank()) {
-            Check("API 키", false, "비어 있음 — 설정에서 키를 넣고 저장하세요")
-        } else {
-            Check("API 키", true, "${apiKey.length}자 (${apiKey.take(6)}…)")
+        checks += when {
+            viaProxy -> Check("경로", true, "중계 서버 경유 — 앱에 키 없음 ($baseUrl)")
+            apiKey.isBlank() -> Check("API 키", false, "비어 있음 — 설정에서 키를 넣고 저장하세요")
+            else -> Check("API 키", true, "내 키 ${apiKey.length}자 (${apiKey.take(6)}…)")
         }
-        if (apiKey.isBlank()) return checks
+        if (!viaProxy && apiKey.isBlank()) return checks
 
         // 목록 조회는 키와 네트워크를 한꺼번에 본다. 실패하면 그 아래는 볼 것도 없다.
         val models = runCatching { readModels(listModels()) }
@@ -316,6 +355,14 @@ class GeminiCorrector(
         if (activeModel != before) {
             checks += Check("모델 자동 교체", true, "$before → $activeModel (이 이름을 저장하세요)")
         }
+        lastQuota?.let { quota ->
+            val detail = if (quota.remaining == null) {
+                "구독 · 무제한"
+            } else {
+                "무료 · 오늘 ${quota.remaining}/${quota.limit ?: "?"}회 남음"
+            }
+            checks += Check("요금제", true, detail)
+        }
         return checks
     }
 
@@ -325,9 +372,8 @@ class GeminiCorrector(
     /**
      * 안드로이드와 JVM 양쪽에 있는 것만 쓴다.
      *
-     * @param extraHeaders 요청마다 같이 실을 헤더. 앱에 키를 내장할 때 앱 신원
-     *   (`X-Android-Package`, `X-Android-Cert`)을 여기로 보낸다 — 구글 콘솔에서 키를
-     *   "이 앱에서만" 으로 제한해 두면, 추출된 키는 이 헤더 없이는 쓸 수 없다.
+     * @param extraHeaders 요청마다 같이 실을 헤더. 중계 서버로 갈 때 설치 ID 와
+     *   구매 토큰(`X-Install-Id`, `X-Purchase-Token`)을 여기로 보낸다.
      */
     class HttpTransport(private val extraHeaders: Map<String, String> = emptyMap()) : Transport {
         override fun send(
@@ -342,7 +388,8 @@ class GeminiCorrector(
                 readTimeout = READ_TIMEOUT_MS
                 doOutput = body != null
                 // 키를 URL 이 아니라 헤더에 싣는다. 주소창이나 로그에 남지 않게.
-                setRequestProperty("x-goog-api-key", apiKey)
+                // 중계 서버로 갈 때는 키가 없다 — 빈 헤더를 보낼 이유도 없다.
+                if (apiKey.isNotBlank()) setRequestProperty("x-goog-api-key", apiKey)
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 extraHeaders.forEach { (name, value) -> setRequestProperty(name, value) }
             }
@@ -353,7 +400,11 @@ class GeminiCorrector(
                 val code = connection.responseCode
                 val stream = if (code == 200) connection.inputStream else connection.errorStream
                 val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-                return HttpResponse(code, text)
+                val headers = connection.headerFields
+                    .filterKeys { it != null }
+                    .mapKeys { it.key.lowercase() }
+                    .mapValues { it.value.firstOrNull().orEmpty() }
+                return HttpResponse(code, text, headers)
             } finally {
                 connection.disconnect()
             }
@@ -383,6 +434,19 @@ class GeminiCorrector(
                 "permission" in lower || "denied" in lower ->
                     "이 키로는 쓸 수 없습니다. 키 권한을 확인해 주세요."
 
+                // 우리 중계 서버가 돌려주는 코드들. 구글 오류와 같은 자리에 실려 온다.
+                "free_daily_limit" in lower ->
+                    "오늘 무료 AI 교정을 다 썼습니다. 구독하면 무제한입니다."
+
+                "too_many_requests" in lower ->
+                    "요청이 너무 많습니다. 내일 다시 시도해 주세요."
+
+                "server_not_configured" in lower ->
+                    "AI 서버가 아직 준비되지 않았습니다."
+
+                "invalid_install_id" in lower ->
+                    "앱을 다시 설치해 주세요 (설치 ID 오류)."
+
                 "quota" in lower || "resource_exhausted" in lower || "rate limit" in lower ->
                     "구글 API 사용 한도를 넘었습니다. 잠시 후 다시 시도해 주세요."
 
@@ -396,7 +460,8 @@ class GeminiCorrector(
             }
         }
 
-        private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+        /** 구글 직통 주소. 자기 키를 넣은 사용자는 여기로 간다. */
+        const val GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
         /**
          * 기본 모델.

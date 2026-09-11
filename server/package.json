@@ -1,0 +1,10 @@
+{
+  "name": "spell-keyboard-server",
+  "private": true,
+  "type": "module",
+  "description": "맞춤법 키보드 AI 중계 서버 (Cloudflare Worker)",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "deploy": "wrangler deploy"
+  }
+}

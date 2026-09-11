@@ -31,7 +31,7 @@ jobs:
         run: ./gradlew :core:test --no-daemon
 
       # 서명 키를 고정한다. 없으면 러너가 매번 새 디버그 키를 만들어 덮어쓰기 설치가
-      # 안 되고, 내장 API 키의 앱 제한(서명 SHA-1)도 매번 어긋난다.
+      # 안 되고, Play 에 올릴 수도 없다.
       - name: 서명 키 준비
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -46,14 +46,15 @@ jobs:
 
       - name: 디버그 APK 빌드
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # 앱에는 Gemini 키가 들어가지 않는다. 키는 중계 서버(server/)에만 있다.
+          AI_SERVER_URL: ${{ vars.AI_SERVER_URL }}
           KEYSTORE_FILE: ${{ runner.temp }}/signing.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -n "${GEMINI_API_KEY:-}" ]; then echo "내장 키: 있음"; else echo "내장 키: 없음 — 사용자 키만 동작"; fi
+          if [ -n "${AI_SERVER_URL:-}" ]; then echo "AI 서버: $AI_SERVER_URL"; else echo "AI 서버: 없음 — 사용자 키만 동작 (GitHub 변수 AI_SERVER_URL 을 넣으면 된다)"; fi
           ./gradlew :keyboard:assembleDebug --no-daemon
 
       - name: APK 모으기

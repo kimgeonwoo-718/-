@@ -13,7 +13,6 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import com.spellkeyboard.core.ai.GeminiCorrector
-import com.spellkeyboard.core.billing.AiQuota
 import com.spellkeyboard.core.clipboard.ClipboardHistory
 import com.spellkeyboard.core.editor.CorrectionEvent
 import com.spellkeyboard.core.editor.Editor
@@ -45,7 +44,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var corrector: GeminiCorrector? = null
-    private var correctorSettings: Pair<String, String>? = null
+    private var correctorSettings: CorrectorSettings? = null
+
+    /** 이 셋 중 하나라도 바뀌면 교정기를 새로 만든다. 구매 토큰이 바뀌면 헤더가 달라진다. */
+    private data class CorrectorSettings(val apiKey: String, val model: String, val purchaseToken: String)
 
     /** AI 교정은 한 번에 하나만. 연타로 요청이 겹치면 글이 꼬인다. */
     @Volatile
@@ -342,11 +344,11 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             keyboard?.showStatus(getString(R.string.ai_no_connection))
             return
         }
-        val apiKey = Prefs.apiKey(this)
-        if (apiKey.isEmpty()) {
+        if (!Prefs.aiAvailable(this)) {
             keyboard?.showStatus(getString(R.string.ai_no_key))
             return
         }
+        val apiKey = Prefs.userApiKey(this)
 
         // 되읽기가 안 되는 앱에서는 우리가 써 넣은 사본으로 대신한다. 온디바이스 교정이
         // 쓰는 것과 같은 폴백이다 — 이게 없으면 그런 앱에서 AI 만 영영 안 된다.
@@ -359,13 +361,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             return
         }
 
-        // 하루치를 다 썼는지는 보내기 전에 본다. 다 쓰고 나서 막으면 요금만 나간다.
-        // 자기 키를 넣은 사람은 구글에 직접 값을 내니 한도가 없다.
-        val quota = if (Prefs.usingOwnKey(this)) null else Prefs.quota(this)
-        if (quota != null && !quota.canUse()) {
-            keyboard?.showStatus(getString(R.string.ai_quota_spent, AiQuota.FREE_DAILY_LIMIT))
-            return
-        }
+        // 무료 한도는 서버가 센다. 폰에 있는 숫자는 누구나 고칠 수 있어서 여기서는
+        // 판단하지 않는다 — 넘겼으면 서버가 402 로 답하고, 그 문구를 그대로 보여준다.
 
         aiBusy = true
         keyboard?.showStatus(getString(R.string.ai_running))
@@ -384,18 +381,16 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             val result = engine.mapCatching { it.correct(original).getOrThrow() }
             // 이름이 낡아 거절당하면 엔진이 스스로 갈아 끼운다. 그 결과를 받아 둔다.
             val used = engine.getOrNull()?.activeModel
+            // 서버가 헤더로 알려 준 남은 횟수. 한도 초과(402)에도 실려 오니 실패해도 받는다.
+            val quota = engine.getOrNull()?.lastQuota
             mainHandler.post {
                 // 이미 시간 초과로 포기했거나 그 사이 새 요청이 시작됐으면 버린다.
                 if (aiRequestId.get() != requestId) return@post
                 aiBusy = false
                 if (used != null && used != model) rememberModel(used)
+                quota?.let { Prefs.rememberQuota(this, it) }
                 result
-                    .onSuccess {
-                        // 성공했을 때만 깎는다. 실패한 요청까지 세면 사용자는 아무것도
-                        // 못 받고 하루치만 잃는다.
-                        quota?.consume()
-                        applyAiResult(before, after, it)
-                    }
+                    .onSuccess { applyAiResult(before, after, it) }
                     .onFailure {
                         // 영어 원문을 그대로 실으면 두 줄에서 잘려 정작 원인이 안 보인다.
                         keyboard?.showStatus(
@@ -430,8 +425,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      * 무제한이면 빈 문자열이다 — 구독자에게 횟수를 들이밀 이유가 없다.
      */
     private fun remainingSuffix(): String {
-        if (Prefs.usingOwnKey(this)) return ""
-        val remaining = Prefs.quota(this).status().remaining ?: return ""
+        val remaining = Prefs.lastQuota(this)?.remaining ?: return ""
         return getString(R.string.ai_remaining_suffix, remaining)
     }
 
@@ -446,7 +440,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private fun warmUpAi() {
         if (aiWarmed) return
         aiWarmed = true
-        val apiKey = Prefs.apiKey(this)
+        val apiKey = Prefs.userApiKey(this)
         val model = Prefs.model(this)
         Thread {
             runCatching { corrector(apiKey, model).prefetchModels() }
@@ -465,19 +459,31 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     @Synchronized
     private fun rememberModel(model: String) {
         Prefs.setModel(this, model)
-        correctorSettings = correctorSettings?.copy(second = model)
+        correctorSettings = correctorSettings?.copy(model = model)
     }
 
-    /** 설정이 그대로면 만들어 둔 것을 다시 쓴다. */
+    /**
+     * 설정이 그대로면 만들어 둔 것을 다시 쓴다.
+     *
+     * 자기 키가 있으면 구글로 직접, 없으면 중계 서버로. 두 경로의 차이는 주소와 헤더뿐이고
+     * 교정기 안의 판단(모델 고르기, 갈아타기)은 같다.
+     */
     @Synchronized
     private fun corrector(apiKey: String, model: String): GeminiCorrector {
-        val settings = apiKey to model
+        val settings = CorrectorSettings(apiKey, model, Prefs.purchaseToken(this))
         val cached = corrector
         if (cached != null && correctorSettings == settings) return cached
-        // 앱 신원을 헤더로 같이 보낸다. 내장 키를 구글 콘솔에서 이 앱에만 묶어 두면
-        // 이 헤더 없이는 거절당한다 — 추출된 키를 아무 데서나 쓰는 것을 막는 장치다.
-        val transport = GeminiCorrector.HttpTransport(AppIdentity.headers(this))
-        return GeminiCorrector(apiKey, model, transport).also {
+        val fresh = if (apiKey.isNotEmpty()) {
+            GeminiCorrector(apiKey, model, GeminiCorrector.HttpTransport())
+        } else {
+            GeminiCorrector(
+                "",
+                model,
+                GeminiCorrector.HttpTransport(Prefs.serverHeaders(this)),
+                baseUrl = Prefs.serverBase()
+            )
+        }
+        return fresh.also {
             corrector = it
             correctorSettings = settings
         }

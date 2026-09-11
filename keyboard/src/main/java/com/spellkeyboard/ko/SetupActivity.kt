@@ -12,8 +12,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.spellkeyboard.core.ai.GeminiCorrector
-import com.spellkeyboard.core.billing.AiQuota
-import com.spellkeyboard.core.billing.Tier
 import com.spellkeyboard.core.correct.CorrectionEngine
 import com.spellkeyboard.core.correct.SelfTestSamples
 import com.spellkeyboard.core.spacing.Spacer
@@ -30,6 +28,7 @@ import java.io.File
 class SetupActivity : AppCompatActivity() {
 
     private var quotaOutput: TextView? = null
+    private var billing: BillingManager? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,13 +45,13 @@ class SetupActivity : AppCompatActivity() {
 
         val apiKeyField = findViewById<EditText>(R.id.api_key_field)
         val modelField = findViewById<EditText>(R.id.model_field)
-        // 내장 키는 보여주지 않는다. 사용자가 직접 넣은 것만 되돌려 준다.
         apiKeyField.setText(Prefs.userApiKey(this))
         modelField.setText(Prefs.model(this))
         findViewById<Button>(R.id.api_key_save).setOnClickListener {
             Prefs.setApiKey(this, apiKeyField.text.toString())
             Prefs.setModel(this, modelField.text.toString())
             Toast.makeText(this, R.string.setting_api_key_saved, Toast.LENGTH_LONG).show()
+            showQuota()
         }
 
         val modelsOutput = findViewById<TextView>(R.id.models_output)
@@ -63,7 +62,10 @@ class SetupActivity : AppCompatActivity() {
             // 네트워크를 타므로 UI 스레드에서 하면 화면이 멎는다.
             Thread {
                 val report = runDiagnosis(key, model.ifEmpty { GeminiCorrector.DEFAULT_MODEL })
-                runOnUiThread { modelsOutput.text = report }
+                runOnUiThread {
+                    modelsOutput.text = report
+                    showQuota()
+                }
             }.start()
         }
 
@@ -85,12 +87,15 @@ class SetupActivity : AppCompatActivity() {
         }
 
         quotaOutput = findViewById(R.id.quota_output)
-        findViewById<CompoundButton>(R.id.subscriber_switch).apply {
-            isChecked = Prefs.tier(this@SetupActivity) == Tier.SUBSCRIBER
-            setOnCheckedChangeListener { _, checked ->
-                Prefs.setTier(this@SetupActivity, if (checked) Tier.SUBSCRIBER else Tier.FREE)
+        val billingStatus = findViewById<TextView>(R.id.billing_status)
+        billing = BillingManager(this) { message ->
+            runOnUiThread {
+                billingStatus.text = message
                 showQuota()
             }
+        }.also { it.start() }
+        findViewById<Button>(R.id.subscribe_button).setOnClickListener {
+            billing?.subscribe(this)
         }
     }
 
@@ -100,41 +105,62 @@ class SetupActivity : AppCompatActivity() {
         showQuota()
     }
 
+    override fun onDestroy() {
+        billing?.destroy()
+        billing = null
+        super.onDestroy()
+    }
+
+    /**
+     * 요금 상태 한 줄.
+     *
+     * 판단은 서버가 하고, 여기 보이는 숫자는 서버가 마지막으로 알려 준 것이다. 자기 키를
+     * 쓰는 사람은 서버를 안 거치니 한도가 없다.
+     */
     private fun showQuota() {
-        val status = Prefs.quota(this).status()
-        quotaOutput?.text = when (val remaining = status.remaining) {
-            null -> getString(R.string.setting_quota_unlimited)
-            else -> getString(R.string.setting_quota_free, remaining, AiQuota.FREE_DAILY_LIMIT)
+        val view = quotaOutput ?: return
+        if (Prefs.usingOwnKey(this)) {
+            view.setText(R.string.setting_quota_own_key)
+            return
+        }
+        if (!Prefs.serverAvailable()) {
+            view.setText(R.string.setting_quota_no_server)
+            return
+        }
+        val quota = Prefs.lastQuota(this)
+        view.text = when {
+            quota == null -> getString(R.string.setting_quota_unknown)
+            quota.remaining == null -> getString(R.string.setting_quota_unlimited)
+            else -> getString(R.string.setting_quota_free, quota.remaining, quota.limit ?: 0)
         }
     }
 
     /**
      * AI 경로를 끝까지 밟아 보고 어디서 막히는지 보여준다.
      *
-     * "AI 가 작동 안 함" 만으로는 원인이 열 가지다. 한 번 눌러 그걸 가른다.
+     * "AI 가 작동 안 함" 만으로는 원인이 열 가지다. 한 번 눌러 그걸 가른다. 키보드가
+     * 실제로 쓰는 것과 **똑같은** 경로를 탄다 — 칸이 비었으면 중계 서버, 아니면 내 키.
      */
     private fun runDiagnosis(typedKey: String, model: String): String {
-        // 칸이 비었으면 내장 키로 본다 — 키보드가 실제로 그렇게 동작한다.
-        val apiKey = typedKey.ifEmpty { BuiltInKey.value }
-        if (apiKey.isEmpty()) return getString(R.string.diag_no_key_at_all)
-
-        val source = if (typedKey.isEmpty()) {
-            getString(R.string.diag_key_builtin)
-        } else {
-            getString(R.string.diag_key_own)
+        val corrector = when {
+            typedKey.isNotEmpty() -> GeminiCorrector(typedKey, model, GeminiCorrector.HttpTransport())
+            Prefs.serverAvailable() -> GeminiCorrector(
+                "",
+                model,
+                GeminiCorrector.HttpTransport(Prefs.serverHeaders(this)),
+                baseUrl = Prefs.serverBase()
+            )
+            else -> return getString(R.string.diag_no_key_at_all)
         }
-        val identity = AppIdentity.signingSha1(this) ?: "?"
 
-        val transport = GeminiCorrector.HttpTransport(AppIdentity.headers(this))
-        val corrector = GeminiCorrector(apiKey, model, transport)
         val checks = runCatching { corrector.diagnose() }.getOrElse { error ->
             return getString(
                 R.string.setting_models_failed,
                 error.message ?: error.javaClass.simpleName
             )
         }
-        val header = "키 출처: $source\n앱 서명 SHA-1: $identity\n(구글 콘솔 앱 제한에 이 값을 적습니다)\n"
-        return header + checks.joinToString("\n") { check ->
+        corrector.lastQuota?.let { Prefs.rememberQuota(this, it) }
+        return checks.joinToString("\n") { check ->
             val mark = if (check.ok) "OK  " else "실패"
             "$mark ${check.name}\n     ${check.detail}"
         }

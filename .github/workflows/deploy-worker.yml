@@ -1,0 +1,100 @@
+name: Deploy AI server
+
+on:
+  push:
+    branches:
+      - main
+      - "claude/**"
+    paths:
+      - "server/**"
+      - ".github/workflows/deploy-worker.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: 서버 로직 테스트
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: node --test
+        working-directory: server
+        run: npm test
+
+  deploy:
+    name: Cloudflare 에 배포
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 비밀값 확인
+        id: creds
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "Cloudflare 비밀값이 없어 배포를 건너뛴다 (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID)"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # D1 은 한 번 만들면 ID 가 고정인데, 그 ID 를 wrangler.toml 에 적어야 배포된다.
+      # 저장소에 실제 ID 를 박아 두는 대신 자리표시자를 두고 여기서 찾아 채운다.
+      - name: D1 데이터베이스 준비
+        if: steps.creds.outputs.ready == 'true'
+        working-directory: server
+        run: |
+          set -euo pipefail
+          id=$(npx --yes wrangler@3 d1 list --json | jq -r '.[] | select(.name=="spell-keyboard") | (.uuid // .id)' | head -n 1)
+          if [ -z "$id" ]; then
+            echo "D1 이 없어 새로 만든다"
+            id=$(npx --yes wrangler@3 d1 create spell-keyboard 2>&1 | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -n 1)
+          fi
+          [ -n "$id" ] || { echo "D1 ID 를 얻지 못했다" >&2; exit 1; }
+          sed -i "s/DATABASE_ID_PLACEHOLDER/$id/" wrangler.toml
+          echo "D1: $id"
+          npx --yes wrangler@3 d1 migrations apply spell-keyboard --remote
+
+      - name: Worker 배포
+        if: steps.creds.outputs.ready == 'true'
+        working-directory: server
+        run: npx --yes wrangler@3 deploy
+
+      - name: 비밀값 넣기
+        if: steps.creds.outputs.ready == 'true'
+        working-directory: server
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PLAY_SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          if [ -n "${GEMINI_API_KEY:-}" ]; then
+            printf '%s' "$GEMINI_API_KEY" | npx --yes wrangler@3 secret put GEMINI_API_KEY
+            echo "GEMINI_API_KEY: 넣음"
+          else
+            echo "GEMINI_API_KEY: 없음 — 서버가 503 을 돌려준다"
+          fi
+          if [ -n "${PLAY_SERVICE_ACCOUNT:-}" ]; then
+            printf '%s' "$PLAY_SERVICE_ACCOUNT" | npx --yes wrangler@3 secret put PLAY_SERVICE_ACCOUNT
+            echo "PLAY_SERVICE_ACCOUNT: 넣음"
+          else
+            echo "PLAY_SERVICE_ACCOUNT: 없음 — 결제 확인 없이 전부 무료로 동작"
+          fi
+
+      - name: 주소 확인
+        if: steps.creds.outputs.ready == 'true'
+        working-directory: server
+        run: |
+          set -euo pipefail
+          sub=$(npx --yes wrangler@3 whoami 2>/dev/null | grep -oE '[a-z0-9-]+\.workers\.dev' | head -n 1 || true)
+          echo "서버 주소(예상): https://spell-keyboard.${sub:-<계정>.workers.dev}"
+          echo "이 주소를 GitHub 변수 AI_SERVER_URL 에 넣으면 APK 빌드에 들어간다."
+          curl -fsS "https://spell-keyboard.${sub}/health" && echo || echo "(health 확인은 주소가 확정된 뒤에)"

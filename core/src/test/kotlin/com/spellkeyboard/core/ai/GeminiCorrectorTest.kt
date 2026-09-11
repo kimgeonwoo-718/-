@@ -428,6 +428,67 @@ class GeminiCorrectorTest {
         assertEquals("gemini-3.8-flash", corrector.activeModel)
     }
 
+    // --- 중계 서버 --------------------------------------------------------------
+
+    private val PROXY = "https://spell.example/v1beta/models"
+
+    @Test
+    fun `중계 서버로 보내면 호스트만 바뀌고 키는 비어 있다`() {
+        val transport = FakeTransport(ok("고침"))
+        GeminiCorrector("", model = "gemini-x", transport = transport, baseUrl = PROXY).correct("원문")
+
+        assertEquals("$PROXY/gemini-x:generateContent", transport.url)
+        assertEquals("", transport.apiKey)
+    }
+
+    @Test
+    fun `서버가 헤더로 알려 준 남은 횟수를 기억한다`() {
+        val response = GeminiCorrector.HttpResponse(
+            200,
+            ok("고침").body,
+            mapOf("x-plan" to "free", "x-quota-remaining" to "3", "x-quota-limit" to "5")
+        )
+        val corrector = GeminiCorrector("", transport = FakeTransport(response), baseUrl = PROXY)
+        corrector.correct("원문")
+
+        assertEquals(GeminiCorrector.Quota(3, 5, "free"), corrector.lastQuota)
+    }
+
+    @Test
+    fun `구글 직통이면 요금 상태가 없다`() {
+        val corrector = GeminiCorrector("key", transport = FakeTransport(ok("고침")))
+        corrector.correct("원문")
+        assertEquals(null, corrector.lastQuota)
+    }
+
+    @Test
+    fun `한도 초과 402 는 모델을 옮기지 않고 바로 알린다`() {
+        val transport = ScriptedTransport(
+            GeminiCorrector.HttpResponse(
+                402,
+                "{\"error\":{\"message\":\"free_daily_limit\"}}",
+                mapOf("x-plan" to "free", "x-quota-remaining" to "0", "x-quota-limit" to "5")
+            )
+        )
+        val corrector = GeminiCorrector("", transport = transport, sleep = {}, baseUrl = PROXY)
+        val result = corrector.correct("원문")
+
+        assertTrue(result.isFailure)
+        assertContains(GeminiCorrector.explain(result.exceptionOrNull()?.message), "구독")
+        // 서버가 한도라고 했는데 다른 모델을 두드려 봐야 소용없다. 한 번으로 끝낸다.
+        assertEquals(1, transport.urls.size)
+        assertEquals(0, corrector.lastQuota?.remaining)
+    }
+
+    @Test
+    fun `중계 서버 경유면 키 없이도 진단이 끝까지 간다`() {
+        val transport = ScriptedTransport(modelList("gemini-x"), ok("안녕하세요"))
+        val checks = GeminiCorrector("", model = "gemini-x", transport = transport, baseUrl = PROXY).diagnose()
+
+        assertTrue(checks.all { it.ok }, "$checks")
+        assertContains(checks.first().detail, "중계")
+    }
+
     // --- 오류 문구 --------------------------------------------------------------
 
     @Test

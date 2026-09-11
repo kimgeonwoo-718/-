@@ -108,31 +108,50 @@ AI 교정에만 쓴다 (온디바이스 교정은 네트워크 없이 동작).
 
 ---
 
-## 내장 API 키 — 배포 전에 할 것 (2026-09-11)
+## AI 중계 서버 + Play 구독 (2026-09-11)
 
-앱이 사용자 키 없이도 AI 교정을 하려면 CI 에 비밀값을 넣어야 한다. 소스에는 키가 없다.
+앱에는 Gemini 키가 **없다.** 사용자가 자기 키를 넣지 않으면 `server/`(Cloudflare Worker)로
+보내고, 서버가 키를 붙여 구글로 넘긴다. 서버가 무료 한도(설치 ID 당 하루 5 회)를 세고,
+`X-Purchase-Token` 을 Play Developer API 에 물어 구독자를 가린다. 폰의 요금제 스위치는
+없앴다 — 폰에 저장된 값은 누구나 고칠 수 있다.
 
-저장소 → Settings → Secrets and variables → Actions → New repository secret:
+```
+앱 ──(X-Install-Id, X-Purchase-Token)──▶ Worker ──(x-goog-api-key)──▶ Gemini
+                                          ├─ D1: 설치 ID·IP 별 하루 사용량
+                                          └─ Play API 로 구독 확인 (1시간 캐시)
+```
 
-| 이름 | 값 |
-|---|---|
-| `GEMINI_API_KEY` | Gemini API 키 |
-| `KEYSTORE_BASE64` | 아래 명령으로 만든 서명 키를 base64 로 |
-| `KEYSTORE_PASSWORD` | 키스토어 비밀번호 |
-| `KEY_ALIAS` | `spellkeyboard` |
-| `KEY_PASSWORD` | 키 비밀번호 (키스토어와 같아도 됨) |
+서버 로직은 `server/test` 에 있고 `node --test` 로 돈다(의존성 없음). 앱은 호스트만
+바꾸므로 모델 고르기·갈아타기 로직과 그 테스트는 그대로다.
 
-서명 키 만들기 (한 번만, 파일은 안전한 곳에 보관 — 잃으면 기존 설치 위에 업데이트 못 함):
+### 사용자가 해야 하는 것 (순서대로)
 
-    keytool -genkeypair -v -keystore spellkeyboard.jks -alias spellkeyboard \
-      -keyalg RSA -keysize 2048 -validity 10000
-    base64 -w0 spellkeyboard.jks   # 이 출력을 KEYSTORE_BASE64 에
+**1. Cloudflare** — https://dash.cloudflare.com 가입(무료)
+- 오른쪽 위 프로필 → My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" 템플릿
+  → Continue → Create Token → 복사
+- Workers & Pages 페이지 오른쪽에 Account ID 가 보인다 → 복사
+- GitHub 비밀값: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+- `server/**` 를 건드린 푸시(또는 Actions 에서 "Deploy AI server" 수동 실행)가 D1 을 만들고
+  배포한다. 로그 끝에 주소가 찍힌다: `https://spell-keyboard.<계정>.workers.dev`
+- 그 주소를 GitHub **변수**(Secrets 옆 Variables 탭) `AI_SERVER_URL` 에 넣는다 → 다음 APK
+  빌드부터 앱이 서버를 쓴다. 진단 화면 첫 줄이 "중계 서버 경유" 로 바뀌면 된다.
 
-서명을 고정하면 (1) 매번 지우고 설치할 필요가 없어지고 (2) 아래 앱 제한이 동작한다.
+**2. Play Console** — https://play.google.com/console 개발자 등록($25, 개인 가능)
+- 앱 만들기 → 패키지 `com.spellkeyboard.ko`
+- 수익 창출 → 구독 → 구독 만들기: 상품 ID **`ai_unlimited_monthly`** (BillingManager 와
+  글자 하나까지 같아야 한다), 기본 요금제 월 2,990 원
+- 내부 테스트 트랙에 APK 올리고 테스터 이메일 등록 → 그 링크로 설치한 앱에서만 결제창이 뜬다.
+  사이드로드한 APK 에서는 Play 결제가 "상품을 찾지 못했습니다" 로 끝난다 — 정상이다.
+- 설정 → API 액세스 → 서비스 계정 만들기(Cloud Console 로 넘어감) → 키(JSON) 만들기 →
+  Play Console 로 돌아와 그 계정에 "재무 데이터 보기" 권한 부여
+- 그 JSON 파일 내용을 통째로 GitHub 비밀값 `PLAY_SERVICE_ACCOUNT` 에 → 서버 재배포
+  ("Deploy AI server" 수동 실행). 이게 없으면 서버는 모든 토큰을 무료로 본다.
 
-**진짜 방어 — 구글 콘솔에서 키를 앱에 묶기.** APK 에 든 키는 반드시 추출된다.
-console.cloud.google.com → API 및 서비스 → 사용자 인증 정보 → 해당 키 →
-애플리케이션 제한사항: Android 앱 → 패키지 `com.spellkeyboard.ko`,
-SHA-1 은 앱의 "AI 연결 진단" 화면 맨 위에 찍힌 값. 이걸 걸면 추출된 키는 우리 앱
-서명 없이는 거절당한다. (Gemini API 가 이 제한을 존중하는지는 이 환경에서 검증하지
-못했다 — 걸고 나서 진단이 계속 OK 인지 확인할 것.)
+### 알아 둘 구멍
+
+- 설치 ID 는 지우고 다시 깔면 새로 난다 → 무료 5 회도 새로 난다. IP 한도(하루 300)가
+  한 번 더 거른다. 제대로 막으려면 Play Integrity 나 로그인 — 아직 그럴 가치가 없다.
+- Play 확인 결과를 1 시간 캐시하므로 해지 후 그만큼은 더 쓸 수 있다.
+- D1 무료 등급: 하루 쓰기 10 만 건. 교정 한 번에 쓰기 두 번(설치 ID, IP).
+- Billing 라이브러리 7.1.1 의 `PendingPurchasesParams` API 는 이 컨테이너에서 컴파일해
+  보지 못했다(AGP 차단). CI 가 첫 검증이다.
