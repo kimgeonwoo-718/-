@@ -63,6 +63,32 @@ jobs:
           echo "D1: $id"
           npx --yes wrangler@3 d1 migrations apply spell-keyboard --remote
 
+      # workers.dev 주소는 계정마다 한 번 정해야 하는데, 그게 없으면 wrangler deploy 가
+      # "subdomain 을 등록하라" 며 죽는다. 대시보드를 뒤지게 하는 대신 여기서 API 로 정한다.
+      # 이름은 전 세계에서 유일해야 하므로 후보를 몇 개 차례로 시도한다.
+      - name: workers.dev 주소 준비
+        if: steps.creds.outputs.ready == 'true'
+        id: subdomain
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          current=$(curl -fsS -H "$auth" "$api" | jq -r '.result.subdomain // empty' || true)
+          if [ -z "$current" ]; then
+            suffix=$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | cut -c1-6)
+            for candidate in "spell-keyboard" "spell-keyboard-${suffix}" "spellkb-${suffix}-$RANDOM"; do
+              echo "workers.dev 이름 시도: $candidate"
+              if curl -fsS -X PUT -H "$auth" -H 'Content-Type: application/json' \
+                   --data "{\"subdomain\":\"$candidate\"}" "$api" >/dev/null; then
+                current="$candidate"
+                break
+              fi
+            done
+          fi
+          [ -n "$current" ] || { echo "workers.dev 이름을 정하지 못했다" >&2; exit 1; }
+          echo "workers.dev 이름: $current"
+          echo "name=$current" >> "$GITHUB_OUTPUT"
+
       - name: Worker 배포
         if: steps.creds.outputs.ready == 'true'
         working-directory: server
@@ -91,10 +117,15 @@ jobs:
 
       - name: 주소 확인
         if: steps.creds.outputs.ready == 'true'
-        working-directory: server
         run: |
           set -euo pipefail
-          sub=$(npx --yes wrangler@3 whoami 2>/dev/null | grep -oE '[a-z0-9-]+\.workers\.dev' | head -n 1 || true)
-          echo "서버 주소(예상): https://spell-keyboard.${sub:-<계정>.workers.dev}"
-          echo "이 주소를 GitHub 변수 AI_SERVER_URL 에 넣으면 APK 빌드에 들어간다."
-          curl -fsS "https://spell-keyboard.${sub}/health" && echo || echo "(health 확인은 주소가 확정된 뒤에)"
+          url="https://spell-keyboard.${{ steps.subdomain.outputs.name }}.workers.dev"
+          echo "::notice title=AI 서버 주소::$url"
+          echo "서버 주소: $url"
+          echo "이 주소를 GitHub 변수 AI_SERVER_URL 에 넣으면 다음 APK 빌드부터 앱이 서버를 쓴다."
+          # 막 정한 주소는 DNS 가 퍼지는 데 잠깐 걸린다. 몇 번 두드려 보고, 안 되면 실패로 치지 않는다.
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 10 "$url/health"; then echo; echo "health: OK"; exit 0; fi
+            sleep 10
+          done
+          echo "health 응답이 아직 없다 — 몇 분 뒤 브라우저에서 $url/health 를 열어 보면 된다"

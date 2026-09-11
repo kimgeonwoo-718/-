@@ -131,8 +131,13 @@ AI 교정에만 쓴다 (온디바이스 교정은 네트워크 없이 동작).
   → Continue → Create Token → 복사
 - Workers & Pages 페이지 오른쪽에 Account ID 가 보인다 → 복사
 - GitHub 비밀값: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+- GitHub 비밀값 `GEMINI_API_KEY` 에 AI Studio 키. 이게 없으면 서버는 뜨지만 교정 요청마다
+  503(`server_not_configured`)을 돌려준다.
 - `server/**` 를 건드린 푸시(또는 Actions 에서 "Deploy AI server" 수동 실행)가 D1 을 만들고
-  배포한다. 로그 끝에 주소가 찍힌다: `https://spell-keyboard.<계정>.workers.dev`
+  workers.dev 이름을 API 로 정하고(계정당 한 번, 대시보드 안 거침) 배포한다. 실행 요약 위에
+  노란 notice 로 주소가 뜬다: `https://spell-keyboard.<이름>.workers.dev`
+- Cloudflare 토큰은 "Edit Cloudflare Workers" 템플릿에 **Account / D1 / Edit** 를 더해야 한다.
+  Account ID 는 대시보드 주소창의 32 자리다 (새 대시보드에는 따로 적힌 칸이 없다).
 - 그 주소를 GitHub **변수**(Secrets 옆 Variables 탭) `AI_SERVER_URL` 에 넣는다 → 다음 APK
   빌드부터 앱이 서버를 쓴다. 진단 화면 첫 줄이 "중계 서버 경유" 로 바뀌면 된다.
 
