@@ -499,6 +499,23 @@ class GeminiCorrectorTest {
     }
 
     @Test
+    fun `최신 세대보다 값싼 등급을 먼저 고른다`() {
+        // 실기기가 실제로 받아 온 목록. 예전 기준으로는 3.8-flash 가 뽑혀서
+        // 비싼 모델을 계속 썼다.
+        assertEquals(
+            "gemini-3.5-flash-lite",
+            GeminiCorrector.pickModel(
+                listOf(
+                    "gemini-3.8-flash",
+                    "gemini-3.5-flash-lite",
+                    "gemini-3.7-flash",
+                    "gemini-3.6-flash"
+                )
+            )
+        )
+    }
+
+    @Test
     fun `모델 목록 오류도 메시지를 전한다`() {
         val transport = FakeTransport(
             GeminiCorrector.HttpResponse(

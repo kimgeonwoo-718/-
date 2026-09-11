@@ -456,17 +456,25 @@ class GeminiCorrector(
          * 실기기에서 `gemini-2.5-flash` 가 셋 중 둘은 "high demand" 로 거절당했다.
          * 이 일에 그만한 모델을 쓸 이유가 없다.
          *
-         * 같은 계열이면 최신이, 같은 세대면 미리보기보다 정식 출시본이 낫다 —
-         * 미리보기는 예고 없이 사라진다.
+         * ## 등급이 세대를 이긴다
+         *
+         * 예전에는 세대에 100 점씩 줘서 `gemini-3.8-flash` 가 `gemini-3.5-flash-lite` 를
+         * 420 대 415 로 눌렀다. 그래서 실기기가 계속 비싼 쪽을 골랐다. 교정에는 어느
+         * 세대든 넘치게 똑똑하므로 세대는 같은 등급 안에서만 따진다.
+         *
+         * 미리보기는 예고 없이 사라져서 한 등급 아래로 본다.
          */
         internal fun rank(name: String): Int {
             val lower = name.lowercase()
-            var score = ((VERSION.find(lower)?.value?.toDoubleOrNull() ?: 0.0) * 100).toInt()
-            if (lower.contains("flash")) score += 40
-            if (lower.contains("lite")) score += 25
-            if (lower.contains("pro")) score -= 30
-            if (lower.contains("preview") || lower.contains("exp")) score -= 20
-            return score
+            val version = ((VERSION.find(lower)?.value?.toDoubleOrNull() ?: 0.0) * 10).toInt()
+            val tier = when {
+                lower.contains("lite") -> 3000
+                lower.contains("flash") -> 2000
+                lower.contains("pro") -> 0
+                else -> 1000
+            }
+            val preview = if (lower.contains("preview") || lower.contains("exp")) 1500 else 0
+            return tier + version - preview
         }
 
         /**
