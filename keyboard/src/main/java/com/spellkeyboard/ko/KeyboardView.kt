@@ -111,7 +111,11 @@ class KeyboardView @JvmOverloads constructor(
         }
         addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
 
-        rowContainer = LinearLayout(context).apply { orientation = VERTICAL }
+        rowContainer = LinearLayout(context).apply {
+            orientation = VERTICAL
+            // 손가락 두 개가 서로 다른 줄의 키를 동시에 눌러도 둘 다 받는다.
+            isMotionEventSplittingEnabled = true
+        }
         addView(rowContainer, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
         clipboardList = LinearLayout(context).apply { orientation = VERTICAL }
@@ -263,7 +267,15 @@ class KeyboardView @JvmOverloads constructor(
         }
 
         rowContainer.addView(buildRow { rows[0].forEach { addCharKey(it) } })
-        rowContainer.addView(buildRow { rows[1].forEach { addCharKey(it) } })
+
+        // 둘째 줄은 9 개라 한 칸이 남는다. 좌우에 반 칸씩 둬서 **가운데**에 놓는다 —
+        // 그냥 두면 왼쪽으로 쏠려서 위아래 줄과 키 위치가 어긋나고, 그 어긋남이
+        // 그대로 오타가 된다.
+        rowContainer.addView(buildRow {
+            addSpacer(0.5f)
+            rows[1].forEach { addCharKey(it) }
+            addSpacer(0.5f)
+        })
 
         // 시프트 + 문자 + 백스페이스.
         rowContainer.addView(buildRow {
@@ -280,18 +292,20 @@ class KeyboardView @JvmOverloads constructor(
         // 자판 전환과 스페이스.
         rowContainer.addView(buildRow {
             val symbolLabel = if (mode == KeyboardMode.SYMBOLS) "가A" else "!#1"
-            addActionKey(symbolLabel, KeyAction.SYMBOLS, weight = 1.4f)
-            addActionKey(if (mode == KeyboardMode.ENGLISH) "EN" else "한", KeyAction.LANGUAGE, 1.4f)
+            addActionKey(symbolLabel, KeyAction.SYMBOLS, weight = 1.35f)
+            val language = if (mode == KeyboardMode.ENGLISH) "EN" else "한/영"
+            addActionKey(language, KeyAction.LANGUAGE, weight = 1.05f)
             addCharKey(',', weight = 0.9f)
-            addActionKey("", KeyAction.SPACE, weight = 3.9f, letterKey = true)
+            addActionKey("", KeyAction.SPACE, weight = 4.35f, letterKey = true)
             addCharKey('.', weight = 0.9f)
-            addActionKey("↵", KeyAction.ENTER, weight = 1.5f)
+            addActionKey("↵", KeyAction.ENTER, weight = 1.45f)
         })
     }
 
     private fun buildRow(build: LinearLayout.() -> Unit): LinearLayout {
         val row = LinearLayout(context).apply {
             orientation = HORIZONTAL
+            isMotionEventSplittingEnabled = true
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(KEY_HEIGHT_DP)).apply {
                 topMargin = dp(4)
             }
@@ -379,43 +393,58 @@ class KeyboardView @JvmOverloads constructor(
         alternate: Char? = null,
         repeatable: Boolean = false
     ) {
-        val showPopup = alternate?.let { alt -> Runnable { showAlternate(view, alt) } }
+        // **이 상태는 키마다 따로 있어야 한다.** 빠르게 치면 앞 손가락이 떨어지기 전에
+        // 다음 손가락이 닿아서 두 키가 동시에 눌린 상태가 된다. 상태를 하나로 공유하면
+        // 나중 키를 떼는 순간 앞 키의 대체 글자가 들어가고, 앞 키를 떼면 아무 일도
+        // 일어나지 않는다 — 엉뚱한 글자가 들어가거나 씹힌 것처럼 보인다.
+        var previewing = false
+        val showPreview = alternate?.let { alt ->
+            Runnable {
+                showAlternate(view, alt)
+                previewing = true
+            }
+        }
+
         view.setOnTouchListener { target, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    previewing = false
                     target.isPressed = true
                     target.performHapticFeedback(
                         HapticFeedbackConstants.KEYBOARD_TAP,
                         HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
                     )
                     onPress()
-                    showPopup?.let { repeatHandler.postDelayed(it, LONG_PRESS_MS) }
+                    showPreview?.let { repeatHandler.postDelayed(it, LONG_PRESS_MS) }
                     if (repeatable) repeatHandler.postDelayed(repeatBackspace, REPEAT_DELAY_MS)
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    // 키 밖으로 끌고 나가면 취소한다. 잘못 눌렀을 때 빠져나갈 길이 있어야 한다.
-                    if (!insideView(target, event)) {
-                        target.isPressed = false
-                        showPopup?.let { repeatHandler.removeCallbacks(it) }
+                    // 키 밖으로 끌고 나가면 대체 글자만 취소한다. 이미 들어간 글자는
+                    // 그대로 둔다 — 여기서 지우면 빠르게 칠 때 글자가 사라진다.
+                    if (previewing && !insideView(target, event)) {
+                        showPreview?.let { repeatHandler.removeCallbacks(it) }
+                        previewing = false
                         dismissAlternate()
                     }
                 }
 
                 MotionEvent.ACTION_UP -> {
                     target.isPressed = false
-                    showPopup?.let { repeatHandler.removeCallbacks(it) }
+                    showPreview?.let { repeatHandler.removeCallbacks(it) }
                     repeatHandler.removeCallbacks(repeatBackspace)
-                    // 미리보기가 떠 있었으면 그것이 사용자가 고른 글자다.
-                    pendingAlternate?.let { listener?.onLongPressChar(it) }
-                    dismissAlternate()
+                    // 미리보기를 띄운 것이 **이 키** 일 때만 갈아 끼운다.
+                    if (previewing && alternate != null) listener?.onLongPressChar(alternate)
+                    if (previewing) dismissAlternate()
+                    previewing = false
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
                     target.isPressed = false
-                    showPopup?.let { repeatHandler.removeCallbacks(it) }
+                    showPreview?.let { repeatHandler.removeCallbacks(it) }
                     repeatHandler.removeCallbacks(repeatBackspace)
-                    dismissAlternate()
+                    if (previewing) dismissAlternate()
+                    previewing = false
                 }
             }
             true
@@ -510,10 +539,16 @@ class KeyboardView @JvmOverloads constructor(
     ).toInt()
 
     private companion object {
-        const val KEY_HEIGHT_DP = 48
+        const val KEY_HEIGHT_DP = 46
         const val CLIPBOARD_HEIGHT_DP = 244
         const val REPEAT_DELAY_MS = 400L
         const val REPEAT_INTERVAL_MS = 55L
-        const val LONG_PRESS_MS = 300L
+        /**
+         * 이만큼 누르고 있어야 대체 글자가 뜬다.
+         *
+         * 300ms 는 너무 짧았다. 또박또박 치는 사람은 평범한 타이핑에서도 그 정도는
+         * 누르고 있어서, 의도치 않게 쌍자음이 들어갔다. 그게 "키가 씹힌다" 로 느껴진다.
+         */
+        const val LONG_PRESS_MS = 450L
     }
 }

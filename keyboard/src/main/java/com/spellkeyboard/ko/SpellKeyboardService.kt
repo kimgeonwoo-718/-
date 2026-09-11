@@ -62,6 +62,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      */
     private var fieldCorrectable = true
 
+    /** 우리가 마지막으로 편집한 시각. 우리가 일으킨 커서 알림을 가려내는 데 쓴다. */
+    @Volatile
+    private var lastEditAt = 0L
+
     /** 모델 목록을 이미 받아 뒀는가. 키보드가 뜰 때마다 다시 받을 이유는 없다. */
     @Volatile
     private var aiWarmed = false
@@ -177,6 +181,13 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd
         )
         if (!session.isComposing()) return
+
+        // **우리가 방금 고친 직후의 알림은 우리 것이다.**
+        //
+        // 이 알림은 비동기라 빠르게 치면 순서가 밀려 도착한다. 그걸 "사용자가 커서를
+        // 옮겼다" 로 잘못 읽으면 조합이 한복판에서 끊겨, 치던 글자가 깨지거나 다음
+        // 자모가 새 글자로 시작한다 — 실기기에서 "키가 씹힌다" 로 보인다.
+        if (android.os.SystemClock.uptimeMillis() - lastEditAt < SELF_EDIT_WINDOW_MS) return
 
         // 우리가 조합을 갱신한 직후에는 커서가 조합 영역 끝에 있다. 그렇지 않다면
         // 사용자가 직접 커서를 옮겼다는 뜻이라 조합을 끊는다.
@@ -473,7 +484,15 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         keyboard?.setMode(if (current == target) KeyboardMode.KOREAN else target)
     }
 
-    private fun editor(): Editor? = currentInputConnection?.let(::ConnectionEditor)
+    /**
+     * 입력을 고칠 통로. 가져가는 순간을 "우리가 방금 건드렸다" 로 기록해 둔다.
+     *
+     * 모든 입력 경로가 이걸 거치므로 여기 한 군데만 찍으면 된다.
+     */
+    private fun editor(): Editor? {
+        lastEditAt = android.os.SystemClock.uptimeMillis()
+        return currentInputConnection?.let(::ConnectionEditor)
+    }
 
     // --- 상태 표시 -----------------------------------------------------------
 
@@ -520,6 +539,14 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private companion object {
         const val DICTIONARY_DIR = "spacing"
+
+        /**
+         * 편집 직후 이 시간 안에 온 커서 알림은 우리가 일으킨 것으로 본다.
+         *
+         * 사용자가 글자를 친 지 0.2 초 안에 커서를 직접 옮기는 일은 거의 없다.
+         * 놓치더라도 다음 탭에서 잡히지만, 잘못 끊으면 글자가 깨진다.
+         */
+        const val SELF_EDIT_WINDOW_MS = 200L
 
         /** AI 교정에 실어 보낼 커서 앞뒤 최대 글자 수. */
         const val AI_CONTEXT_CHARS = 2000
