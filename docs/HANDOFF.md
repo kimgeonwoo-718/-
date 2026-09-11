@@ -72,10 +72,10 @@ APK: https://github.com/kimgeonwoo-718/-/releases/tag/apk-latest (푸시할 때�
 
 ### AI 교정이 계속 실패한다면
 
-`GeminiCorrector.DEFAULT_MODEL = "gemini-2.5-flash"` 는 **검증된 적이 없다.**
-이 컨테이너에서 구글 모델 문서가 막혀 있어서 확인할 방법이 없었다.
-지금은 서버가 거절하면 `ListModels` 로 자동 교체하게 해뒀지만, 그 경로도 실기기에서
-확인된 적 없다. 사용자에게 모델 목록을 받아 기본값을 **실제 이름으로 박는 게** 확실하다.
+`GeminiCorrector.DEFAULT_MODEL = "gemini-3.5-flash-lite"` — 구글이 2.x 를 404 로 거절하며
+직접 지목한 이름이다(2026-09). 서버가 거절하면 `ListModels` 로 자동 교체한다. 진단 화면의
+실패 줄에는 번역문 아래 "원문:" 으로 예외 종류와 서버 메시지 앞부분이 같이 찍힌다.
+"Deploy AI server" 로그 끝에는 CI 가 서버를 거쳐 모델 목록과 교정 한 번을 보낸 결과가 있다.
 
 ### 품질을 더 올리려면
 

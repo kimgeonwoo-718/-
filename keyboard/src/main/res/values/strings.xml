@@ -40,7 +40,7 @@
     <string name="setting_api_key_hint">비워 두면 앱 서버를 통해 교정합니다 (무료 하루 5회)</string>
     <string name="setting_api_key_save">저장</string>
     <string name="setting_model">모델 (비우면 기본값)</string>
-    <string name="setting_model_hint">gemini-2.5-flash</string>
+    <string name="setting_model_hint">gemini-3.5-flash-lite</string>
     <string name="diag_no_key_at_all">키가 없습니다. 이 빌드에는 내장 키가 없고, 직접 넣은 키도 없습니다.</string>
     <string name="diag_key_builtin">앱 내장 키 (무료: 하루 5회, 구독: 무제한)</string>
     <string name="diag_key_own">내 키 (한도 없음, 요금은 내 구글 계정)</string>

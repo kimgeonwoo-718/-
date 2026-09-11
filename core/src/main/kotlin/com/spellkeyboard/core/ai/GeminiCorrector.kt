@@ -328,7 +328,7 @@ class GeminiCorrector(
         // 목록 조회는 키와 네트워크를 한꺼번에 본다. 실패하면 그 아래는 볼 것도 없다.
         val models = runCatching { readModels(listModels()) }
         val available = models.getOrElse { error ->
-            checks += Check("서버 연결", false, describe(error))
+            checks += Check("서버 연결", false, describeWithRaw(error))
             return checks
         }
         checks += Check("서버 연결", true, "쓸 수 있는 모델 ${available.size}개")
@@ -349,7 +349,7 @@ class GeminiCorrector(
         val corrected = correct(sample)
         checks += corrected.fold(
             onSuccess = { Check("실제 교정", true, "\"$sample\" → \"$it\"") },
-            onFailure = { Check("실제 교정", false, describe(it)) }
+            onFailure = { Check("실제 교정", false, describeWithRaw(it)) }
         )
         // 자동 교체가 일어났으면 그게 제일 쓸모 있는 정보다 — 설정에 박아 두면 된다.
         if (activeModel != before) {
@@ -368,6 +368,18 @@ class GeminiCorrector(
 
     private fun describe(error: Throwable): String =
         explain(error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName)
+
+    /**
+     * 진단 화면용: 번역문 뒤에 원문도 붙인다.
+     *
+     * 번역이 틀리게 짚으면 원문 없이는 되돌아갈 길이 없다. 실제로 "모델을 찾을 수 없습니다"
+     * 한 줄만 보고 서버 어느 단계가 막혔는지 알 수 없었다. 예외 종류도 같이 적는다 —
+     * 네트워크 예외인지 서버가 준 오류인지가 거기서 갈린다.
+     */
+    private fun describeWithRaw(error: Throwable): String {
+        val raw = error.message?.trim().orEmpty().take(RAW_HINT_CHARS)
+        return describe(error) + "\n     원문: ${error.javaClass.simpleName}: $raw"
+    }
 
     /**
      * 안드로이드와 JVM 양쪽에 있는 것만 쓴다.
@@ -468,14 +480,18 @@ class GeminiCorrector(
          *
          * 맞춤법 교정에는 lite 로 충분하고, 빠르고 싸고 덜 붐빈다. 이름이 낡았거나
          * 이 키로 못 쓰면 목록을 받아 스스로 옮겨 가므로 크게 틀려도 복구된다.
+         *
+         * 2.x 계열은 구글이 "새 사용자에게는 제공하지 않는다" 며 404 로 거절한다
+         * (2026-09 실측). 그 오류문이 지목한 이름이 이것이다.
          */
-        const val DEFAULT_MODEL = "gemini-2.0-flash-lite"
+        const val DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
         /** 진단에서 실제로 한 번 보내 보는 문장. 짧고, 틀린 데가 분명한 것. */
         const val DIAGNOSTIC_SAMPLE = "안녕하새요 오늘 날시가 조아요"
 
         private const val MAX_OUTPUT_TOKENS = 4096
         private const val MODEL_PAGE_SIZE = 200
+        private const val RAW_HINT_CHARS = 200
 
         /** 잠시 뒤면 풀리는 HTTP 상태. 429 는 요청이 몰림, 5xx 는 서버 쪽 사정. */
         /** 전송 자체가 실패했을 때 붙이는 자리 코드. 타임아웃도 옮겨 볼 이유가 된다. */
