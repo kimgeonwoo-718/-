@@ -10,11 +10,15 @@ plugins {
  * 키를 붙여 구글로 넘긴다. CI 변수 `AI_SERVER_URL` 이나 로컬 `gradle.properties` 의
  * `aiServerUrl` 에서 읽는다. 비어 있으면 앱은 사용자가 직접 넣은 키로만 AI 교정을 한다.
  */
-val aiServerUrl: String = (
-    System.getenv("AI_SERVER_URL")
+val aiServerUrl: String = run {
+    val raw = System.getenv("AI_SERVER_URL")
         ?: (project.findProperty("aiServerUrl") as String?)
         ?: ""
-    ).trim().trimEnd('/')
+    // 사람이 붙여넣은 값이다. 앞뒤 공백은 물론 줄바꿈·따옴표·"Value:" 같은 군더더기가
+    // 섞여 들어온 적이 있다. 주소처럼 생긴 조각 하나만 건지고 나머지는 버린다.
+    Regex("""https?://[A-Za-z0-9.\-]+(?::\d+)?(?:/[^\s"'\\]*)?""")
+        .find(raw)?.value?.trimEnd('/') ?: ""
+}
 
 /**
  * 서명 키.
