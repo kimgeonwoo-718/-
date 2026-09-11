@@ -135,13 +135,16 @@ jobs:
           fi
           # 앱이 맨 처음 하는 일이 모델 목록 받기다. 이게 막히면 교정도, 모델 갈아타기도
           # 전부 막힌다. 구글이 뭐라고 하는지 원문 앞부분을 그대로 남긴다 (키는 안 찍힌다).
+          # (파이프로 head 에 넘기면 curl 이 SIGPIPE 로 죽어 단계가 실패한다. 파일로 받는다.)
           echo "----- 모델 목록 (앱과 같은 요청) -----"
-          curl -sS --max-time 20 -w '\nHTTP %{http_code}\n' -H 'Content-Type: application/json' \
-            -H 'X-Install-Id: ci-smoke-test-0000' "$url/v1beta/models?pageSize=200" | head -c 600
-          echo
+          curl -sS --max-time 20 -o models.json -w 'HTTP %{http_code}\n' \
+            -H 'Content-Type: application/json' -H 'X-Install-Id: ci-smoke-test-0000' \
+            "$url/v1beta/models?pageSize=200" || true
+          jq -r '.models[]?.name' models.json 2>/dev/null | head -n 40 || true
+          [ -s models.json ] && ! jq -e '.models' models.json >/dev/null 2>&1 && head -c 600 models.json && echo
           echo "----- 교정 한 번 (설치 ID 는 CI 전용) -----"
-          curl -sS --max-time 30 -w '\nHTTP %{http_code}\n' -X POST \
+          curl -sS --max-time 30 -o gen.json -w 'HTTP %{http_code}\n' -X POST \
             -H 'Content-Type: application/json' -H 'X-Install-Id: ci-smoke-test-0000' \
             --data '{"contents":[{"parts":[{"text":"안녕하새요 라고만 답해"}]}]}' \
-            "$url/v1beta/models/gemini-3.5-flash-lite:generateContent" | head -c 1200
-          echo
+            "$url/v1beta/models/gemini-3.5-flash-lite:generateContent" || true
+          head -c 1200 gen.json; echo
