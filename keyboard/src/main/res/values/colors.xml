@@ -1,10 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  삼성 키보드(One UI) 밝은 테마를 눈으로 맞춘 값이다.
+
+  핵심은 대비를 낮게 가져가는 것 — 바탕은 거의 흰색에 가깝고, 글자 키는 순백,
+  기능 키만 한 단계 어둡다. 예전 값(#D5D8DE 바탕)은 대비가 세서 눌린 키가
+  어디인지보다 자판 전체가 먼저 눈에 들어왔다.
+-->
 <resources>
-    <color name="keyboard_background">#D5D8DE</color>
+    <color name="keyboard_background">#F2F2F6</color>
     <color name="key_background">#FFFFFF</color>
-    <color name="key_action_background">#B4BAC4</color>
-    <color name="key_accent_background">#3F6FE0</color>
-    <color name="key_pressed_background">#8E96A3</color>
-    <color name="key_text">#11151C</color>
-    <color name="status_text">#3A4149</color>
+    <color name="key_action_background">#CDD1D9</color>
+    <color name="key_accent_background">#CDD1D9</color>
+    <color name="key_pressed_background">#B9BEC8</color>
+    <color name="key_text">#101114</color>
+    <color name="key_hint_text">#8A8F99</color>
+    <color name="status_text">#5A606B</color>
+    <color name="toolbar_button">#E4E6EB</color>
+    <color name="popup_background">#2E7BF6</color>
+    <color name="popup_text">#FFFFFF</color>
+    <color name="panel_item_background">#FFFFFF</color>
 </resources>

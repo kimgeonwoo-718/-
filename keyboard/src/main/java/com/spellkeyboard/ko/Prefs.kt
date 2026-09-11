@@ -4,6 +4,7 @@ import android.content.Context
 import com.spellkeyboard.core.ai.GeminiCorrector
 import com.spellkeyboard.core.billing.AiQuota
 import com.spellkeyboard.core.billing.Tier
+import com.spellkeyboard.core.clipboard.ClipboardHistory
 
 /** 키보드 설정. */
 object Prefs {
@@ -15,6 +16,7 @@ object Prefs {
     private const val KEY_TIER = "tier"
     private const val KEY_QUOTA_DAY = "quota_day"
     private const val KEY_QUOTA_USED = "quota_used"
+    private const val KEY_CLIPBOARD = "clipboard"
 
     fun autoCorrectEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_AUTO_CORRECT, true)
@@ -85,6 +87,23 @@ object Prefs {
                 .apply()
         }
     }
+
+    /**
+     * 복사해 둔 글 목록을 담아 두는 곳.
+     *
+     * `StringSet` 은 순서를 안 지켜서 못 쓴다 — 최신이 맨 앞이어야 하는 목록이다.
+     * 잇고 쪼개는 방식은 core 에 두고 테스트로 확인한다. 여기서 깨지면 사용자가
+     * 복사해 둔 것이 조용히 날아간다.
+     */
+    fun clipboardStore(context: Context): ClipboardHistory.Store =
+        object : ClipboardHistory.Store {
+            override fun read(): List<String> =
+                ClipboardHistory.decode(prefs(context).getString(KEY_CLIPBOARD, "").orEmpty())
+
+            override fun write(items: List<String>) {
+                prefs(context).edit().putString(KEY_CLIPBOARD, ClipboardHistory.encode(items)).apply()
+            }
+        }
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)

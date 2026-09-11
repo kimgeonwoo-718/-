@@ -1,6 +1,11 @@
 package com.spellkeyboard.ko
 
+import android.content.ClipDescription
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.inputmethodservice.InputMethodService
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
@@ -9,6 +14,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import com.spellkeyboard.core.ai.GeminiCorrector
 import com.spellkeyboard.core.billing.AiQuota
+import com.spellkeyboard.core.clipboard.ClipboardHistory
 import com.spellkeyboard.core.editor.CorrectionEvent
 import com.spellkeyboard.core.editor.Editor
 import com.spellkeyboard.core.editor.TypingSession
@@ -32,6 +38,9 @@ import java.util.concurrent.atomic.AtomicInteger
 class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private val session = TypingSession()
+
+    /** 복사해 둔 글 목록. 안드로이드 클립보드는 마지막 하나만 들고 있다. */
+    private val clipboardHistory by lazy { ClipboardHistory(Prefs.clipboardStore(this)) }
     private var keyboard: KeyboardView? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -190,14 +199,31 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
-    /** 길게 눌러 나온 대체 글자. 방금 넣은 자모를 이것으로 갈아 끼운다. */
+    /**
+     * 길게 눌러 나온 대체 글자. 방금 넣은 글자를 이것으로 갈아 끼운다.
+     *
+     * 누르는 순간 원래 글자가 이미 들어갔으므로 **반드시 그걸 걷어내고** 넣어야 한다.
+     * 그냥 넣으면 '1' 을 길게 눌렀을 때 '1!' 이 된다.
+     */
     override fun onLongPressChar(c: Char) {
         val editor = editor() ?: return
         if (keyboard?.currentMode() == KeyboardMode.KOREAN && Hangul.isJamo(c)) {
             session.replaceLastJamo(editor, c)
-        } else {
-            session.pressText(editor, c)
+            return
         }
+        if (!session.pressBackspace(editor)) {
+            editor.deleteBefore(1)
+            session.notifyDeleted(1)
+        }
+        session.pressText(editor, c)
+    }
+
+    /** 뒤로 가기로 클립보드를 닫는다. 열어 놓고 나갈 길이 없으면 갇힌 느낌이 든다. */
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK && keyboard?.closePanels() == true) {
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     override fun onAction(action: KeyAction) {
@@ -221,6 +247,63 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             KeyAction.LANGUAGE -> switchMode(editor, KeyboardMode.ENGLISH)
             KeyAction.SYMBOLS -> switchMode(editor, KeyboardMode.SYMBOLS)
         }
+    }
+
+    // --- 클립보드 -------------------------------------------------------------
+
+    /**
+     * 클립보드를 열 때 지금 복사돼 있는 것을 담는다.
+     *
+     * 안드로이드 10 부터 백그라운드에서는 클립보드를 못 읽는다. 입력기가 화면에 떠
+     * 있는 지금이 읽을 수 있는 때다 — 그래서 감시하지 않고 열 때마다 한 번 본다.
+     */
+    override fun onClipboardOpened() {
+        captureClipboard()
+        keyboard?.showClipboardItems(clipboardHistory.items())
+    }
+
+    override fun onClipboardPaste(text: String) {
+        val editor = editor() ?: return
+        session.commitPending(editor)
+        editor.commitText(text)
+        session.reset()
+    }
+
+    override fun onClipboardDelete(text: String) {
+        clipboardHistory.remove(text)
+        keyboard?.showClipboardItems(clipboardHistory.items())
+    }
+
+    override fun onOpenSettings() {
+        startActivity(
+            Intent(this, SetupActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+
+    /**
+     * 지금 복사돼 있는 글을 기록에 담는다.
+     *
+     * **비밀번호는 담지 않는다.** 안드로이드 13 부터 복사한 쪽이 "민감함" 이라고
+     * 표시해 주는데, 키보드는 사용자가 치는 모든 것을 보는 앱이라 이런 표시는
+     * 반드시 지켜야 한다. 표시가 없는 옛 기기에서는 알 방법이 없으니, 사용자가
+     * 목록에서 지울 수 있게 해 두는 것이 최선이다.
+     */
+    private fun captureClipboard() {
+        val manager = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+        val clip = manager.primaryClip ?: return
+        if (isSensitive(clip.description)) return
+
+        val text = (0 until clip.itemCount)
+            .mapNotNull { clip.getItemAt(it)?.coerceToText(this)?.toString() }
+            .firstOrNull { it.isNotBlank() } ?: return
+        clipboardHistory.add(text)
+    }
+
+    private fun isSensitive(description: ClipDescription?): Boolean {
+        if (description == null) return false
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+        return description.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE) == true
     }
 
     // --- AI 교정 -------------------------------------------------------------

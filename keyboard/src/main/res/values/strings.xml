@@ -12,6 +12,8 @@
     <string name="status_unreadable">커서 앞 글자를 읽지 못했습니다</string>
     <string name="status_reverted">되돌렸습니다</string>
     <string name="ai_correct">AI 교정</string>
+    <string name="clipboard_title">클립보드</string>
+    <string name="clipboard_empty">복사한 글이 여기 쌓입니다. 다른 앱에서 글을 복사한 뒤 키보드를 열면 담깁니다.</string>
     <string name="ai_running">AI 가 문장 전체를 교정하는 중…</string>
     <string name="ai_done">AI 교정 완료</string>
     <string name="ai_unchanged">AI 가 보기에 고칠 것이 없습니다</string>
