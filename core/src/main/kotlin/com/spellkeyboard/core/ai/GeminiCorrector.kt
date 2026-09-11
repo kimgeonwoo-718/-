@@ -150,10 +150,16 @@ class GeminiCorrector(
         }
     }
 
-    /** 서버가 thinkingConfig 를 못 알아들었는가. */
-    private fun rejectsThinking(response: HttpResponse): Boolean =
-        response.code == 400 &&
-            errorMessage(response)?.contains("thinking", ignoreCase = true) == true
+    /**
+     * 숙고 설정 때문에 거절당했을 수 있는가.
+     *
+     * 처음에는 오류 메시지에 "thinking" 이 들어 있는지 봤는데, 실기기에서 돌아온 것은
+     * **"Request contains an invalid argument."** 였다. 어떤 항목이 문제인지 말해 주지
+     * 않는다. 그래서 조건을 넓힌다 — 숙고를 켜고 보낸 요청이 400 으로 거절당하면
+     * 일단 빼고 한 번 더 본다. 다른 이유였다면 두 번째도 똑같이 거절당하고, 그때는
+     * 서버가 준 이유를 그대로 사용자에게 전한다. 왕복 한 번을 더 쓰는 것이 전부다.
+     */
+    private fun rejectsThinking(response: HttpResponse): Boolean = response.code == 400
 
     /** 잠시 뒤면 풀릴 오류인가. 서버가 붐비거나 요청이 몰린 경우다. */
     internal fun isTransient(response: HttpResponse): Boolean =

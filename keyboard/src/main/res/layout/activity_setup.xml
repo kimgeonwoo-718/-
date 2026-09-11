@@ -122,6 +122,17 @@
             android:text="@string/setting_api_key"
             android:textStyle="bold" />
 
+        <!--
+          textPassword 를 쓰지 않는다.
+
+          비밀번호 칸이 하나라도 있으면 삼성 패스 같은 관리자가 이 화면을 로그인 폼으로
+          보고 "ID 및 비밀번호" 를 채워 주겠다고 나선다. 루트에 importantForAutofill 을
+          걸어도 계속 떴다. 키보드 앱이 비밀번호 관리자를 불러내는 그림은 사용자를
+          불안하게 만든다 — 실제로 "수상하다" 는 말을 들었다.
+
+          가려서 얻는 것도 크지 않다. 본인이 직접 여는 설정 화면이고, 값은 자기 API 키다.
+          오히려 붙여넣기가 제대로 됐는지 눈으로 확인할 수 있다.
+        -->
         <EditText
             android:id="@+id/api_key_field"
             android:layout_width="match_parent"
@@ -129,7 +140,7 @@
             android:layout_marginTop="6dp"
             android:hint="@string/setting_api_key_hint"
             android:importantForAutofill="no"
-            android:inputType="textPassword"
+            android:inputType="textNoSuggestions"
             android:maxLines="1" />
 
         <EditText

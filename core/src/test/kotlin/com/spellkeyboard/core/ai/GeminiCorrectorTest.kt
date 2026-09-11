@@ -208,13 +208,15 @@ class GeminiCorrectorTest {
 
     @Test
     fun `모델을 지목한 400 도 갈아 끼운다`() {
+        val badModel = GeminiCorrector.HttpResponse(
+            400,
+            "{\"error\":{\"code\":400,\"message\":\"This model models/" +
+                GeminiCorrector.DEFAULT_MODEL + " is not supported\"," +
+                "\"status\":\"INVALID_ARGUMENT\"}}"
+        )
         val transport = ScriptedTransport(
-            GeminiCorrector.HttpResponse(
-                400,
-                "{\"error\":{\"code\":400,\"message\":\"This model models/" +
-                    GeminiCorrector.DEFAULT_MODEL + " is not supported\"," +
-                    "\"status\":\"INVALID_ARGUMENT\"}}"
-            ),
+            badModel,   // 1차
+            badModel,   // 숙고를 빼고 한 번 더 — 이유가 그것이 아니었으니 똑같이 거절
             modelList("gemini-2.0-flash"),
             ok("고침")
         )
@@ -344,7 +346,9 @@ class GeminiCorrectorTest {
             GeminiCorrector.HttpResponse(400, "{\"error\":{\"message\":\"API key not valid\"}}")
         )
         assertTrue(corrector(transport).correct("원문").isFailure)
-        assertEquals(1, transport.urls.size, "다시 보내 봐야 똑같이 틀린다")
+        // 400 이면 숙고 설정 탓인지 한 번 확인하느라 두 번 간다. 그 뒤로는 멈춘다 —
+        // 모델을 옮기거나 기다렸다 또 보내 봐야 똑같이 틀린다.
+        assertEquals(2, transport.urls.size)
     }
 
     @Test
@@ -398,9 +402,10 @@ class GeminiCorrectorTest {
             bodies += body
             call++
             if (call == 1) {
+                // 실기기가 실제로 돌려준 문구. 어떤 항목이 문제인지 말해 주지 않는다.
                 GeminiCorrector.HttpResponse(
                     400,
-                    "{\"error\":{\"message\":\"Unknown name \\\"thinkingConfig\\\"\"}}"
+                    "{\"error\":{\"message\":\"Request contains an invalid argument.\"}}"
                 )
             } else {
                 ok("고침")
