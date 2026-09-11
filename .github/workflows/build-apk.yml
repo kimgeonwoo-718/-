@@ -47,14 +47,16 @@ jobs:
       - name: 디버그 APK 빌드
         env:
           # 앱에는 Gemini 키가 들어가지 않는다. 키는 중계 서버(server/)에만 있다.
-          AI_SERVER_URL: ${{ vars.AI_SERVER_URL }}
+          # 서버 주소는 비밀이 아니라 저장소에 적어 둔다. GitHub 변수(또는 실수로 비밀값에
+          # 넣었어도)가 있으면 그게 우선이다 — 서버를 다른 곳으로 옮길 때 쓴다.
+          AI_SERVER_URL: ${{ vars.AI_SERVER_URL || secrets.AI_SERVER_URL || 'https://spell-keyboard.spell-keyboard.workers.dev' }}
           KEYSTORE_FILE: ${{ runner.temp }}/signing.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -n "${AI_SERVER_URL:-}" ]; then echo "AI 서버: $AI_SERVER_URL"; else echo "AI 서버: 없음 — 사용자 키만 동작 (GitHub 변수 AI_SERVER_URL 을 넣으면 된다)"; fi
+          if [ -n "${AI_SERVER_URL:-}" ]; then echo "AI 서버: $AI_SERVER_URL"; else echo "AI 서버: 없음 — 사용자 키만 동작"; fi
           ./gradlew :keyboard:assembleDebug --no-daemon
 
       - name: APK 모으기

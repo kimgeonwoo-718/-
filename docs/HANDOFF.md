@@ -138,8 +138,8 @@ AI 교정에만 쓴다 (온디바이스 교정은 네트워크 없이 동작).
   노란 notice 로 주소가 뜬다: `https://spell-keyboard.<이름>.workers.dev`
 - Cloudflare 토큰은 "Edit Cloudflare Workers" 템플릿에 **Account / D1 / Edit** 를 더해야 한다.
   Account ID 는 대시보드 주소창의 32 자리다 (새 대시보드에는 따로 적힌 칸이 없다).
-- 그 주소를 GitHub **변수**(Secrets 옆 Variables 탭) `AI_SERVER_URL` 에 넣는다 → 다음 APK
-  빌드부터 앱이 서버를 쓴다. 진단 화면 첫 줄이 "중계 서버 경유" 로 바뀌면 된다.
+- 그 주소는 build-apk.yml 에 기본값으로 박혀 있다(비밀 아님). 서버를 옮기면 GitHub 변수
+  `AI_SERVER_URL` 로 덮어쓴다. 진단 화면 첫 줄이 "중계 서버 경유" 로 나오면 앱이 서버를 쓰는 것.
 
 **2. Play Console** — https://play.google.com/console 개발자 등록($25, 개인 가능)
 - 앱 만들기 → 패키지 `com.spellkeyboard.ko`
