@@ -527,11 +527,11 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         /**
          * "교정하는 중…" 을 이보다 오래 붙잡지 않는다.
          *
-         * 모델 이름이 틀려 갈아 끼우는 경우 요청이 최대 세 번 오간다. 통신부 쪽
-         * 타임아웃(연결+읽기)을 다 더해도 이 값 안에 끝나게 맞춰 뒀다 — 못 끝내면
-         * 화면만 풀어 주고 응답은 늦게 와도 버린다.
+         * 모델을 옮겨 가며 최대 세 번 오간다. 통신부 타임아웃(연결 5 초 + 읽기 15 초)
+         * 을 다 더하면 이보다 길어질 수 있는데, 그때는 화면만 풀어 주고 늦게 온 응답은
+         * 버린다. 사용자가 영영 묶여 있지 않게 하는 것이 이 값의 목적이다.
          */
-        const val AI_WATCHDOG_MS = 20_000L
+        const val AI_WATCHDOG_MS = 35_000L
 
         val SENSITIVE_VARIATIONS = setOf(
             InputType.TYPE_TEXT_VARIATION_PASSWORD,

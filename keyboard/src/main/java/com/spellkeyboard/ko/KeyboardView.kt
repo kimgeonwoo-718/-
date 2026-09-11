@@ -15,7 +15,6 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.widget.LinearLayout
-import android.widget.PopupWindow
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
@@ -73,7 +72,7 @@ class KeyboardView @JvmOverloads constructor(
     private val repeatHandler = Handler(Looper.getMainLooper())
 
     /** 길게 누르는 중에 떠 있는 미리보기. 손을 떼면 여기 글자가 들어간다. */
-    private var alternatePopup: PopupWindow? = null
+    private var bubble: TextView? = null
     private var pendingAlternate: Char? = null
 
     private val repeatBackspace = object : Runnable {
@@ -428,34 +427,44 @@ class KeyboardView @JvmOverloads constructor(
         return bounds.contains(event.x.toInt(), event.y.toInt())
     }
 
-    /** 키 바로 위에 큼직하게 띄운다. 손가락에 가려지면 띄운 의미가 없다. */
+    /**
+     * 키 바로 위에 큼직하게 띄운다. 손가락에 가려지면 띄운 의미가 없다.
+     *
+     * ## PopupWindow 를 쓰지 않는 이유
+     *
+     * 미리보기를 별도 윈도우로 띄우면 입력기 윈도우의 포커스가 흔들리고, 그 바람에
+     * `onStartInput` 이 다시 불려 `session.reset()` 이 조합 상태를 날린다. 그러면
+     * 쌍자음 다음에 친 모음이 새 글자로 시작해 `ㄲ우` 가 된다 — 실기기에서 "쌍자음이
+     * 모음이랑 안 합쳐진다" 로 나타났다. 그래서 윈도우를 만들지 않고 키보드 자신의
+     * 오버레이에 그린다. 입력 상태를 건드릴 일이 아예 없다.
+     */
     private fun showAlternate(anchor: View, alternate: Char) {
         dismissAlternate()
-        val bubble = TextView(context).apply {
+        val width = anchor.width.coerceAtLeast(dp(44))
+        val height = (anchor.height * 1.25f).toInt()
+
+        val view = TextView(context).apply {
             text = alternate.toString()
             gravity = Gravity.CENTER
             setTextColor(color(R.color.popup_text))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
             background = roundRect(color(R.color.popup_background))
+            measure(
+                MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+            )
         }
-        val popup = PopupWindow(
-            bubble,
-            anchor.width.coerceAtLeast(dp(40)),
-            (anchor.height * 1.35f).toInt(),
-            false
-        ).apply {
-            isClippingEnabled = false
-            isTouchable = false
-        }
-        val location = IntArray(2)
-        anchor.getLocationInWindow(location)
-        popup.showAtLocation(
-            this,
-            Gravity.NO_GRAVITY,
-            location[0],
-            location[1] - (anchor.height * 1.15f).toInt()
-        )
-        alternatePopup = popup
+
+        // 키의 위치를 키보드 기준 좌표로 옮긴다.
+        val keyAt = IntArray(2).also { anchor.getLocationInWindow(it) }
+        val selfAt = IntArray(2).also { getLocationInWindow(it) }
+        val left = keyAt[0] - selfAt[0] - (width - anchor.width) / 2
+        // 오버레이는 키보드 밖으로 못 나간다. 맨 윗줄이면 잘리지 않게 끌어내린다.
+        val top = (keyAt[1] - selfAt[1] - height - dp(4)).coerceAtLeast(0)
+        view.layout(left, top, left + width, top + height)
+
+        overlay.add(view)
+        bubble = view
         pendingAlternate = alternate
         anchor.performHapticFeedback(
             HapticFeedbackConstants.LONG_PRESS,
@@ -464,8 +473,8 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     private fun dismissAlternate() {
-        alternatePopup?.dismiss()
-        alternatePopup = null
+        bubble?.let { overlay.remove(it) }
+        bubble = null
         pendingAlternate = null
     }
 

@@ -326,8 +326,8 @@ class GeminiCorrectorTest {
     fun `쓸 만한 모델이 전부 붐비면 그제야 한 번 쉬었다 다시 본다`() {
         val waits = mutableListOf<Long>()
         val transport = ScriptedTransport(
-            modelList("gemini-2.5-flash-lite"),  // 옮겨 갈 곳이 하나뿐
-            overloaded(),                        // 기본 모델 — 붐빔
+            modelList("gemini-2.5-flash-lite", "gemini-2.0-flash"),
+            overloaded(),                        // 첫 모델 — 붐빔
             overloaded(),                        // 옮겨 간 모델도 붐빔
             ok("고침")
         )
@@ -361,6 +361,66 @@ class GeminiCorrectorTest {
                 )
             )
         )
+    }
+
+    @Test
+    fun `타임아웃도 다른 모델로 옮겨 본다`() {
+        // 통신부가 예외를 던져도 재시도·모델 교체를 건너뛰면 안 된다.
+        var call = 0
+        val transport = GeminiCorrector.Transport { _, url, _, _ ->
+            call++
+            when {
+                url.contains("?pageSize") -> modelList("gemini-2.5-flash-lite")
+                call == 2 -> throw java.net.SocketTimeoutException("timeout")
+                else -> ok("고침")
+            }
+        }
+        val corrector = GeminiCorrector("key", transport = transport, sleep = {})
+        corrector.prefetchModels()
+
+        assertEquals("고침", corrector.correct("원문").getOrNull())
+    }
+
+    @Test
+    fun `숙고를 꺼서 보낸다`() {
+        val transport = FakeTransport(ok("고침"))
+        GeminiCorrector("key", transport = transport).correct("원문")
+
+        // 맞춤법 교정에 숙고는 필요 없다 — 켜 두면 느리고 비싸다.
+        assertContains(transport.body.orEmpty(), "\"thinkingBudget\":0")
+    }
+
+    @Test
+    fun `숙고 항목을 모르는 모델에는 빼고 다시 보낸다`() {
+        val bodies = mutableListOf<String?>()
+        var call = 0
+        val transport = GeminiCorrector.Transport { _, _, _, body ->
+            bodies += body
+            call++
+            if (call == 1) {
+                GeminiCorrector.HttpResponse(
+                    400,
+                    "{\"error\":{\"message\":\"Unknown name \\\"thinkingConfig\\\"\"}}"
+                )
+            } else {
+                ok("고침")
+            }
+        }
+        val corrector = GeminiCorrector("key", transport = transport, sleep = {})
+
+        assertEquals("고침", corrector.correct("원문").getOrNull())
+        assertContains(bodies[0].orEmpty(), "thinkingBudget")
+        assertTrue(!bodies[1].orEmpty().contains("thinkingBudget"), "두 번째는 빼고 보내야 한다")
+    }
+
+    @Test
+    fun `미리 받을 때 못 쓰는 이름이면 그 자리에서 갈아 끼운다`() {
+        // 교정할 때 실패하고 옮기면 그 왕복이 사용자 대기 시간이 된다.
+        val transport = ScriptedTransport(modelList("gemini-3.8-flash"))
+        val corrector = GeminiCorrector("key", model = "없는-이름", transport = transport)
+
+        corrector.prefetchModels()
+        assertEquals("gemini-3.8-flash", corrector.activeModel)
     }
 
     // --- 오류 문구 --------------------------------------------------------------

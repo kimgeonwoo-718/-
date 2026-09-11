@@ -44,6 +44,15 @@ class GeminiCorrector(
     @Volatile
     private var cachedModels: List<String>? = null
 
+    /**
+     * 숙고를 끄고 보낼 것인가.
+     *
+     * 이 항목을 모르는 모델은 400 으로 거절한다. 그러면 한 번 물러서서 빼고 보낸다 —
+     * 모델마다 되는지 확인할 방법이 없으니 서버에게 물어보는 셈이다.
+     */
+    @Volatile
+    private var skipThinking = true
+
     /** HTTP 호출부. 테스트에서 갈아 끼울 수 있게 열어 둔다. */
     fun interface Transport {
         fun send(method: String, url: String, apiKey: String, body: String?): HttpResponse
@@ -62,8 +71,15 @@ class GeminiCorrector(
     fun correct(text: String): Result<String> = runCatching {
         require(text.isNotBlank()) { "고칠 글이 없다" }
 
-        val body = buildRequest(text)
-        var response = transport.send("POST", endpoint(), apiKey, body)
+        var body = buildRequest(text)
+        var response = attempt(body)
+
+        // 이 모델이 thinkingConfig 를 모르면 400 으로 거절한다. 한 번 빼고 다시 보낸다.
+        if (skipThinking && rejectsThinking(response)) {
+            skipThinking = false
+            body = buildRequest(text)
+            response = attempt(body)
+        }
 
         // 붐비거나 없는 이름이면 **기다리지 말고 다른 모델로 옮긴다.**
         //
@@ -77,16 +93,33 @@ class GeminiCorrector(
             tried += next
             activeModel = next
             hops++
-            response = transport.send("POST", endpoint(), apiKey, body)
+            response = attempt(body)
         }
 
         // 쓸 만한 모델이 전부 붐빌 때만 그제야 한 번 쉬었다 다시 본다.
         if (isTransient(response)) {
             sleep(RETRY_MS)
-            response = transport.send("POST", endpoint(), apiKey, body)
+            response = attempt(body)
         }
         readCorrection(response)
     }
+
+    /**
+     * 한 번 보낸다.
+     *
+     * 타임아웃은 예외로 튀어나오는데, 그대로 두면 [correct] 의 재시도·모델 교체를
+     * 통째로 건너뛰고 그냥 실패한다. **실기기에서 정확히 그 일이 났다** — 느린 모델에
+     * 걸리면 다른 모델로 옮겨 볼 기회도 없이 끝났다. 그래서 예외도 응답의 한 종류로
+     * 바꿔서, 붐빌 때와 똑같이 다뤄지게 한다.
+     */
+    private fun attempt(body: String): HttpResponse =
+        runCatching { transport.send("POST", endpoint(), apiKey, body) }
+            .getOrElse { error ->
+                HttpResponse(
+                    NETWORK_FAILURE,
+                    """{"error":{"message":${Json.quote(describe(error))}}}"""
+                )
+            }
 
     /**
      * 옮겨 갈 만한 모델을 좋은 순서로.
@@ -109,8 +142,18 @@ class GeminiCorrector(
      * 한 번 불러 두면, 정작 사용자가 버튼을 누르는 순간에는 그 왕복이 없다.
      */
     fun prefetchModels() {
-        runCatching { models() }
+        val available = runCatching { models() }.getOrNull() ?: return
+        // 설정된 이름이 이 키로 못 쓰는 것이면 지금 갈아 끼운다. 기다렸다 교정할 때
+        // 실패하고 옮기면 그 왕복이 고스란히 사용자 대기 시간이 된다.
+        if (activeModel !in available) {
+            pickModel(available)?.let { activeModel = it }
+        }
     }
+
+    /** 서버가 thinkingConfig 를 못 알아들었는가. */
+    private fun rejectsThinking(response: HttpResponse): Boolean =
+        response.code == 400 &&
+            errorMessage(response)?.contains("thinking", ignoreCase = true) == true
 
     /** 잠시 뒤면 풀릴 오류인가. 서버가 붐비거나 요청이 몰린 경우다. */
     internal fun isTransient(response: HttpResponse): Boolean =
@@ -178,7 +221,11 @@ class GeminiCorrector(
         append("""}]},"contents":[{"role":"user","parts":[{"text":""")
         append(Json.quote(text))
         append("""}]}],"generationConfig":{"temperature":0,"candidateCount":1,""")
-        append(""""maxOutputTokens":$MAX_OUTPUT_TOKENS}}""")
+        append(""""maxOutputTokens":$MAX_OUTPUT_TOKENS""")
+        // 맞춤법 교정에 숙고는 필요 없다. 켜 두면 몇 초씩 더 걸리고 값도 더 나간다 —
+        // 실기기에서 gemini-3 계열이 8 초 타임아웃을 넘긴 이유다.
+        if (skipThinking) append(""","thinkingConfig":{"thinkingBudget":0}""")
+        append("}}")
     }
 
     /** 응답에서 교정문을 꺼낸다. 꺼낼 수 없으면 이유를 담아 예외를 던진다. */
@@ -247,8 +294,10 @@ class GeminiCorrector(
             known,
             if (known) "목록에 있음" else "목록에 없음 — 교정할 때 자동으로 갈아 끼웁니다"
         )
-        pickModel(available, exclude = null)?.let {
-            checks += Check("추천 모델", true, it)
+        // 하나만 보여 주면 그게 왜 뽑혔는지, 다른 후보는 뭐가 있는지 알 수 없다.
+        val ranked = available.filter { isTextModel(it) }.sortedByDescending { rank(it) }
+        if (ranked.isNotEmpty()) {
+            checks += Check("옮겨 갈 순서", true, ranked.take(4).joinToString(" → "))
         }
 
         val before = activeModel
@@ -351,7 +400,10 @@ class GeminiCorrector(
         private const val MODEL_PAGE_SIZE = 200
 
         /** 잠시 뒤면 풀리는 HTTP 상태. 429 는 요청이 몰림, 5xx 는 서버 쪽 사정. */
-        private val TRANSIENT_CODES = setOf(429, 500, 502, 503, 504)
+        /** 전송 자체가 실패했을 때 붙이는 자리 코드. 타임아웃도 옮겨 볼 이유가 된다. */
+        const val NETWORK_FAILURE = 599
+
+        private val TRANSIENT_CODES = setOf(408, 429, 500, 502, 503, 504, NETWORK_FAILURE)
 
         /** 다른 모델로 옮겨 볼 최대 횟수. 늘릴수록 대기 시간이 길어진다. */
         private const val MAX_MODEL_HOPS = 2
@@ -359,11 +411,16 @@ class GeminiCorrector(
         /** 쓸 만한 모델이 전부 붐빌 때 마지막으로 한 번 쉬는 시간. */
         private const val RETRY_MS = 700L
 
-        // 모델 이름이 낡았으면 한 번의 교정 요청 안에서 최대 세 번(POST, 목록,
-        // 재시도 POST) 오간다. 하나가 느긋하게 굴면 셋을 합쳐 참기 힘든 시간이
-        // 된다 — 호출하는 쪽의 워치독(20 초)에 맞춰 하나당 짧게 끊는다.
         private const val CONNECT_TIMEOUT_MS = 5_000
-        private const val READ_TIMEOUT_MS = 8_000
+
+        /**
+         * 응답을 기다리는 시간.
+         *
+         * 8 초로 조였더니 실기기에서 숙고하는 모델이 번번이 걸렸다. 숙고를 끈 지금은
+         * 1~3 초면 오지만, 긴 글이나 느린 망에서는 더 걸린다. 넉넉히 두고, 대신
+         * 실패하면 다른 모델로 옮겨 간다.
+         */
+        private const val READ_TIMEOUT_MS = 15_000
 
         /** 글을 만들어 내지 않거나 다른 입력을 받는 것들. 교정에는 못 쓴다. */
         private val NOT_FOR_TEXT =
