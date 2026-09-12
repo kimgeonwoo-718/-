@@ -7,6 +7,7 @@
 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/setup_scroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/toss_bg"
@@ -142,6 +143,11 @@
                 style="@style/Caption"
                 android:layout_marginTop="6dp"
                 android:text="@string/setting_plan_note" />
+
+            <TextView
+                style="@style/Caption"
+                android:layout_marginTop="6dp"
+                android:text="@string/ai_notice" />
         </LinearLayout>
 
         <!-- 키보드 -->
@@ -225,54 +231,6 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- 문제 해결 (접힘) -->
-        <LinearLayout style="@style/Card">
-            <LinearLayout
-                android:id="@+id/trouble_toggle"
-                style="@style/Row"
-                android:minHeight="40dp">
-                <LinearLayout style="@style/RowText">
-                    <TextView style="@style/RowTitle" android:text="@string/section_trouble" />
-                    <TextView style="@style/RowSub" android:text="@string/trouble_sub" />
-                </LinearLayout>
-                <TextView
-                    android:id="@+id/trouble_chevron"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="▾"
-                    android:textColor="@color/toss_text3"
-                    android:textSize="18sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/trouble_content"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <TextView
-                    android:id="@+id/selftest_button"
-                    style="@style/SecondaryButton"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/selftest_run" />
-
-                <TextView android:id="@+id/selftest_output" style="@style/Mono" />
-
-                <TextView
-                    android:id="@+id/list_models"
-                    style="@style/SecondaryButton"
-                    android:layout_marginTop="12dp"
-                    android:text="@string/setting_list_models" />
-
-                <TextView android:id="@+id/models_output" style="@style/Mono" />
-
-                <TextView
-                    style="@style/Caption"
-                    android:layout_marginTop="12dp"
-                    android:text="@string/ai_notice" />
-            </LinearLayout>
-        </LinearLayout>
 
         <TextView
             style="@style/Caption"

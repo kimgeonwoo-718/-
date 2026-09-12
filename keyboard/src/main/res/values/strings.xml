@@ -46,9 +46,9 @@
     <string name="setup_test_hint">여기에 아무 문장이나 쳐 보세요. 예: 아버지가방에들어가신다</string>
     <string name="section_correction">교정</string>
     <string name="setting_auto_correct">실시간 자동 교정</string>
-    <string name="setting_auto_correct_sub">어절이 끝날 때마다 기기 안에서 고칩니다. 자판 위 \'교정\' 버튼으로도 끄고 켤 수 있어요.</string>
+    <string name="setting_auto_correct_sub">어절이 끝날 때마다 기기 안에서 바로 고칩니다. 복잡하거나 어려운 문장은 교정이 안 될 수도 있어요. 자판 위 \'교정\' 버튼으로도 끄고 켤 수 있어요.</string>
     <string name="setting_ai_title">AI 전체 교정</string>
-    <string name="setting_ai_sub">자판 위 ✦ 버튼을 누르면 문장 전체를 다듬어요</string>
+    <string name="setting_ai_sub">자판 위 ✦ 버튼을 누르면 문장 전체를 다듬어요 · 정확도 100%</string>
     <string name="setting_quota_free">오늘 %1$d회 남음 (무료 하루 %2$d회)</string>
     <string name="setting_quota_unlimited">프리미엄 · 이용 중</string>
     <string name="setting_quota_premium">프리미엄 · 오늘 %1$s자 남음</string>
@@ -98,14 +98,6 @@
     <string name="setting_key_transparency">키 투명도</string>
     <string name="setting_key_transparency_sub">배경 사진을 썼을 때 키를 얼마나 비치게 할지 정해요. 오른쪽으로 갈수록 사진이 잘 보여요.</string>
     <string name="setting_key_transparency_value">%1$d%%</string>
-    <string name="section_trouble">문제 해결</string>
-    <string name="trouble_sub">AI 나 교정이 안 될 때 어디서 막히는지 확인해요</string>
-    <string name="selftest_run">교정 엔진 점검</string>
-    <string name="selftest_running">사전을 여는 중… (처음 한 번은 몇 초 걸려요)</string>
-    <string name="setting_list_models">AI 연결 진단</string>
-    <string name="setting_listing_models">진단하는 중… (최대 20초)</string>
-    <string name="setting_models_failed">진단 실패: %1$s</string>
-    <string name="diag_no_server">이 빌드에는 AI 서버 주소가 없어요.</string>
     <string name="ai_notice">AI 전체 교정을 누를 때만 그 입력란의 글이 서버를 거쳐 OpenAI 로 가요. 타이핑 중 실시간 교정은 기기 안에서만 처리돼요.</string>
 
     <string name="privacy_notice">타이핑한 내용은 기기 밖으로 나가지 않아요. 실시간 교정은 전부 기기 안에서 처리하고, 비밀번호·이메일·URL 입력란에서는 자동으로 꺼져요.</string>

@@ -16,13 +16,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
-import com.spellkeyboard.core.ai.GeminiCorrector
-import com.spellkeyboard.core.correct.CorrectionEngine
-import com.spellkeyboard.core.correct.SelfTestSamples
-import com.spellkeyboard.core.spacing.Spacer
-import com.spellkeyboard.core.spacing.SpacingDictionary
-import com.spellkeyboard.core.spacing.Speller
-import java.io.File
 
 /**
  * 설정 화면.
@@ -63,7 +56,6 @@ class SetupActivity : AppCompatActivity() {
         bindSetup()
         bindCorrection()
         bindKeyboard()
-        bindTrouble()
     }
 
     override fun onResume() {
@@ -229,87 +221,5 @@ class SetupActivity : AppCompatActivity() {
     private fun nightModeOf(mode: ThemeMode): Int = when (mode) {
         ThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
         ThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
-    }
-
-    // --- 문제 해결 -------------------------------------------------------------
-
-    private fun bindTrouble() {
-        val content = findViewById<View>(R.id.trouble_content)
-        val chevron = findViewById<TextView>(R.id.trouble_chevron)
-        findViewById<View>(R.id.trouble_toggle).setOnClickListener {
-            content.isVisible = !content.isVisible
-            chevron.text = if (content.isVisible) "▴" else "▾"
-        }
-
-        val selfTestOutput = findViewById<TextView>(R.id.selftest_output)
-        findViewById<View>(R.id.selftest_button).setOnClickListener {
-            selfTestOutput.setText(R.string.selftest_running)
-            // 사전을 처음 여는 데 몇 초 걸린다. UI 스레드에서 하면 화면이 멎는다.
-            Thread {
-                val report = runSelfTest()
-                runOnUiThread { selfTestOutput.text = report }
-            }.start()
-        }
-
-        val modelsOutput = findViewById<TextView>(R.id.models_output)
-        findViewById<View>(R.id.list_models).setOnClickListener {
-            modelsOutput.setText(R.string.setting_listing_models)
-            Thread {
-                val report = runDiagnosis()
-                runOnUiThread {
-                    modelsOutput.text = report
-                    showQuota()
-                }
-            }.start()
-        }
-    }
-
-    /**
-     * AI 경로를 끝까지 밟아 보고 어디서 막히는지 보여준다.
-     *
-     * 키보드가 실제로 쓰는 것과 **똑같은** 경로(중계 서버)를 탄다.
-     */
-    private fun runDiagnosis(): String {
-        if (!Prefs.serverAvailable()) return getString(R.string.diag_no_server)
-        val corrector = GeminiCorrector(
-            "",
-            GeminiCorrector.DEFAULT_MODEL,
-            GeminiCorrector.HttpTransport(Prefs.serverHeaders(this)),
-            baseUrl = Prefs.serverBase()
-        )
-        val checks = runCatching { corrector.diagnose() }.getOrElse { error ->
-            return getString(R.string.setting_models_failed, error.message ?: error.javaClass.simpleName)
-        }
-        corrector.lastQuota?.let { Prefs.rememberQuota(this, it) }
-        return checks.joinToString("\n") { check ->
-            val mark = if (check.ok) "OK  " else "실패"
-            "$mark ${check.name}\n     ${check.detail}"
-        }
-    }
-
-    /**
-     * 교정 엔진만 따로 돌려 본다.
-     *
-     * 키보드에서 교정이 안 될 때 원인이 엔진인지 키보드 연결부인지 가른다.
-     */
-    private fun runSelfTest(): String {
-        val engine = CorrectionEngine()
-        val dictionary = runCatching {
-            Spacer(SpacingDictionary.open(File(filesDir, "spacing")))
-        }
-        // 키보드와 **똑같이** 차려야 진단이 의미가 있다. 여기서 speller 를 빼먹으면
-        // 자체 점검은 통과하는데 실기기에서는 안 잡히는, 최악의 거짓 신호가 나온다.
-        dictionary.getOrNull()?.let {
-            engine.spacer = it
-            engine.speller = Speller(it)
-        }
-
-        val lines = SelfTestSamples.ALL.map { (input, expected) ->
-            val actual = engine.correct(input).text
-            val mark = if (actual == expected) "OK  " else "FAIL"
-            "$mark $input -> $actual"
-        }
-        val header = if (dictionary.isSuccess) "띄어쓰기 사전: 준비됨" else "띄어쓰기 사전: 열지 못함 (규칙만 동작)"
-        return (listOf(header) + lines).joinToString("\n")
     }
 }
