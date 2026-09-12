@@ -155,4 +155,17 @@ class CheonjiinAutomataTest {
         assertEquals("ㄱ", automata.flush())
         assertEquals("", automata.composing())
     }
+
+    @Test
+    fun `직전 입력을 통째로 물린다 — 받침이 넘어간 뒤에도`() {
+        val automata = typing("ㄱㅣㆍㄱ")
+        assertEquals("각", automata.composing())
+        val moved = automata.press('ㅣ')
+        assertEquals("가", moved.committed)
+        assertEquals("기", moved.composing)
+
+        assertEquals(1, automata.undoPress(), "확정됐던 '가' 한 글자를 지우라고 해야 한다")
+        assertEquals("각", automata.composing())
+        assertNull(automata.undoPress(), "한 단계만 물린다")
+    }
 }

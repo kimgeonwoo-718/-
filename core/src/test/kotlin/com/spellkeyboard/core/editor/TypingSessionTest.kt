@@ -270,4 +270,27 @@ class TypingSessionTest {
         session.pressSpace(editor)
         assertEquals("됐다 ", editor.text)
     }
+
+    // --- 이모티콘 ---------------------------------------------------------------
+
+    @Test
+    fun `이모티콘은 조합을 끝내고 통째로 들어간다`() {
+        type("ㅎㅏ")
+        session.pressString(editor, "😀")
+        assertEquals("하😀", editor.text)
+        assertTrue(!editor.isComposing, "이모티콘 뒤에 조합이 남으면 안 된다")
+        assertEquals("", session.composingText())
+    }
+
+    @Test
+    fun `천지인에서 길게 눌러 숫자를 넣으면 그 키의 낱자는 사라진다`() {
+        session.automata = CheonjiinAutomata()
+        for (c in "ㄱㅣㆍㄱ") session.pressJamo(editor, c)
+        session.pressJamo(editor, 'ㅣ') // 받침이 넘어가 "가" 확정 + "기" 조합
+        assertEquals("가기", editor.text)
+
+        assertTrue(session.undoLastJamo(editor))
+        session.pressText(editor, '1')
+        assertEquals("각1", editor.text)
+    }
 }

@@ -74,8 +74,14 @@ class KeyboardView @JvmOverloads constructor(
         /** 커서 이동 모드에 들어가거나 나왔다. 상단 줄 안내를 바꿀 기회다. */
         fun onCursorModeChanged(active: Boolean)
 
-        /** 천지인의 `.,?!` 키. 연타하면 다음 부호로 바뀐다. 시간 판단은 받는 쪽 몫. */
-        fun onPunctuationCycle()
+        /**
+         * 연타로 도는 부호 키(천지인 `.,?!`, 숫자 판 `.,-/`). [options] 순서로 돈다.
+         * 시간 판단은 받는 쪽 몫.
+         */
+        fun onPunctuationCycle(options: String)
+
+        /** 이모티콘 판에서 하나 골랐다. 여러 코드 단위일 수 있다. */
+        fun onEmoji(text: String)
 
         /**
          * 천지인 낱자 키. 두벌식과 달리 **전용 통로**로 보낸다 — onChar 로 보내면
@@ -102,6 +108,7 @@ class KeyboardView @JvmOverloads constructor(
     private var layoutType: LayoutType = Prefs.layoutType(context)
 
     private val statusView: TextView
+    private val emojiButton: TextView
     private val aiButton: TextView
     private val clipboardButton: TextView
     private val correctionButton: TextView
@@ -110,6 +117,18 @@ class KeyboardView @JvmOverloads constructor(
     private val rowContainer: LinearLayout
     private val clipboardPanel: LinearLayout
     private val clipboardList: LinearLayout
+    private val emojiPanel: LinearLayout
+    private val emojiList: LinearLayout
+    private val emojiTitle: TextView
+
+    /**
+     * 잡고 있는 스페이스. 다른 키가 눌리는 순간 이걸 먼저 넣는다.
+     *
+     * 스페이스는 떼는 순간에 넣는데(꾹 누르면 커서 이동이라), 빨리 치면 스페이스를 떼기
+     * 전에 다음 키가 먼저 들어가 "다 ㅁ" 이 "다ㅁ " 이 된다 — 220타 사용자가 "키가 씹힌다"
+     * 로 겪은 것. 삼성처럼 다음 키의 DOWN 에서 잡고 있던 스페이스를 확정한다.
+     */
+    private var heldSpaceFlush: (() -> Unit)? = null
     private val repeatHandler = Handler(Looper.getMainLooper())
 
     /** 길게 누르는 중에 떠 있는 미리보기. 손을 떼면 여기 글자가 들어간다. */
@@ -137,6 +156,7 @@ class KeyboardView @JvmOverloads constructor(
             text = context.getString(R.string.status_idle)
         }
         // 컬러 이모지는 삼성 키보드의 단색 선 아이콘과 톤이 어긋난다. 글꼴에 든 기호를 쓴다.
+        emojiButton = toolbarButton("☺\uFE0E") { showEmoji() }
         aiButton = toolbarButton("✦") { listener?.onAiCorrect() }
         clipboardButton = toolbarButton("▤") { showClipboard() }
         correctionButton = toolbarButton(context.getString(R.string.toolbar_correction)) {
@@ -147,6 +167,7 @@ class KeyboardView @JvmOverloads constructor(
         val toolbar = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            addView(emojiButton, toolbarParams())
             addView(aiButton, toolbarParams())
             addView(clipboardButton, toolbarParams())
             addView(correctionButton, toolbarParams())
@@ -170,6 +191,16 @@ class KeyboardView @JvmOverloads constructor(
         }
         clipboardPanel = buildClipboardPanel()
         addView(clipboardPanel, LayoutParams(LayoutParams.MATCH_PARENT, dp(CLIPBOARD_HEIGHT_DP)))
+
+        emojiList = LinearLayout(context).apply { orientation = VERTICAL }
+        emojiTitle = TextView(context).apply {
+            text = context.getString(R.string.emoji_title)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding(dp(10), 0, 0, 0)
+        }
+        emojiPanel = buildEmojiPanel()
+        addView(emojiPanel, LayoutParams(LayoutParams.MATCH_PARENT, dp(CLIPBOARD_HEIGHT_DP)))
 
         applyAppearance(force = true)
     }
@@ -218,9 +249,10 @@ class KeyboardView @JvmOverloads constructor(
         statusView.setTextColor(theme.status)
         // 사진 위에서는 글자가 묻힌다. 반투명 바탕을 깔아 읽히게 한다.
         statusView.background = if (photo != null) roundRect(withAlpha(theme.background, 0.5f)) else null
-        listOf(aiButton, clipboardButton, settingsButton).forEach { styleToolbarButton(it) }
+        listOf(emojiButton, aiButton, clipboardButton, settingsButton).forEach { styleToolbarButton(it) }
         styleCorrectionButton()
         clipboardTitle.setTextColor(theme.text)
+        emojiTitle.setTextColor(theme.text)
     }
 
     private fun styleToolbarButton(view: TextView) {
@@ -290,9 +322,13 @@ class KeyboardView @JvmOverloads constructor(
 
     /** 기호 페이지를 넘긴다(1/2 ↔ 2/2). */
     fun flipSymbolPage() {
-        symbolPage = (symbolPage + 1) % KeyboardLayout.SYMBOL_PAGES.size
+        symbolPage = (symbolPage + 1) % symbolPageCount()
         render()
     }
+
+    private fun symbolPageCount(): Int =
+        if (layoutType == LayoutType.CHEONJIIN) KeyboardLayout.CHEONJIIN_SYMBOL_PAGES.size
+        else KeyboardLayout.SYMBOL_PAGES.size
 
     fun toggleShift() {
         if (!KeyboardLayout.supportsShift(mode)) return
@@ -409,6 +445,7 @@ class KeyboardView @JvmOverloads constructor(
 
     private fun showClipboard() {
         listener?.onClipboardOpened()
+        emojiPanel.isVisible = false
         clipboardPanel.isVisible = true
         rowContainer.isVisible = false
     }
@@ -418,11 +455,76 @@ class KeyboardView @JvmOverloads constructor(
         rowContainer.isVisible = true
     }
 
-    /** 클립보드가 열려 있으면 닫고 true. 뒤로 가기에서 쓴다. */
+    /** 클립보드나 이모티콘 판이 열려 있으면 닫고 true. 뒤로 가기에서 쓴다. */
     fun closePanels(): Boolean {
-        if (!clipboardPanel.isVisible) return false
-        hideClipboard()
+        if (!clipboardPanel.isVisible && !emojiPanel.isVisible) return false
+        clipboardPanel.isVisible = false
+        emojiPanel.isVisible = false
+        rowContainer.isVisible = true
         return true
+    }
+
+    // --- 이모티콘 -------------------------------------------------------------
+
+    private fun buildEmojiPanel(): LinearLayout = LinearLayout(context).apply {
+        orientation = VERTICAL
+        isVisible = false
+
+        val header = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(6), 0, 0, 0)
+            addView(emojiTitle, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+            // 판을 닫지 않고 지울 수 있어야 한다. 하나 넣고 보니 아니다 싶은 게 잦다.
+            addView(toolbarButton("⌫") { listener?.onAction(KeyAction.BACKSPACE) }, toolbarParams())
+            addView(toolbarButton("✕") { closePanels() }, toolbarParams())
+        }
+        addView(header, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
+
+        emojiList.setPadding(dp(4), 0, dp(4), dp(6))
+        addView(
+            ScrollView(this@KeyboardView.context).apply {
+                isVerticalScrollBarEnabled = false
+                addView(emojiList)
+            },
+            LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
+        )
+    }
+
+    private fun showEmoji() {
+        if (emojiList.childCount == 0) fillEmoji()
+        clipboardPanel.isVisible = false
+        emojiPanel.isVisible = true
+        rowContainer.isVisible = false
+    }
+
+    /** 갈래 이름 한 줄, 그 아래 8열 격자. 처음 열 때 한 번만 만든다. */
+    private fun fillEmoji() {
+        EmojiSet.CATEGORIES.forEach { category ->
+            emojiList.addView(
+                TextView(context).apply {
+                    text = category.name
+                    setTextColor(theme.status)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setPadding(dp(8), dp(8), dp(8), dp(2))
+                }
+            )
+            category.items.chunked(EMOJI_COLUMNS).forEach { line ->
+                val row = LinearLayout(context).apply { orientation = HORIZONTAL }
+                line.forEach { emoji ->
+                    val cell = TextView(context).apply {
+                        text = emoji
+                        gravity = Gravity.CENTER
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
+                        contentDescription = emoji
+                    }
+                    attachKeyTouch(cell, onPress = { listener?.onEmoji(emoji) })
+                    row.addView(cell, LayoutParams(0, dp(EMOJI_CELL_DP), 1f))
+                }
+                repeat(EMOJI_COLUMNS - line.size) { row.addView(View(context), LayoutParams(0, dp(EMOJI_CELL_DP), 1f)) }
+                emojiList.addView(row)
+            }
+        }
     }
 
     // --- 자판 조립 -------------------------------------------------------------
@@ -433,11 +535,15 @@ class KeyboardView @JvmOverloads constructor(
         repeatHandler.removeCallbacksAndMessages(null)
         dismissAlternate()
         rowContainer.removeAllViews()
-        if (mode == KeyboardMode.KOREAN && layoutType == LayoutType.CHEONJIIN) {
-            renderCheonjiin()
-            return
+        if (layoutType == LayoutType.CHEONJIIN) {
+            when (mode) {
+                KeyboardMode.KOREAN -> return renderCheonjiin()
+                KeyboardMode.NUMPAD -> return renderNumpad()
+                KeyboardMode.SYMBOLS -> return renderCheonjiinSymbols()
+                KeyboardMode.ENGLISH -> Unit
+            }
         }
-        if (mode == KeyboardMode.SYMBOLS) {
+        if (mode == KeyboardMode.SYMBOLS || mode == KeyboardMode.NUMPAD) {
             renderSymbols()
             return
         }
@@ -485,40 +591,127 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     /**
-     * 천지인. 3×4 전화기 판 + 오른쪽 기능 열(⌫ ↵ 스페이스 한/영). 줄이 넷뿐이라
-     * 쿼티(다섯 줄)와 키보드 높이를 맞추려고 키를 더 높게 둔다.
+     * 천지인 한글 판. 삼성 배열 그대로:
+     *
+     *     ㅣ¹  ㆍ²  ㅡ³   ⌫
+     *     ㄱㅋ⁴ ㄴㄹ⁵ ㄷㅌ⁶  ↵
+     *     ㅂㅍ⁷ ㅅㅎ⁸ ㅈㅊ⁹  .,?!
+     *     !#1 한/영 ㅇㅁ⁰  ␣   ,
+     *
+     * 줄이 넷뿐이라 쿼티(다섯 줄)와 높이를 맞추려고 키를 더 높게 둔다.
      */
     private fun renderCheonjiin() {
         val side = listOf<LinearLayout.() -> Unit>(
-            { addActionKey("⌫", KeyAction.BACKSPACE, weight = 2.5f, repeatable = true) },
-            { addActionKey("↵", KeyAction.ENTER, weight = 2.5f) },
-            { addActionKey("", KeyAction.SPACE, weight = 2.5f, letterKey = true) },
-            { addActionKey("한/영", KeyAction.LANGUAGE, weight = 2.5f) }
+            { addActionKey("⌫", KeyAction.BACKSPACE, weight = GRID_W, repeatable = true) },
+            { addActionKey("↵", KeyAction.ENTER, weight = GRID_W) },
+            { addPunctuationKey(".,?!", KeyboardLayout.CHEONJIIN_PUNCTUATION) }
         )
         KeyboardLayout.CHEONJIIN_GRID.forEachIndexed { index, gridRow ->
             rowContainer.addView(buildRow(heightDp = CHEONJIIN_KEY_HEIGHT_DP) {
-                gridRow.forEach { key ->
-                    when {
-                        key.key != null -> addCheonjiinKey(key.label, key.key)
-                        key.label == "!#1" -> addActionKey(key.label, KeyAction.SYMBOLS, weight = 2.5f)
-                        else -> addPunctuationKey(key.label)
-                    }
-                }
+                gridRow.forEach { addCheonjiinKey(it) }
                 side[index](this)
             })
         }
+        rowContainer.addView(buildRow(heightDp = CHEONJIIN_KEY_HEIGHT_DP) {
+            addActionKey("!#1", KeyAction.NUMPAD, weight = GRID_W / 2)
+            addActionKey("한/영", KeyAction.LANGUAGE, weight = GRID_W / 2)
+            addCheonjiinKey(KeyboardLayout.CHEONJIIN_ZERO_KEY)
+            addActionKey("", KeyAction.SPACE, weight = GRID_W, letterKey = true)
+            addCharKey(',', weight = GRID_W)
+        })
     }
 
-    private fun LinearLayout.addCheonjiinKey(label: String, key: Char) {
-        val view = keyView(label, keyBackground(isAction = false), textSp = if (label.length > 1) 19f else 22f)
-        attachKeyTouch(view, onPress = { listener?.onCheonjiinKey(key) })
-        addView(view, keyParams(2.5f))
+    /**
+     * 천지인 숫자 판(삼성의 !#1). 1~9 · ⌫ ↵ .,-/ · 넷째 줄 !@# 가 0 ␣ ,
+     */
+    private fun renderNumpad() {
+        val side = listOf<LinearLayout.() -> Unit>(
+            { addActionKey("⌫", KeyAction.BACKSPACE, weight = GRID_W, repeatable = true) },
+            { addActionKey("↵", KeyAction.ENTER, weight = GRID_W) },
+            { addPunctuationKey(".,-/", KeyboardLayout.NUMPAD_PUNCTUATION) }
+        )
+        KeyboardLayout.CHEONJIIN_NUMPAD.forEachIndexed { index, digits ->
+            rowContainer.addView(buildRow(heightDp = CHEONJIIN_KEY_HEIGHT_DP) {
+                digits.forEach { addCharKey(it, weight = GRID_W) }
+                side[index](this)
+            })
+        }
+        rowContainer.addView(buildRow(heightDp = CHEONJIIN_KEY_HEIGHT_DP) {
+            addActionKey("!@#", KeyAction.SYMBOLS, weight = GRID_W / 2)
+            addActionKey("가", KeyAction.KOREAN, weight = GRID_W / 2)
+            addCharKey('0', weight = GRID_W)
+            addActionKey("", KeyAction.SPACE, weight = GRID_W, letterKey = true)
+            addCharKey(',', weight = GRID_W)
+        })
     }
 
-    private fun LinearLayout.addPunctuationKey(label: String) {
-        val view = keyView(label, keyBackground(isAction = false), textSp = 15f)
-        attachKeyTouch(view, onPress = { listener?.onPunctuationCycle() })
-        addView(view, keyParams(2.5f))
+    /**
+     * 천지인 기호 판(삼성의 !@#). 6열 × 3줄 + 오른쪽 기능 열, 넷째 줄 123 가 1/3 ␣ ,
+     */
+    private fun renderCheonjiinSymbols() {
+        val pages = KeyboardLayout.CHEONJIIN_SYMBOL_PAGES
+        val page = pages[symbolPage % pages.size]
+        val symbolW = (10f - GRID_W) / 6f
+        val side = listOf<LinearLayout.() -> Unit>(
+            { addActionKey("⌫", KeyAction.BACKSPACE, weight = GRID_W, repeatable = true) },
+            { addActionKey("↵", KeyAction.ENTER, weight = GRID_W) },
+            { addPunctuationKey(".,?!", KeyboardLayout.CHEONJIIN_PUNCTUATION) }
+        )
+        page.forEachIndexed { index, symbols ->
+            rowContainer.addView(buildRow(heightDp = CHEONJIIN_KEY_HEIGHT_DP) {
+                symbols.forEach { addCharKey(it, weight = symbolW) }
+                side[index](this)
+            })
+        }
+        rowContainer.addView(buildRow(heightDp = CHEONJIIN_KEY_HEIGHT_DP) {
+            addActionKey("123", KeyAction.NUMPAD, weight = symbolW)
+            addActionKey("가", KeyAction.KOREAN, weight = symbolW)
+            addActionKey("${symbolPage % pages.size + 1}/${pages.size}", KeyAction.SYMBOL_PAGE, weight = symbolW * 2)
+            addActionKey("", KeyAction.SPACE, weight = symbolW * 2, letterKey = true)
+            addCharKey(',', weight = GRID_W)
+        })
+    }
+
+    /** 천지인 낱자 키. 오른쪽 위 숫자 힌트, 길게 누르면 그 숫자. */
+    private fun LinearLayout.addCheonjiinKey(key: CheonjiinKey) {
+        val view = hintedKeyView(key.label, key.hint, if (key.label.length > 1) 19f else 22f)
+        attachKeyTouch(view, onPress = { listener?.onCheonjiinKey(key.key) }, alternate = key.hint)
+        addView(view, keyParams(GRID_W))
+    }
+
+    /**
+     * 큰 글자 가운데, 작은 힌트 오른쪽 위. 배경과 눌림 상태는 바깥 틀이 받는다.
+     */
+    private fun hintedKeyView(label: String, hint: Char, textSp: Float): View =
+        android.widget.FrameLayout(context).apply {
+            background = keyBackground(isAction = false)
+            contentDescription = label
+            addView(
+                TextView(context).apply {
+                    text = label
+                    gravity = Gravity.CENTER
+                    setTextColor(theme.text)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, textSp)
+                },
+                android.widget.FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+            )
+            addView(
+                TextView(context).apply {
+                    text = hint.toString()
+                    setTextColor(theme.hint)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                },
+                android.widget.FrameLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+                    gravity = Gravity.TOP or Gravity.END
+                    setMargins(0, dp(4), dp(7), 0)
+                }
+            )
+        }
+
+    private fun LinearLayout.addPunctuationKey(label: String, options: String) {
+        val view = keyView(label, keyBackground(isAction = true), textSp = 15f)
+        attachKeyTouch(view, onPress = { listener?.onPunctuationCycle(options) })
+        addView(view, keyParams(GRID_W))
     }
 
     /**
@@ -591,6 +784,7 @@ class KeyboardView @JvmOverloads constructor(
     @SuppressLint("ClickableViewAccessibility")
     private fun attachSpaceTouch(view: View) {
         var cursorMode = false
+        var consumed = false
         var anchorX = 0f
         val stepPx = dp(CURSOR_STEP_DP).toFloat()
         val enterCursorMode = Runnable {
@@ -605,7 +799,9 @@ class KeyboardView @JvmOverloads constructor(
         view.setOnTouchListener { target, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    flushHeldSpace()
                     cursorMode = false
+                    consumed = false
                     anchorX = event.x
                     target.isPressed = true
                     target.performHapticFeedback(
@@ -613,6 +809,14 @@ class KeyboardView @JvmOverloads constructor(
                         HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
                     )
                     repeatHandler.postDelayed(enterCursorMode, SPACE_HOLD_MS)
+                    // 다음 키가 눌리면 그 키보다 먼저 이 스페이스를 넣는다.
+                    heldSpaceFlush = {
+                        repeatHandler.removeCallbacks(enterCursorMode)
+                        if (!cursorMode && !consumed) {
+                            consumed = true
+                            listener?.onAction(KeyAction.SPACE)
+                        }
+                    }
                 }
 
                 MotionEvent.ACTION_MOVE -> {
@@ -625,26 +829,29 @@ class KeyboardView @JvmOverloads constructor(
                     }
                 }
 
-                MotionEvent.ACTION_UP -> {
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     target.isPressed = false
                     repeatHandler.removeCallbacks(enterCursorMode)
+                    heldSpaceFlush = null
                     if (cursorMode) {
                         listener?.onCursorModeChanged(false)
-                    } else {
+                    } else if (!consumed) {
+                        // 취소(CANCEL)도 탭으로 친다. 스페이스는 화면 맨 아래라 제스처
+                        // 영역에 걸려 취소되는 일이 있는데, 그때 띄어쓰기가 통째로 사라졌다.
                         listener?.onAction(KeyAction.SPACE)
                     }
-                    cursorMode = false
-                }
-
-                MotionEvent.ACTION_CANCEL -> {
-                    target.isPressed = false
-                    repeatHandler.removeCallbacks(enterCursorMode)
-                    if (cursorMode) listener?.onCursorModeChanged(false)
+                    consumed = true
                     cursorMode = false
                 }
             }
             true
         }
+    }
+
+    private fun flushHeldSpace() {
+        val flush = heldSpaceFlush ?: return
+        heldSpaceFlush = null
+        flush()
     }
 
     private fun LinearLayout.addSpacer(weight: Float) {
@@ -724,6 +931,8 @@ class KeyboardView @JvmOverloads constructor(
         view.setOnTouchListener { target, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    // 잡고 있던 스페이스가 있으면 이 키보다 먼저 들어가야 한다.
+                    flushHeldSpace()
                     previewing = false
                     target.isPressed = true
                     target.performHapticFeedback(
@@ -872,6 +1081,10 @@ class KeyboardView @JvmOverloads constructor(
         const val CURSOR_STEP_DP = 18
         const val PHOTO_KEY_ALPHA = 0.3f
         const val CHEONJIIN_KEY_HEIGHT_DP = 58
+        /** 천지인·숫자 판의 한 칸 너비(weightSum 10 기준). 넷이면 딱 맞는다. */
+        const val GRID_W = 2.5f
+        const val EMOJI_COLUMNS = 8
+        const val EMOJI_CELL_DP = 44
         const val CLIPBOARD_CARD_HEIGHT_DP = 76
         const val CLIPBOARD_HEIGHT_DP = 244
         const val REPEAT_DELAY_MS = 400L

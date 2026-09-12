@@ -50,8 +50,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private var lastTapKey: Char? = null
     private var lastTapAt = 0L
 
-    /** 천지인 `.,?!` 키 연타 위치. */
+    /** 부호 키 연타 위치와 그 키의 부호 목록. */
     private var punctuationIndex = -1
+    private var punctuationOptions = ""
 
     /** 복사해 둔 글 목록. 안드로이드 클립보드는 마지막 하나만 들고 있다. */
     private val clipboardHistory by lazy { ClipboardHistory(Prefs.clipboardStore(this)) }
@@ -218,12 +219,18 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 자모가 새 글자로 시작한다 — 실기기에서 "키가 씹힌다" 로 보인다.
         if (android.os.SystemClock.uptimeMillis() - lastEditAt < SELF_EDIT_WINDOW_MS) return
 
-        // 우리가 조합을 갱신한 직후에는 커서가 조합 영역 끝에 있다. 그렇지 않다면
-        // 사용자가 직접 커서를 옮겼다는 뜻이라 조합을 끊는다.
-        if (newSelStart != newSelEnd || newSelEnd != candidatesEnd) {
-            currentInputConnection?.finishComposingText()
-            session.reset()
+        // 시간으로만 가리면 빠른 타자에서 새는 게 있다 — 알림이 200ms 넘게 밀리면 그때는
+        // 우리 것인데도 끊는다. 그래서 **내용**으로 가린다: 조합 중인 글자가 커서 바로
+        // 앞에 그대로 있으면 커서는 우리 자리에 있는 것이다. 시간 창은 빠른 길일 뿐이다.
+        if (newSelStart == newSelEnd) {
+            val composing = session.composingText()
+            val before = currentInputConnection?.getTextBeforeCursor(composing.length, 0)?.toString()
+            if (before != null && composing.isNotEmpty() && before == composing) return
+            if (newSelEnd == candidatesEnd) return
         }
+        // 글자를 골라 잡았거나 커서가 조합 영역을 떠났다. 사용자가 손댄 것이니 조합을 끊는다.
+        currentInputConnection?.finishComposingText()
+        session.reset()
     }
 
     // --- 키 입력 -------------------------------------------------------------
@@ -276,11 +283,11 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      * 천지인 `.,?!` 키. 처음엔 마침표, [MULTI_TAP_MS] 안에 또 누르면 방금 넣은 부호를
      * 다음 것으로 바꾼다. 부호는 조합 대상이 아니라 확정된 글자라, 지우고 다시 넣는다.
      */
-    override fun onPunctuationCycle() {
+    override fun onPunctuationCycle(options: String) {
         val editor = editor() ?: return
         val now = android.os.SystemClock.uptimeMillis()
-        val options = KeyboardLayout.CHEONJIIN_PUNCTUATION
-        val cycling = punctuationIndex >= 0 && now - lastTapAt <= MULTI_TAP_MS
+        val cycling = punctuationIndex >= 0 && punctuationOptions == options && now - lastTapAt <= MULTI_TAP_MS
+        punctuationOptions = options
         lastTapKey = null
         lastTapAt = now
         if (cycling) {
@@ -301,11 +308,13 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      */
     override fun onLongPressChar(c: Char) {
         val editor = editor() ?: return
+        lastTapKey = null
         if (keyboard?.currentMode() == KeyboardMode.KOREAN && Hangul.isJamo(c)) {
             session.replaceLastJamo(editor, c)
             return
         }
-        if (!session.pressBackspace(editor)) {
+        // 천지인 키의 숫자, 숫자 줄의 기호. 누르는 순간 들어간 것을 걷어내고 넣는다.
+        if (!session.undoLastJamo(editor)) {
             editor.deleteBefore(1)
             session.notifyDeleted(1)
         }
@@ -343,7 +352,20 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             KeyAction.LANGUAGE -> switchMode(editor, KeyboardMode.ENGLISH)
             KeyAction.SYMBOLS -> switchMode(editor, KeyboardMode.SYMBOLS)
             KeyAction.SYMBOL_PAGE -> keyboard?.flipSymbolPage()
+            KeyAction.NUMPAD -> switchMode(editor, KeyboardMode.NUMPAD)
+            KeyAction.KOREAN -> {
+                session.commitPending(editor)
+                keyboard?.setMode(KeyboardMode.KOREAN)
+            }
         }
+    }
+
+    /** 이모티콘. 조합을 끝내고 통째로 넣는다. */
+    override fun onEmoji(text: String) {
+        val editor = editor() ?: return
+        lastTapKey = null
+        punctuationIndex = -1
+        session.pressString(editor, text)
     }
 
     // --- 클립보드 -------------------------------------------------------------

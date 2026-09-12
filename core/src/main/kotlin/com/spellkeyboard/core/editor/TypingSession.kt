@@ -1,6 +1,7 @@
 package com.spellkeyboard.core.editor
 
 import com.spellkeyboard.core.correct.CorrectionEngine
+import com.spellkeyboard.core.hangul.CheonjiinAutomata
 import com.spellkeyboard.core.hangul.HangulAutomata
 import com.spellkeyboard.core.hangul.JamoAutomata
 
@@ -55,6 +56,9 @@ class TypingSession(
     /** 아직 조합 중인 글자가 있는지. 커서 이동을 감지할 때 쓴다. */
     fun isComposing(): Boolean = !automata.isEmpty()
 
+    /** 지금 조합 영역에 있어야 할 글자. 편집기의 커서 알림이 우리 것인지 가릴 때 쓴다. */
+    fun composingText(): String = automata.composing()
+
     /** 우리를 거치지 않고 편집기에서 글자가 지워졌을 때 사본을 맞춘다. */
     fun notifyDeleted(count: Int = 1) {
         mirror.setLength((mirror.length - count).coerceAtLeast(0))
@@ -100,6 +104,29 @@ class TypingSession(
         editor.endBatch()
     }
 
+    /**
+     * 방금 누른 키의 입력을 걷어낸다. 길게 눌러 다른 글자(숫자)를 넣기 직전에 쓴다.
+     *
+     * 천지인은 직전 입력을 통째로 물린다 — 받침이 넘어가며 앞 음절이 확정된 경우까지.
+     * 두벌식은 조합을 한 단계 되돌리는 것으로 충분하다.
+     *
+     * @return false 면 걷어낼 조합이 없었다. 호출자가 편집기의 확정 글자를 지워야 한다.
+     */
+    fun undoLastJamo(editor: Editor): Boolean {
+        val cheonjiin = automata as? CheonjiinAutomata ?: return pressBackspace(editor)
+        val committed = cheonjiin.undoPress() ?: return false
+        editor.beginBatch()
+        editor.setComposingText("")
+        if (committed > 0) {
+            editor.deleteBefore(committed)
+            notifyDeleted(committed)
+        }
+        val composing = automata.composing()
+        if (composing.isEmpty()) editor.finishComposing() else editor.setComposingText(composing)
+        editor.endBatch()
+        return true
+    }
+
     /** 자모가 아닌 문자. 문장부호면 어절이 끝난 것으로 보고 교정한다. */
     fun pressText(editor: Editor, c: Char) {
         commitPending(editor)
@@ -109,6 +136,14 @@ class TypingSession(
             undo = null
             commit(editor, c.toString())
         }
+    }
+
+    /** 이모티콘처럼 여러 코드 단위로 된 글자. 조합을 끝내고 그대로 넣는다. 교정하지 않는다. */
+    fun pressString(editor: Editor, text: String) {
+        if (text.isEmpty()) return
+        commitPending(editor)
+        undo = null
+        commit(editor, text)
     }
 
     fun pressSpace(editor: Editor) {

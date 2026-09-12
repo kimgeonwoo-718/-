@@ -210,3 +210,16 @@ Worker 는 사용자 근처 데이터센터에서 돌고, 한국 통신사 트�
   `renderSymbols()` 가 [1/2·특수·⌫] 줄과 바닥 기능 줄을 그린다. `KeyAction.SYMBOL_PAGE`.
 - **클립보드**: 2열 카드 격자(`clipboardCard`), 카드 눌러 붙여넣기, 오른쪽 위 ✕ 로 삭제.
 
+---
+
+## 삼성식 천지인 판·이모티콘·키 씹힘 (2026-09-12)
+
+- **천지인 판**: 한글(숫자 힌트, 길게 누르면 숫자) / 숫자 판(`KeyboardMode.NUMPAD`) /
+  기호 판(6열 3페이지 `CHEONJIIN_SYMBOL_PAGES`). `KeyAction.NUMPAD`·`KOREAN` 으로 오간다.
+  길게 눌러 숫자를 넣을 때는 `CheonjiinAutomata.undoPress()` 로 직전 입력을 통째로 물린다
+  (받침이 넘어간 뒤에도) — `TypingSession.undoLastJamo`.
+- **이모티콘**: 도구 줄 ☺ → `EmojiSet` 갈래별 8열 격자. `session.pressString`.
+- **키 씹힘 대책 셋**: (1) 스페이스를 잡고 있는 동안 다른 키가 눌리면 스페이스를 먼저 넣는다
+  (`heldSpaceFlush`). (2) 스페이스 CANCEL 도 탭으로 친다. (3) `onUpdateSelection` 은 시간
+  창 뒤에 **내용**(조합 글자가 커서 바로 앞인가)으로 우리 알림을 가린다.
+

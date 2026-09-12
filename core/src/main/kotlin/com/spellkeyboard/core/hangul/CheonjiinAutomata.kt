@@ -29,6 +29,13 @@ class CheonjiinAutomata : JamoAutomata {
 
     private enum class Slot { CHO, JONG, JONG_SECOND }
 
+    /** 직전 [press] 이전의 상태. 길게 눌러 숫자를 넣을 때 그 키의 입력을 통째로 물린다. */
+    private data class Snapshot(
+        val cho: Int, val strokes: String, val vowelOpen: Boolean, val jong: Int,
+        val lastKey: Char?, val lastSlot: Slot?, val cycleIndex: Int, val committed: Int
+    )
+    private var snapshot: Snapshot? = null
+
     override fun isEmpty(): Boolean = cho < 0 && strokes.isEmpty() && jong == 0
 
     override fun composing(): String {
@@ -63,6 +70,7 @@ class CheonjiinAutomata : JamoAutomata {
         strokes.setLength(0)
         vowelOpen = false
         jong = 0
+        snapshot = null
         resetCycle()
     }
 
@@ -72,10 +80,36 @@ class CheonjiinAutomata : JamoAutomata {
         cycleIndex = 0
     }
 
-    override fun press(input: Char, repeat: Boolean): AutomataOutput = when {
-        input in STROKES -> pressStroke(input)
-        input in CYCLES -> pressConsonantKey(input, repeat)
-        else -> AutomataOutput(flush() + input, "")
+    override fun press(input: Char, repeat: Boolean): AutomataOutput {
+        val before = Snapshot(cho, strokes.toString(), vowelOpen, jong, lastKey, lastSlot, cycleIndex, 0)
+        val output = when {
+            input in STROKES -> pressStroke(input)
+            input in CYCLES -> pressConsonantKey(input, repeat)
+            else -> AutomataOutput(flush() + input, "")
+        }
+        snapshot = before.copy(committed = output.committed.length)
+        return output
+    }
+
+    /**
+     * 직전 키 입력을 통째로 물린다. 백스페이스와 다르다 — 받침이 다음 음절로 넘어간 뒤라면
+     * 백스페이스는 획 하나만 되돌리지만, 이건 넘어가기 전으로 돌아간다. 키를 길게 눌러
+     * 숫자를 넣을 때, 누르는 순간 이미 들어간 낱자를 걷어내는 데 쓴다.
+     *
+     * @return 그 입력이 편집기에 **확정**했던 글자 수(호출자가 지워야 한다). 물릴 게 없으면 null.
+     */
+    fun undoPress(): Int? {
+        val before = snapshot ?: return null
+        snapshot = null
+        cho = before.cho
+        strokes.setLength(0)
+        strokes.append(before.strokes)
+        vowelOpen = before.vowelOpen
+        jong = before.jong
+        lastKey = before.lastKey
+        lastSlot = before.lastSlot
+        cycleIndex = before.cycleIndex
+        return before.committed
     }
 
     private fun pressStroke(stroke: Char): AutomataOutput {
@@ -210,6 +244,7 @@ class CheonjiinAutomata : JamoAutomata {
 
     override fun backspace(): AutomataOutput? {
         if (isEmpty()) return null
+        snapshot = null
         resetCycle()
 
         if (jong > 0) {
