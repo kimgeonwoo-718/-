@@ -162,14 +162,17 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         session.reset()
         lastTapKey = null
         punctuationIndex = -1
-        val wanted = if (Prefs.layoutType(this) == LayoutType.CHEONJIIN) cheonjiinAutomata else qwertyAutomata
-        if (session.automata !== wanted) session.automata = wanted
+        syncAutomata()
         fieldCorrectable = isCorrectableField(info)
         session.correctionEnabled = Prefs.autoCorrectEnabled(this) && fieldCorrectable
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // 설정에서 자판을 바꾸고 **이미 열려 있던** 입력란으로 돌아오면 onStartInput 은
+        // 안 불린다. 자판만 바뀌고 조립기는 옛것이 남아, 쿼티 키가 천지인 조립기로 들어가
+        // 낱자로 흩어졌다 — 실기기에서 "쿼티 먹통" 으로 나타났다. 여기서도 맞춘다.
+        syncAutomata()
         // 설정에서 테마나 배경을 바꾸고 돌아왔을 수 있다. 바뀐 게 없으면 싸게 끝난다.
         keyboard?.applyAppearance()
         keyboard?.setAutoCorrectOn(Prefs.autoCorrectEnabled(this))
@@ -232,10 +235,24 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         punctuationIndex = -1
 
         if (keyboard?.currentMode() == KeyboardMode.KOREAN && Hangul.isJamo(c)) {
+            // 자모가 onChar 로 온다는 것은 쿼티 자판이라는 뜻이다. 조립기가 다른 것이면
+            // 지금 갈아 끼운다 — 천지인 키가 자기 조립기를 끼우는 것과 대칭.
+            ensureAutomata(qwertyAutomata)
             session.pressJamo(editor, c)
         } else {
             session.pressText(editor, c)
         }
+    }
+
+    /** 설정의 자판에 맞는 조립기를 끼운다. 이미 맞으면 아무것도 안 한다. */
+    private fun syncAutomata() {
+        ensureAutomata(
+            if (Prefs.layoutType(this) == LayoutType.CHEONJIIN) cheonjiinAutomata else qwertyAutomata
+        )
+    }
+
+    private fun ensureAutomata(wanted: com.spellkeyboard.core.hangul.JamoAutomata) {
+        if (session.automata !== wanted) session.automata = wanted
     }
 
     /**
@@ -246,7 +263,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         val editor = editor() ?: return
         keyboard?.clearShift()
         punctuationIndex = -1
-        if (session.automata !== cheonjiinAutomata) session.automata = cheonjiinAutomata
+        ensureAutomata(cheonjiinAutomata)
 
         val now = android.os.SystemClock.uptimeMillis()
         val repeat = key == lastTapKey && now - lastTapAt <= MULTI_TAP_MS
