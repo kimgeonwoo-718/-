@@ -5,10 +5,19 @@ name: Reset AI usage
 # 서버 코드는 건드리지 않는다.
 on:
   workflow_dispatch:
+  # workflow_dispatch 만 있는 파일은 기본 브랜치에 없으면 GitHub 이 목록에 안 올린다.
+  # 이 파일이 바뀌는 푸시에 한 번 "보이게" 만들기 위한 트리거다. 그 실행은 아래 if 로 건너뛴다.
+  push:
+    branches:
+      - main
+      - "claude/**"
+    paths:
+      - ".github/workflows/reset-usage.yml"
 
 jobs:
   reset:
     name: 오늘 사용량 지우기
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
