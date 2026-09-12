@@ -55,10 +55,19 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # Play 는 올릴 때마다 versionCode 가 커져야 한다. 실행 번호는 늘 커진다.
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: 0.1.${{ github.run_number }}
         run: |
           set -euo pipefail
           if [ -n "${AI_SERVER_URL:-}" ]; then echo "AI 서버: $AI_SERVER_URL"; else echo "AI 서버: 없음 — 사용자 키만 동작"; fi
-          ./gradlew :keyboard:assembleDebug --no-daemon
+          echo "버전: $VERSION_NAME (code $VERSION_CODE)"
+          # Play 에 올릴 릴리스 번들은 서명 키가 있을 때만 만든다. 서명 없는 번들은 Play 가 받지 않는다.
+          if [ -f "$KEYSTORE_FILE" ]; then
+            ./gradlew :keyboard:assembleDebug :keyboard:bundleRelease --no-daemon
+          else
+            ./gradlew :keyboard:assembleDebug --no-daemon
+          fi
 
       - name: APK 모으기
         id: collect
@@ -71,6 +80,13 @@ jobs:
           fi
           mkdir -p dist
           cp "$apk" dist/spell-keyboard-debug.apk
+          aab=$(find keyboard/build/outputs/bundle/release -name "*.aab" 2>/dev/null | head -n 1 || true)
+          if [ -n "$aab" ]; then
+            cp "$aab" dist/spell-keyboard-release.aab
+            echo "Play 업로드용 번들: dist/spell-keyboard-release.aab"
+          else
+            echo "릴리스 번들 없음 (서명 키가 없는 빌드)"
+          fi
           ls -lh dist/
 
       # 사이드로드한 키보드는 Play Protect 가 경고를 띄운다. 경고를 없앨 수는 없지만,
@@ -124,7 +140,7 @@ jobs:
             gh release delete "$tag" --yes --cleanup-tag || true
           fi
 
-          gh release create "$tag" dist/spell-keyboard-debug.apk \
+          gh release create "$tag" dist/spell-keyboard-debug.apk $( [ -f dist/spell-keyboard-release.aab ] && echo dist/spell-keyboard-release.aab ) \
             --target "$GITHUB_SHA" \
             --title "$title" \
             $extra \

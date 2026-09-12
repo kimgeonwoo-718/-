@@ -72,6 +72,8 @@ export async function handle(request, env, deps = {}) {
   const url = new URL(request.url);
 
   if (url.pathname === '/health') return json(200, { ok: true });
+  // Play 는 키보드 앱에 개인정보 처리방침 주소를 요구한다. 따로 호스팅할 데가 없어 여기서 낸다.
+  if (request.method === 'GET' && url.pathname === '/privacy') return privacyPage(env);
   if (!env.GEMINI_API_KEY) return fail(503, 'server_not_configured');
 
   // 모델 목록은 돈이 안 든다. 한도 없이 그대로 넘긴다.
@@ -312,3 +314,39 @@ function json(status, value, extraHeaders = {}) {
 function fail(status, code) {
   return json(status, { error: { code: status, message: code, status: code.toUpperCase() } });
 }
+
+/** 개인정보 처리방침. 앱이 실제로 하는 것만 적는다 — 과장도, 누락도 없이. */
+function privacyPage(env) {
+  const contact = env.CONTACT_EMAIL ? `<p>문의: ${escapeHtml(env.CONTACT_EMAIL)}</p>` : '';
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>맞춤법 키보드 개인정보 처리방침</title>
+<style>body{font-family:sans-serif;max-width:680px;margin:40px auto;padding:0 20px;line-height:1.7;color:#191f28}h1{font-size:22px}h2{font-size:17px;margin-top:28px}</style>
+</head><body>
+<h1>맞춤법 키보드 개인정보 처리방침</h1>
+<p>맞춤법 키보드는 타이핑하는 글을 기기 안에서 고쳐 주는 안드로이드 키보드입니다. 이 문서는 앱이 어떤 정보를 어디까지 다루는지 설명합니다.</p>
+<h2>1. 타이핑한 글</h2>
+<p>실시간 맞춤법·띄어쓰기 교정은 <strong>전부 기기 안에서</strong> 처리됩니다. 타이핑한 글은 어디로도 전송되거나 저장되지 않습니다. 비밀번호·이메일·URL 입력란에서는 교정이 자동으로 꺼집니다.</p>
+<h2>2. AI 전체 교정</h2>
+<p>키보드 위 ✦ 버튼을 <strong>직접 누를 때만</strong>, 그 입력란의 글이 앱 서버를 거쳐 Google Gemini API 로 전송되어 교정된 결과가 돌아옵니다. 서버는 글을 저장하지 않으며, 교정 요청 횟수만 셉니다. Google 의 처리에 대해서는 Google 의 개인정보 처리방침이 적용됩니다.</p>
+<h2>3. 서버가 보관하는 것</h2>
+<ul>
+<li><strong>설치 식별자</strong>: 앱을 설치할 때 만들어지는 무작위 값입니다. 무료 사용 횟수를 세는 데만 쓰이며, 사용자 계정이나 기기 정보와 연결되지 않습니다.</li>
+<li><strong>일별 사용 횟수</strong>: 설치 식별자·접속 IP 별 하루 요청 수. 이틀 뒤 삭제됩니다.</li>
+<li><strong>구독 확인</strong>: 구독한 경우 Google Play 구매 토큰을 Google Play 에 조회해 구독 상태만 확인합니다. 결제 정보는 Google Play 가 처리하며 앱과 서버는 카드 정보 등을 다루지 않습니다.</li>
+</ul>
+<h2>4. 기기에만 저장되는 것</h2>
+<p>클립보드 기록, 배경 사진, 테마·자판 설정은 기기 안에만 저장되며 앱을 삭제하면 함께 사라집니다. 클립보드에서 "민감" 으로 표시된 내용(비밀번호 등)은 기록하지 않습니다.</p>
+<h2>5. 권한</h2>
+<p>인터넷 권한은 AI 전체 교정과 구독 확인에만 쓰입니다. 그 외 권한은 요구하지 않습니다.</p>
+<h2>6. 변경</h2>
+<p>이 방침이 바뀌면 이 페이지에 갱신합니다.</p>
+${contact}
+</body></html>`;
+  return new Response(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+

@@ -238,3 +238,22 @@ Worker 는 사용자 근처 데이터센터에서 돌고, 한국 통신사 트�
 - **한도 되돌리기**: Actions → "Reset AI usage" → Run workflow. 오늘(KST) `usage` 행을 지운다.
   테스트하다 무료 5회를 다 썼을 때. 서버·앱 코드와 무관.
 
+---
+
+## Play 구독 붙이기 — 남은 것은 콘솔뿐 (2026-09-12)
+
+코드는 끝나 있다: 앱 `BillingManager`(상품 `ai_unlimited_monthly`), 서버 `verifySubscription`
+(`PLAY_SERVICE_ACCOUNT` 비밀값이 있을 때만 동작, 없으면 전부 무료).
+
+- CI 가 서명된 릴리스 번들 `spell-keyboard-release.aab` 를 만들어 릴리스에 같이 붙인다
+  (`bundleRelease`, versionCode = Actions 실행 번호). Play 는 APK 를 안 받고 AAB 만 받는다.
+- 개인정보 처리방침: `https://spell-keyboard.spell-keyboard.workers.dev/privacy` (Worker 가 낸다).
+  wrangler `CONTACT_EMAIL` 변수를 두면 문의 줄이 붙는다.
+- **Play 에서 설치한 앱은 Play 의 서명 키로 서명된다.** 사이드로드한 디버그 APK 와 서명이
+  달라 덮어쓰기가 안 되므로, 내부 테스트로 깔 때는 기존 앱을 지워야 한다.
+
+콘솔 순서: 개발자 등록 → 앱 만들기(`com.spellkeyboard.ko`) → 수익 창출 > 구독 > 상품
+`ai_unlimited_monthly` + 월 2,990원 기본 요금제 → 내부 테스트에 AAB 올리고 테스터 등록 →
+설정 > API 액세스 > 서비스 계정 만들기(JSON 키) → 그 계정에 "재무 데이터 보기" 권한 →
+JSON 전체를 GitHub 비밀값 `PLAY_SERVICE_ACCOUNT` → "Deploy AI server" 수동 실행.
+

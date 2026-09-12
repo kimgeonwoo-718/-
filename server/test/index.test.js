@@ -289,3 +289,12 @@ test('usageMetadata 가 없어도 죽지 않는다', async () => {
   assert.deepEqual(e.DB.tokens.get('2026-01-01'), { requests: 1, prompt: 0, output: 0, thoughts: 0 });
 });
 
+test('개인정보 처리방침 페이지는 키 없이도 뜬다', async () => {
+  const res = await handle(new Request('https://spell.test/privacy'), env({ GEMINI_API_KEY: '' }));
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/html/);
+  const body = await res.text();
+  assert.match(body, /기기 안에서/);
+  assert.ok(!body.includes('문의:'), '연락처가 설정돼 있지 않으면 빈 줄을 만들지 않는다');
+});
+

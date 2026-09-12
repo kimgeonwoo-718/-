@@ -37,8 +37,9 @@ android {
         applicationId = "com.spellkeyboard.ko"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        // Play 는 올릴 때마다 versionCode 가 커져야 한다. CI 가 실행 번호를 넣어 준다.
+        versionCode = (System.getenv("VERSION_CODE")?.toIntOrNull()) ?: 1
+        versionName = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "0.1"
 
         buildConfigField("String", "AI_SERVER_URL", "\"$aiServerUrl\"")
     }
@@ -55,6 +56,14 @@ android {
                 keyAlias = System.getenv("KEY_ALIAS")
                 keyPassword = System.getenv("KEY_PASSWORD")
             }
+            // Play 에 올리는 릴리스 번들(.aab)도 같은 키로 서명한다. Play 에서는 이 키가
+            // "업로드 키" 가 되고, 실제 설치본은 Play 가 자기 키로 다시 서명한다.
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
         }
     }
 
@@ -65,6 +74,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (keystoreFile != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 
