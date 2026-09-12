@@ -2,6 +2,7 @@ package com.spellkeyboard.core.editor
 
 import com.spellkeyboard.core.correct.CorrectionEngine
 import com.spellkeyboard.core.hangul.HangulAutomata
+import com.spellkeyboard.core.hangul.JamoAutomata
 
 /**
  * 입력 한 번에 대한 처리 전부 — 한글 조합, 교정 시점 판단, 되돌리기.
@@ -14,7 +15,17 @@ class TypingSession(
     val engine: CorrectionEngine = CorrectionEngine()
 ) {
 
-    private val automata = HangulAutomata()
+    /**
+     * 자판에 맞는 조립기. 기본은 두벌식. 바꾸면 조합 중이던 것은 버린다 —
+     * 자판이 바뀌는 순간에 조합 중인 글자가 있을 리 없고, 있어도 이어 붙일 수 없다.
+     */
+    var automata: JamoAutomata = HangulAutomata()
+        set(value) {
+            field.reset()
+            field = value
+            value.reset()
+        }
+
     private var undo: Undo? = null
 
     /**
@@ -58,10 +69,14 @@ class TypingSession(
         }
     }
 
-    /** 한글 자모 하나. 조합이 끝나기 전에는 교정하지 않는다. */
-    fun pressJamo(editor: Editor, jamo: Char) {
+    /**
+     * 한글 자모(또는 천지인 키) 하나. 조합이 끝나기 전에는 교정하지 않는다.
+     *
+     * @param repeat 같은 키를 짧은 간격으로 다시 눌렀는가. 천지인 연타(ㄱ→ㅋ)용.
+     */
+    fun pressJamo(editor: Editor, jamo: Char, repeat: Boolean = false) {
         undo = null
-        val output = automata.press(jamo)
+        val output = automata.press(jamo, repeat)
         editor.beginBatch()
         if (output.committed.isNotEmpty()) commit(editor, output.committed)
         editor.setComposingText(output.composing)

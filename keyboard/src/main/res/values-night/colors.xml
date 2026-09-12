@@ -1,10 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  설정 화면(토스 톤)의 어두운 값만 둔다. **키보드 색은 여기 두지 않는다** — 키보드 밝기는
+  설정에서 고르는 것이고, 입력기 서비스는 시스템 다크 모드를 따라 리소스를 고르므로
+  여기에 키보드 색을 넣으면 "밝게" 를 골라도 시스템이 어두우면 어두운 키보드가 나온다.
+-->
 <resources>
-    <color name="keyboard_background">#15181D</color>
-    <color name="key_background">#2C313A</color>
-    <color name="key_action_background">#1F242B</color>
-    <color name="key_accent_background">#3F6FE0</color>
-    <color name="key_pressed_background">#4A515C</color>
-    <color name="key_text">#F2F4F7</color>
-    <color name="status_text">#A9B2BD</color>
+    <color name="toss_bg">#101013</color>
+    <color name="toss_card">#1C1D22</color>
+    <color name="toss_text">#F2F4F6</color>
+    <color name="toss_text2">#B0B8C1</color>
+    <color name="toss_text3">#8B95A1</color>
+    <color name="toss_fill">#2A2C33</color>
+    <color name="toss_fill_pressed">#363941</color>
+    <color name="toss_divider">#2A2C33</color>
+    <color name="toss_blue_light">#1B2A40</color>
+    <color name="toss_switch_off">#3A3D46</color>
 </resources>

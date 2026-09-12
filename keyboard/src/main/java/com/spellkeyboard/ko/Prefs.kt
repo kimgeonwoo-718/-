@@ -11,8 +11,7 @@ object Prefs {
     private const val FILE = "spell_keyboard"
     private const val KEY_AUTO_CORRECT = "auto_correct"
     private const val KEY_THEME = "theme_mode"
-    private const val KEY_API_KEY = "gemini_api_key"
-    private const val KEY_MODEL = "gemini_model"
+    private const val KEY_LAYOUT = "layout_type"
     private const val KEY_CLIPBOARD = "clipboard"
     private const val KEY_INSTALL_ID = "install_id"
     private const val KEY_PURCHASE_TOKEN = "purchase_token"
@@ -37,23 +36,19 @@ object Prefs {
         prefs(context).edit().putString(KEY_THEME, mode.name).apply()
     }
 
+    /** 한글 자판: 쿼티(두벌식) 또는 천지인. */
+    fun layoutType(context: Context): LayoutType =
+        runCatching { LayoutType.valueOf(prefs(context).getString(KEY_LAYOUT, "").orEmpty()) }
+            .getOrDefault(LayoutType.QWERTY)
+
+    fun setLayoutType(context: Context, type: LayoutType) {
+        prefs(context).edit().putString(KEY_LAYOUT, type.name).apply()
+    }
+
     // --- AI 경로 ----------------------------------------------------------------
 
-    /**
-     * 사용자가 직접 넣은 Gemini 키.
-     *
-     * 있으면 구글로 직접 보내고 한도를 걸지 않는다 — 요금이 본인 구글 계정으로 가니까.
-     * 없으면 중계 서버로 보낸다. 앱에 내장된 키는 없다. APK 에 든 키는 반드시 추출되고,
-     * 그 요금은 우리에게 온다.
-     */
-    fun userApiKey(context: Context): String =
-        prefs(context).getString(KEY_API_KEY, "").orEmpty().trim()
-
-    fun usingOwnKey(context: Context): Boolean = userApiKey(context).isNotEmpty()
-
-    fun setApiKey(context: Context, key: String) {
-        prefs(context).edit().putString(KEY_API_KEY, key.trim()).apply()
-    }
+    // 앱에는 Gemini 키가 없고, 사용자가 자기 키를 넣는 칸도 없앴다. AI 교정은 전부
+    // 중계 서버를 거친다. 키·모델 이름 같은 API 내부 사정을 설정 화면에 드러내지 않는다.
 
     /** 빌드에 넣은 중계 서버 주소. 비어 있으면 서버 경로가 없다. */
     fun serverUrl(): String = BuildConfig.AI_SERVER_URL.trim().trimEnd('/')
@@ -63,8 +58,8 @@ object Prefs {
     /** 중계 서버의 Gemini 호환 경로. 앱은 구글 대신 여기로 같은 요청을 보낸다. */
     fun serverBase(): String = serverUrl() + "/v1beta/models"
 
-    /** AI 교정 버튼을 띄울 수 있는가. 내 키가 있거나 서버가 있으면 된다. */
-    fun aiAvailable(context: Context): Boolean = usingOwnKey(context) || serverAvailable()
+    /** AI 교정 버튼을 띄울 수 있는가. 서버 주소가 빌드에 있으면 된다. */
+    fun aiAvailable(): Boolean = serverAvailable()
 
     /**
      * 이 설치를 가리키는 무작위 ID.
@@ -123,22 +118,6 @@ object Prefs {
             .putInt(KEY_QUOTA_REMAINING, quota.remaining ?: -1)
             .putInt(KEY_QUOTA_LIMIT, quota.limit ?: -1)
             .apply()
-    }
-
-    // --- 모델 ------------------------------------------------------------------
-
-    /**
-     * 쓸 모델 이름.
-     *
-     * 구글 쪽 모델 이름은 계속 바뀌어서 설정에서 갈아 끼울 수 있게 열어 뒀다.
-     * 비워 두면 기본값을 쓴다.
-     */
-    fun model(context: Context): String =
-        prefs(context).getString(KEY_MODEL, "").orEmpty().trim()
-            .ifEmpty { GeminiCorrector.DEFAULT_MODEL }
-
-    fun setModel(context: Context, model: String) {
-        prefs(context).edit().putString(KEY_MODEL, model.trim()).apply()
     }
 
     // --- 클립보드 ---------------------------------------------------------------

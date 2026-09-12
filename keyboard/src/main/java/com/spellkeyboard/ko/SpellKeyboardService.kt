@@ -18,7 +18,9 @@ import com.spellkeyboard.core.clipboard.ClipboardHistory
 import com.spellkeyboard.core.editor.CorrectionEvent
 import com.spellkeyboard.core.editor.Editor
 import com.spellkeyboard.core.editor.TypingSession
+import com.spellkeyboard.core.hangul.CheonjiinAutomata
 import com.spellkeyboard.core.hangul.Hangul
+import com.spellkeyboard.core.hangul.HangulAutomata
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
 import com.spellkeyboard.core.spacing.Speller
@@ -38,6 +40,18 @@ import java.util.concurrent.atomic.AtomicInteger
 class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private val session = TypingSession()
+    private val qwertyAutomata = HangulAutomata()
+    private val cheonjiinAutomata = CheonjiinAutomata()
+
+    /**
+     * 천지인 연타 판단. 같은 키를 [MULTI_TAP_MS] 안에 다시 누르면 "연타" 로 오토마타에
+     * 알린다(ㄱ→ㅋ). 시간은 여기서 재고, 오토마타는 결과만 받는다.
+     */
+    private var lastTapKey: Char? = null
+    private var lastTapAt = 0L
+
+    /** 천지인 `.,?!` 키 연타 위치. */
+    private var punctuationIndex = -1
 
     /** 복사해 둔 글 목록. 안드로이드 클립보드는 마지막 하나만 들고 있다. */
     private val clipboardHistory by lazy { ClipboardHistory(Prefs.clipboardStore(this)) }
@@ -47,8 +61,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private var corrector: GeminiCorrector? = null
     private var correctorSettings: CorrectorSettings? = null
 
-    /** 이 셋 중 하나라도 바뀌면 교정기를 새로 만든다. 구매 토큰이 바뀌면 헤더가 달라진다. */
-    private data class CorrectorSettings(val apiKey: String, val model: String, val purchaseToken: String)
+    /** 구매 토큰이 바뀌면 헤더가 달라지므로 교정기를 새로 만든다. */
+    private data class CorrectorSettings(val purchaseToken: String)
 
     /** AI 교정은 한 번에 하나만. 연타로 요청이 겹치면 글이 꼬인다. */
     @Volatile
@@ -146,6 +160,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onStartInput(info: EditorInfo?, restarting: Boolean) {
         super.onStartInput(info, restarting)
         session.reset()
+        lastTapKey = null
+        punctuationIndex = -1
+        val wanted = if (Prefs.layoutType(this) == LayoutType.CHEONJIIN) cheonjiinAutomata else qwertyAutomata
+        if (session.automata !== wanted) session.automata = wanted
         fieldCorrectable = isCorrectableField(info)
         session.correctionEnabled = Prefs.autoCorrectEnabled(this) && fieldCorrectable
     }
@@ -166,7 +184,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         )
         // 비밀번호 입력란에서는 AI 교정도 내놓지 않는다. 그 글이 서버로 나가면 안 된다.
         // 다만 자동 교정 스위치와는 묶지 않는다 — 그건 실시간 교정만 끄는 스위치다.
-        val aiOn = Prefs.aiAvailable(this) && fieldCorrectable
+        val aiOn = Prefs.aiAvailable() && fieldCorrectable
         keyboard?.setAiAvailable(aiOn)
         if (aiOn) warmUpAi()
     }
@@ -210,12 +228,45 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onChar(c: Char) {
         val editor = editor() ?: return
         keyboard?.clearShift()
+        punctuationIndex = -1
 
-        if (keyboard?.currentMode() == KeyboardMode.KOREAN && Hangul.isJamo(c)) {
+        val korean = keyboard?.currentMode() == KeyboardMode.KOREAN
+        if (korean && session.automata === cheonjiinAutomata && CheonjiinAutomata.isKey(c)) {
+            val now = android.os.SystemClock.uptimeMillis()
+            val repeat = c == lastTapKey && now - lastTapAt <= MULTI_TAP_MS
+            session.pressJamo(editor, c, repeat)
+            lastTapKey = c
+            lastTapAt = now
+            return
+        }
+        lastTapKey = null
+
+        if (korean && Hangul.isJamo(c)) {
             session.pressJamo(editor, c)
         } else {
             session.pressText(editor, c)
         }
+    }
+
+    /**
+     * 천지인 `.,?!` 키. 처음엔 마침표, [MULTI_TAP_MS] 안에 또 누르면 방금 넣은 부호를
+     * 다음 것으로 바꾼다. 부호는 조합 대상이 아니라 확정된 글자라, 지우고 다시 넣는다.
+     */
+    override fun onPunctuationCycle() {
+        val editor = editor() ?: return
+        val now = android.os.SystemClock.uptimeMillis()
+        val options = KeyboardLayout.CHEONJIIN_PUNCTUATION
+        val cycling = punctuationIndex >= 0 && now - lastTapAt <= MULTI_TAP_MS
+        lastTapKey = null
+        lastTapAt = now
+        if (cycling) {
+            editor.deleteBefore(1)
+            session.notifyDeleted(1)
+            punctuationIndex = (punctuationIndex + 1) % options.length
+        } else {
+            punctuationIndex = 0
+        }
+        session.pressText(editor, options[punctuationIndex])
     }
 
     /**
@@ -247,6 +298,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onAction(action: KeyAction) {
         val editor = editor() ?: return
+        lastTapKey = null
+        punctuationIndex = -1
         when (action) {
             KeyAction.SHIFT -> keyboard?.toggleShift()
 
@@ -395,11 +448,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             keyboard?.showStatus(getString(R.string.ai_no_connection))
             return
         }
-        if (!Prefs.aiAvailable(this)) {
+        if (!Prefs.aiAvailable()) {
             keyboard?.showStatus(getString(R.string.ai_no_key))
             return
         }
-        val apiKey = Prefs.userApiKey(this)
 
         // 되읽기가 안 되는 앱에서는 우리가 써 넣은 사본으로 대신한다. 온디바이스 교정이
         // 쓰는 것과 같은 폴백이다 — 이게 없으면 그런 앱에서 AI 만 영영 안 된다.
@@ -417,7 +469,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
         aiBusy = true
         keyboard?.showStatus(getString(R.string.ai_running))
-        val model = Prefs.model(this)
         val requestId = aiRequestId.incrementAndGet()
 
         mainHandler.postDelayed({
@@ -428,17 +479,14 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }, AI_WATCHDOG_MS)
 
         Thread {
-            val engine = runCatching { corrector(apiKey, model) }
+            val engine = runCatching { corrector() }
             val result = engine.mapCatching { it.correct(original).getOrThrow() }
-            // 이름이 낡아 거절당하면 엔진이 스스로 갈아 끼운다. 그 결과를 받아 둔다.
-            val used = engine.getOrNull()?.activeModel
             // 서버가 헤더로 알려 준 남은 횟수. 한도 초과(402)에도 실려 오니 실패해도 받는다.
             val quota = engine.getOrNull()?.lastQuota
             mainHandler.post {
                 // 이미 시간 초과로 포기했거나 그 사이 새 요청이 시작됐으면 버린다.
                 if (aiRequestId.get() != requestId) return@post
                 aiBusy = false
-                if (used != null && used != model) rememberModel(used)
                 quota?.let { Prefs.rememberQuota(this, it) }
                 result
                     .onSuccess { applyAiResult(before, after, it) }
@@ -491,10 +539,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private fun warmUpAi() {
         if (aiWarmed) return
         aiWarmed = true
-        val apiKey = Prefs.userApiKey(this)
-        val model = Prefs.model(this)
         Thread {
-            runCatching { corrector(apiKey, model).prefetchModels() }
+            runCatching { corrector().prefetchModels() }
         }.apply {
             isDaemon = true
             priority = Thread.MIN_PRIORITY
@@ -503,37 +549,22 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     /**
-     * 엔진이 스스로 찾아낸 모델 이름을 설정에도 남긴다.
-     *
-     * 이러지 않으면 켤 때마다 낡은 이름으로 한 번 헛걸음한 뒤에야 통한다.
-     */
-    @Synchronized
-    private fun rememberModel(model: String) {
-        Prefs.setModel(this, model)
-        correctorSettings = correctorSettings?.copy(model = model)
-    }
-
-    /**
      * 설정이 그대로면 만들어 둔 것을 다시 쓴다.
      *
-     * 자기 키가 있으면 구글로 직접, 없으면 중계 서버로. 두 경로의 차이는 주소와 헤더뿐이고
-     * 교정기 안의 판단(모델 고르기, 갈아타기)은 같다.
+     * 언제나 중계 서버로 간다. 모델 이름은 기본값에서 시작하고, 거절당하면 교정기가
+     * 스스로 갈아탄다 — 그 결과는 이 객체 안에 남아 다음 요청부터 바로 쓰인다.
      */
     @Synchronized
-    private fun corrector(apiKey: String, model: String): GeminiCorrector {
-        val settings = CorrectorSettings(apiKey, model, Prefs.purchaseToken(this))
+    private fun corrector(): GeminiCorrector {
+        val settings = CorrectorSettings(Prefs.purchaseToken(this))
         val cached = corrector
         if (cached != null && correctorSettings == settings) return cached
-        val fresh = if (apiKey.isNotEmpty()) {
-            GeminiCorrector(apiKey, model, GeminiCorrector.HttpTransport())
-        } else {
-            GeminiCorrector(
-                "",
-                model,
-                GeminiCorrector.HttpTransport(Prefs.serverHeaders(this)),
-                baseUrl = Prefs.serverBase()
-            )
-        }
+        val fresh = GeminiCorrector(
+            "",
+            GeminiCorrector.DEFAULT_MODEL,
+            GeminiCorrector.HttpTransport(Prefs.serverHeaders(this)),
+            baseUrl = Prefs.serverBase()
+        )
         return fresh.also {
             corrector = it
             correctorSettings = settings
@@ -621,6 +652,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
          * 버린다. 사용자가 영영 묶여 있지 않게 하는 것이 이 값의 목적이다.
          */
         const val AI_WATCHDOG_MS = 35_000L
+
+        /** 천지인 연타로 인정하는 간격. 이보다 뜸하면 같은 키라도 새 글자다. */
+        const val MULTI_TAP_MS = 700L
 
         val SENSITIVE_VARIATIONS = setOf(
             InputType.TYPE_TEXT_VARIATION_PASSWORD,

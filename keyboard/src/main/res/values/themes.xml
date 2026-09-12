@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.SpellKeyboard" parent="Theme.AppCompat.DayNight.NoActionBar" />
+    <style name="Theme.SpellKeyboard" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/toss_bg</item>
+        <item name="android:statusBarColor">@color/toss_bg</item>
+        <item name="android:navigationBarColor">@color/toss_bg</item>
+        <item name="android:windowLightStatusBar">@bool/light_system_bars</item>
+        <item name="colorAccent">@color/toss_blue</item>
+        <item name="android:textColorPrimary">@color/toss_text</item>
+        <item name="android:textColorSecondary">@color/toss_text2</item>
+    </style>
 </resources>

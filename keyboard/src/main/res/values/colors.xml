@@ -36,4 +36,19 @@
     <color name="toolbar_button_dark">#2E3036</color>
     <color name="panel_item_background_dark">#2E3036</color>
     <color name="key_shadow_dark">#0E0F11</color>
+
+    <!-- 설정 화면. 토스 톤 — 흰 카드, 짙은 글자, 파란 주 버튼, 연한 회색 채움. -->
+    <color name="toss_bg">#F2F4F6</color>
+    <color name="toss_card">#FFFFFF</color>
+    <color name="toss_text">#191F28</color>
+    <color name="toss_text2">#4E5968</color>
+    <color name="toss_text3">#8B95A1</color>
+    <color name="toss_fill">#F2F4F6</color>
+    <color name="toss_fill_pressed">#E5E8EB</color>
+    <color name="toss_divider">#F2F4F6</color>
+    <color name="toss_blue">#3182F6</color>
+    <color name="toss_blue_pressed">#1B64DA</color>
+    <color name="toss_blue_light">#E8F3FF</color>
+    <color name="toss_switch_off">#D1D6DB</color>
+    <color name="toss_green">#00B26B</color>
 </resources>

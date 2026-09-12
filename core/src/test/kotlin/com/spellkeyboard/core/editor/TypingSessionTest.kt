@@ -1,5 +1,6 @@
 package com.spellkeyboard.core.editor
 
+import com.spellkeyboard.core.hangul.CheonjiinAutomata
 import com.spellkeyboard.core.hangul.Hangul
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -230,5 +231,43 @@ class TypingSessionTest {
 
         assertEquals(0, editor.batchDepth, "batch 가 닫히지 않았다")
         assertTrue(editor.maxBatchDepth > 0, "batch 로 묶지 않았다")
+    }
+
+    // --- 천지인 ---------------------------------------------------------------
+
+    @Test
+    fun `천지인 자판으로 바꾸면 세 획으로 글자가 된다`() {
+        session.automata = CheonjiinAutomata()
+        for (c in "ㅇㅣㆍㄴㄴㆍㆍㅣㅇ") session.pressJamo(editor, c)
+        assertEquals("안녕", editor.text)
+
+        session.pressSpace(editor)
+        assertEquals("안녕 ", editor.text)
+    }
+
+    @Test
+    fun `천지인 연타는 repeat 로 전달된다`() {
+        session.automata = CheonjiinAutomata()
+        session.pressJamo(editor, 'ㄱ')
+        session.pressJamo(editor, 'ㄱ', repeat = true)
+        session.pressJamo(editor, 'ㅣ')
+        session.pressJamo(editor, 'ㆍ')
+        assertEquals("카", editor.text)
+    }
+
+    @Test
+    fun `천지인에서도 교정은 스페이스에서 돈다`() {
+        session.automata = CheonjiinAutomata()
+        // 됬다 → 됐다. ㄷ ㅡㆍㆍㅣ(ㅝ)? 아니다 — '됬' 은 ㄷ+ㅚ+ㅆ: ㄷ ㆍㅡㅣ ㅅRㅅRㅅ
+        session.pressJamo(editor, 'ㄷ')
+        for (c in "ㆍㅡㅣ") session.pressJamo(editor, c)
+        session.pressJamo(editor, 'ㅅ')
+        session.pressJamo(editor, 'ㅅ', repeat = true)
+        session.pressJamo(editor, 'ㅅ', repeat = true)
+        session.pressJamo(editor, 'ㄷ')
+        for (c in "ㅣㆍ") session.pressJamo(editor, c)
+        assertEquals("됬다", editor.text)
+        session.pressSpace(editor)
+        assertEquals("됐다 ", editor.text)
     }
 }

@@ -17,16 +17,16 @@ data class AutomataOutput(val committed: String, val composing: String)
  *
  * 이 클래스는 안드로이드에 의존하지 않는다. 순수 상태 기계라 단위 테스트로 전부 검증한다.
  */
-class HangulAutomata {
+class HangulAutomata : JamoAutomata {
 
     private var cho = -1
     private var jung = -1
     private var jong = 0
 
-    fun isEmpty(): Boolean = cho < 0 && jung < 0 && jong == 0
+    override fun isEmpty(): Boolean = cho < 0 && jung < 0 && jong == 0
 
     /** 현재 조합 중인 문자열. 비어 있으면 "". */
-    fun composing(): String = when {
+    override fun composing(): String = when {
         cho >= 0 && jung >= 0 -> Hangul.compose(cho, jung, jong).toString()
         cho >= 0 -> Hangul.CHOSEONG[cho].toString()
         jung >= 0 -> Hangul.JUNGSEONG[jung].toString()
@@ -34,19 +34,21 @@ class HangulAutomata {
     }
 
     /** 조합을 끝내고 남은 글자를 돌려준다. */
-    fun flush(): String {
+    override fun flush(): String {
         val pending = composing()
         reset()
         return pending
     }
 
-    fun reset() {
+    override fun reset() {
         cho = -1
         jung = -1
         jong = 0
     }
 
-    /** 자모 하나를 입력한다. 자모가 아닌 문자는 조합을 끊고 그대로 확정된다. */
+    /** 자모 하나를 입력한다. 자모가 아닌 문자는 조합을 끊고 그대로 확정된다. [repeat] 는 안 쓴다. */
+    override fun press(input: Char, repeat: Boolean): AutomataOutput = press(input)
+
     fun press(jamo: Char): AutomataOutput = when {
         Hangul.isVowel(jamo) -> pressVowel(jamo)
         Hangul.isConsonant(jamo) -> pressConsonant(jamo)
@@ -128,7 +130,7 @@ class HangulAutomata {
      *
      * 조합 중인 글자가 없어 편집기의 확정된 문자를 지워야 하는 경우 null 을 돌려준다.
      */
-    fun backspace(): AutomataOutput? {
+    override fun backspace(): AutomataOutput? {
         if (isEmpty()) return null
 
         if (jong > 0) {

@@ -17,6 +17,18 @@ enum class KeyboardMode {
     SYMBOLS
 }
 
+/** 한글 자판 종류. 영문·기호 자판은 둘 다 같다. */
+enum class LayoutType {
+    QWERTY,
+    CHEONJIIN
+}
+
+/**
+ * 천지인 키 하나. [label] 이 키에 보이는 글자, [key] 가 오토마타에 보내는 키 이름
+ * (그 키의 첫 글자). null 이면 기능 키다.
+ */
+data class CheonjiinKey(val label: String, val key: Char?)
+
 /**
  * 두벌식/QWERTY 자판 배열.
  *
@@ -74,6 +86,20 @@ object KeyboardLayout {
     const val NUMBER_ROW = "1234567890"
 
     fun showsNumberRow(mode: KeyboardMode): Boolean = mode != KeyboardMode.SYMBOLS
+
+    /**
+     * 천지인 3×4 판. 전화기 자판(1~9, *, 0, #) 그대로다 — ㆍ 가 2번, ㅇㅁ 이 0번 자리.
+     * 오른쪽 한 줄은 뷰가 기능 키(⌫ ↵ 스페이스 한/영)로 채운다.
+     */
+    val CHEONJIIN_GRID: List<List<CheonjiinKey>> = listOf(
+        listOf(CheonjiinKey("ㅣ", 'ㅣ'), CheonjiinKey("ㆍ", 'ㆍ'), CheonjiinKey("ㅡ", 'ㅡ')),
+        listOf(CheonjiinKey("ㄱㅋ", 'ㄱ'), CheonjiinKey("ㄴㄹ", 'ㄴ'), CheonjiinKey("ㄷㅌ", 'ㄷ')),
+        listOf(CheonjiinKey("ㅂㅍ", 'ㅂ'), CheonjiinKey("ㅅㅎ", 'ㅅ'), CheonjiinKey("ㅈㅊ", 'ㅈ')),
+        listOf(CheonjiinKey("!#1", null), CheonjiinKey("ㅇㅁ", 'ㅇ'), CheonjiinKey(".,?!", null))
+    )
+
+    /** 천지인 문장부호 키가 연타로 도는 순서. */
+    const val CHEONJIIN_PUNCTUATION = ".,?!"
 
     fun rowsFor(mode: KeyboardMode, shifted: Boolean): List<String> = when (mode) {
         KeyboardMode.KOREAN -> if (shifted) KOREAN_SHIFTED else KOREAN

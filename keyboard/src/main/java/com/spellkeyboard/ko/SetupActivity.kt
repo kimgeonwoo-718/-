@@ -4,17 +4,17 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
 import android.view.inputmethod.InputMethodManager
-import android.widget.Button
 import android.widget.CompoundButton
-import android.widget.EditText
-import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import com.spellkeyboard.core.ai.GeminiCorrector
 import com.spellkeyboard.core.correct.CorrectionEngine
 import com.spellkeyboard.core.correct.SelfTestSamples
@@ -24,10 +24,11 @@ import com.spellkeyboard.core.spacing.Speller
 import java.io.File
 
 /**
- * 키보드를 켜고 시험해 보는 화면.
+ * 설정 화면.
  *
- * IME 는 설치만으로는 쓸 수 없다. 시스템 설정에서 활성화한 뒤 입력기로 선택해야 해서,
- * 그 두 단계를 바로 열어 주는 버튼을 둔다.
+ * 위에서부터: 시작하기(켜기·선택) → 써 보기 → 교정(실시간 스위치, AI 와 요금제) →
+ * 키보드(자판·테마·배경) → 문제 해결(접혀 있음). 사용자가 매일 만지는 것이 위에,
+ * 한 번 하고 마는 것이 아래에 온다. API 키나 모델 이름 같은 내부 사정은 보여 주지 않는다.
  */
 class SetupActivity : AppCompatActivity() {
 
@@ -58,82 +59,69 @@ class SetupActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_setup)
 
-        findViewById<Button>(R.id.enable_button).setOnClickListener {
+        bindSetup()
+        bindCorrection()
+        bindKeyboard()
+        bindTrouble()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 시스템 설정에서 켜고 돌아오면 '완료' 로 바뀌어야 하고, 키보드에서 AI 를 쓰고
+        // 돌아오면 숫자가 줄어 있어야 한다.
+        showSetupProgress()
+        showQuota()
+    }
+
+    override fun onDestroy() {
+        billing?.destroy()
+        billing = null
+        super.onDestroy()
+    }
+
+    // --- 시작하기 -------------------------------------------------------------
+
+    private fun bindSetup() {
+        findViewById<View>(R.id.enable_button).setOnClickListener {
             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
         }
-
-        findViewById<Button>(R.id.pick_button).setOnClickListener {
-            val manager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            manager.showInputMethodPicker()
+        findViewById<View>(R.id.pick_button).setOnClickListener {
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
         }
+    }
 
-        val apiKeyField = findViewById<EditText>(R.id.api_key_field)
-        val modelField = findViewById<EditText>(R.id.model_field)
-        apiKeyField.setText(Prefs.userApiKey(this))
-        modelField.setText(Prefs.model(this))
-        findViewById<Button>(R.id.api_key_save).setOnClickListener {
-            Prefs.setApiKey(this, apiKeyField.text.toString())
-            Prefs.setModel(this, modelField.text.toString())
-            Toast.makeText(this, R.string.setting_api_key_saved, Toast.LENGTH_LONG).show()
-            showQuota()
+    /** 두 단계가 어디까지 됐는지 시스템에 물어 표시한다. 사용자가 기억할 필요가 없다. */
+    private fun showSetupProgress() {
+        val manager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        val enabled = manager.enabledInputMethodList.any { it.packageName == packageName }
+        val selected = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+            .orEmpty().startsWith(packageName)
+
+        markStep(findViewById(R.id.enable_button), enabled)
+        markStep(findViewById(R.id.pick_button), selected)
+        findViewById<View>(R.id.setup_all_done).isVisible = enabled && selected
+    }
+
+    private fun markStep(pill: TextView, done: Boolean) {
+        if (done) {
+            pill.setText(R.string.setup_done)
+            pill.setBackgroundResource(R.drawable.bg_badge)
+            pill.setTextColor(ContextCompat.getColor(this, R.color.toss_blue))
+        } else {
+            pill.setText(R.string.setup_open)
+            pill.setBackgroundResource(R.drawable.bg_button_secondary)
+            pill.setTextColor(ContextCompat.getColor(this, R.color.toss_text))
         }
+    }
 
-        val modelsOutput = findViewById<TextView>(R.id.models_output)
-        findViewById<Button>(R.id.list_models).setOnClickListener {
-            val key = apiKeyField.text.toString().trim()
-            val model = modelField.text.toString().trim()
-            modelsOutput.setText(R.string.setting_listing_models)
-            // 네트워크를 타므로 UI 스레드에서 하면 화면이 멎는다.
-            Thread {
-                val report = runDiagnosis(key, model.ifEmpty { GeminiCorrector.DEFAULT_MODEL })
-                runOnUiThread {
-                    modelsOutput.text = report
-                    showQuota()
-                }
-            }.start()
-        }
+    // --- 교정 -----------------------------------------------------------------
 
-        val output = findViewById<TextView>(R.id.selftest_output)
-        findViewById<Button>(R.id.selftest_button).setOnClickListener {
-            output.setText(R.string.selftest_running)
-            // 사전을 처음 여는 데 몇 초 걸린다. UI 스레드에서 하면 화면이 멎는다.
-            Thread {
-                val report = runSelfTest()
-                runOnUiThread { output.text = report }
-            }.start()
-        }
-
+    private fun bindCorrection() {
         findViewById<CompoundButton>(R.id.auto_correct_switch).apply {
             isChecked = Prefs.autoCorrectEnabled(this@SetupActivity)
             setOnCheckedChangeListener { _, checked ->
                 Prefs.setAutoCorrectEnabled(this@SetupActivity, checked)
             }
-        }
-
-        findViewById<RadioGroup>(R.id.theme_group).apply {
-            check(
-                when (Prefs.themeMode(this@SetupActivity)) {
-                    ThemeMode.LIGHT -> R.id.theme_light
-                    ThemeMode.DARK -> R.id.theme_dark
-                }
-            )
-            // 리스너는 초기값을 넣은 **뒤에** 건다. 먼저 걸면 초기값 넣는 순간 화면이 다시 뜬다.
-            setOnCheckedChangeListener { _, checkedId ->
-                val mode = if (checkedId == R.id.theme_dark) ThemeMode.DARK else ThemeMode.LIGHT
-                if (mode == Prefs.themeMode(this@SetupActivity)) return@setOnCheckedChangeListener
-                Prefs.setThemeMode(this@SetupActivity, mode)
-                AppCompatDelegate.setDefaultNightMode(nightModeOf(mode))
-            }
-        }
-
-        backgroundStatus = findViewById(R.id.background_status)
-        showBackgroundStatus()
-        findViewById<Button>(R.id.background_pick).setOnClickListener {
-            pickBackground.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-        }
-        findViewById<Button>(R.id.background_clear).setOnClickListener {
-            BackgroundImage.clear(this)
-            showBackgroundStatus()
         }
 
         quotaOutput = findViewById(R.id.quota_output)
@@ -144,21 +132,64 @@ class SetupActivity : AppCompatActivity() {
                 showQuota()
             }
         }.also { it.start() }
-        findViewById<Button>(R.id.subscribe_button).setOnClickListener {
-            billing?.subscribe(this)
+        findViewById<View>(R.id.subscribe_button).setOnClickListener { billing?.subscribe(this) }
+    }
+
+    /**
+     * 요금 상태 한 줄. 판단은 서버가 하고, 여기 보이는 숫자는 서버가 마지막으로 알려 준 것이다.
+     */
+    private fun showQuota() {
+        val view = quotaOutput ?: return
+        if (!Prefs.serverAvailable()) {
+            view.setText(R.string.setting_quota_no_server)
+            return
+        }
+        val quota = Prefs.lastQuota(this)
+        view.text = when {
+            quota == null -> getString(R.string.setting_quota_unknown)
+            quota.remaining == null -> getString(R.string.setting_quota_unlimited)
+            else -> getString(R.string.setting_quota_free, quota.remaining, quota.limit ?: 0)
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        // 키보드에서 쓰고 돌아오면 숫자가 줄어 있어야 한다.
-        showQuota()
+    // --- 키보드 ---------------------------------------------------------------
+
+    private fun bindKeyboard() {
+        val qwerty = findViewById<TextView>(R.id.layout_qwerty)
+        val cheonjiin = findViewById<TextView>(R.id.layout_cheonjiin)
+        fun showLayout() {
+            val current = Prefs.layoutType(this)
+            qwerty.isSelected = current == LayoutType.QWERTY
+            cheonjiin.isSelected = current == LayoutType.CHEONJIIN
+        }
+        showLayout()
+        qwerty.setOnClickListener { Prefs.setLayoutType(this, LayoutType.QWERTY); showLayout() }
+        cheonjiin.setOnClickListener { Prefs.setLayoutType(this, LayoutType.CHEONJIIN); showLayout() }
+
+        val light = findViewById<TextView>(R.id.theme_light)
+        val dark = findViewById<TextView>(R.id.theme_dark)
+        val currentTheme = Prefs.themeMode(this)
+        light.isSelected = currentTheme == ThemeMode.LIGHT
+        dark.isSelected = currentTheme == ThemeMode.DARK
+        light.setOnClickListener { chooseTheme(ThemeMode.LIGHT) }
+        dark.setOnClickListener { chooseTheme(ThemeMode.DARK) }
+
+        backgroundStatus = findViewById(R.id.background_status)
+        showBackgroundStatus()
+        findViewById<View>(R.id.background_pick).setOnClickListener {
+            pickBackground.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }
+        findViewById<View>(R.id.background_clear).setOnClickListener {
+            BackgroundImage.clear(this)
+            showBackgroundStatus()
+        }
     }
 
-    override fun onDestroy() {
-        billing?.destroy()
-        billing = null
-        super.onDestroy()
+    /** 테마를 바꾸면 이 화면도 같은 밝기로 다시 뜬다 — 그래서 선택 표시를 따로 갱신할 필요가 없다. */
+    private fun chooseTheme(mode: ThemeMode) {
+        if (mode == Prefs.themeMode(this)) return
+        Prefs.setThemeMode(this, mode)
+        AppCompatDelegate.setDefaultNightMode(nightModeOf(mode))
     }
 
     private fun showBackgroundStatus() {
@@ -172,53 +203,54 @@ class SetupActivity : AppCompatActivity() {
         ThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
     }
 
-    /**
-     * 요금 상태 한 줄.
-     *
-     * 판단은 서버가 하고, 여기 보이는 숫자는 서버가 마지막으로 알려 준 것이다. 자기 키를
-     * 쓰는 사람은 서버를 안 거치니 한도가 없다.
-     */
-    private fun showQuota() {
-        val view = quotaOutput ?: return
-        if (Prefs.usingOwnKey(this)) {
-            view.setText(R.string.setting_quota_own_key)
-            return
+    // --- 문제 해결 -------------------------------------------------------------
+
+    private fun bindTrouble() {
+        val content = findViewById<View>(R.id.trouble_content)
+        val chevron = findViewById<TextView>(R.id.trouble_chevron)
+        findViewById<View>(R.id.trouble_toggle).setOnClickListener {
+            content.isVisible = !content.isVisible
+            chevron.text = if (content.isVisible) "▴" else "▾"
         }
-        if (!Prefs.serverAvailable()) {
-            view.setText(R.string.setting_quota_no_server)
-            return
+
+        val selfTestOutput = findViewById<TextView>(R.id.selftest_output)
+        findViewById<View>(R.id.selftest_button).setOnClickListener {
+            selfTestOutput.setText(R.string.selftest_running)
+            // 사전을 처음 여는 데 몇 초 걸린다. UI 스레드에서 하면 화면이 멎는다.
+            Thread {
+                val report = runSelfTest()
+                runOnUiThread { selfTestOutput.text = report }
+            }.start()
         }
-        val quota = Prefs.lastQuota(this)
-        view.text = when {
-            quota == null -> getString(R.string.setting_quota_unknown)
-            quota.remaining == null -> getString(R.string.setting_quota_unlimited)
-            else -> getString(R.string.setting_quota_free, quota.remaining, quota.limit ?: 0)
+
+        val modelsOutput = findViewById<TextView>(R.id.models_output)
+        findViewById<View>(R.id.list_models).setOnClickListener {
+            modelsOutput.setText(R.string.setting_listing_models)
+            Thread {
+                val report = runDiagnosis()
+                runOnUiThread {
+                    modelsOutput.text = report
+                    showQuota()
+                }
+            }.start()
         }
     }
 
     /**
      * AI 경로를 끝까지 밟아 보고 어디서 막히는지 보여준다.
      *
-     * "AI 가 작동 안 함" 만으로는 원인이 열 가지다. 한 번 눌러 그걸 가른다. 키보드가
-     * 실제로 쓰는 것과 **똑같은** 경로를 탄다 — 칸이 비었으면 중계 서버, 아니면 내 키.
+     * 키보드가 실제로 쓰는 것과 **똑같은** 경로(중계 서버)를 탄다.
      */
-    private fun runDiagnosis(typedKey: String, model: String): String {
-        val corrector = when {
-            typedKey.isNotEmpty() -> GeminiCorrector(typedKey, model, GeminiCorrector.HttpTransport())
-            Prefs.serverAvailable() -> GeminiCorrector(
-                "",
-                model,
-                GeminiCorrector.HttpTransport(Prefs.serverHeaders(this)),
-                baseUrl = Prefs.serverBase()
-            )
-            else -> return getString(R.string.diag_no_key_at_all)
-        }
-
+    private fun runDiagnosis(): String {
+        if (!Prefs.serverAvailable()) return getString(R.string.diag_no_server)
+        val corrector = GeminiCorrector(
+            "",
+            GeminiCorrector.DEFAULT_MODEL,
+            GeminiCorrector.HttpTransport(Prefs.serverHeaders(this)),
+            baseUrl = Prefs.serverBase()
+        )
         val checks = runCatching { corrector.diagnose() }.getOrElse { error ->
-            return getString(
-                R.string.setting_models_failed,
-                error.message ?: error.javaClass.simpleName
-            )
+            return getString(R.string.setting_models_failed, error.message ?: error.javaClass.simpleName)
         }
         corrector.lastQuota?.let { Prefs.rememberQuota(this, it) }
         return checks.joinToString("\n") { check ->
@@ -231,7 +263,6 @@ class SetupActivity : AppCompatActivity() {
      * 교정 엔진만 따로 돌려 본다.
      *
      * 키보드에서 교정이 안 될 때 원인이 엔진인지 키보드 연결부인지 가른다.
-     * 여기서 전부 통과하는데 키보드에서 안 고쳐지면 문제는 연결부에 있다.
      */
     private fun runSelfTest(): String {
         val engine = CorrectionEngine()
@@ -250,11 +281,7 @@ class SetupActivity : AppCompatActivity() {
             val mark = if (actual == expected) "OK  " else "FAIL"
             "$mark $input -> $actual"
         }
-        val header = if (dictionary.isSuccess) {
-            "띄어쓰기 사전: 준비됨"
-        } else {
-            "띄어쓰기 사전: 열지 못함 (규칙만 동작)"
-        }
+        val header = if (dictionary.isSuccess) "띄어쓰기 사전: 준비됨" else "띄어쓰기 사전: 열지 못함 (규칙만 동작)"
         return (listOf(header) + lines).joinToString("\n")
     }
 }

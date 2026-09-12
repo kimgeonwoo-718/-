@@ -73,6 +73,9 @@ class KeyboardView @JvmOverloads constructor(
 
         /** 커서 이동 모드에 들어가거나 나왔다. 상단 줄 안내를 바꿀 기회다. */
         fun onCursorModeChanged(active: Boolean)
+
+        /** 천지인의 `.,?!` 키. 연타하면 다음 부호로 바뀐다. 시간 판단은 받는 쪽 몫. */
+        fun onPunctuationCycle()
     }
 
     var listener: Listener? = null
@@ -87,6 +90,7 @@ class KeyboardView @JvmOverloads constructor(
     private var photo: Bitmap? = null
     private var photoStamp = -1L
     private var autoCorrectOn = true
+    private var layoutType: LayoutType = Prefs.layoutType(context)
 
     private val statusView: TextView
     private val aiButton: TextView
@@ -183,11 +187,14 @@ class KeyboardView @JvmOverloads constructor(
     fun applyAppearance(force: Boolean = false) {
         val nextTheme = KeyboardTheme.current(context)
         val nextStamp = BackgroundImage.stamp(context)
+        val nextLayout = Prefs.layoutType(context)
         val themeChanged = nextTheme != theme
         val photoChanged = nextStamp != photoStamp
-        if (!force && !themeChanged && !photoChanged) return
+        val layoutChanged = nextLayout != layoutType
+        if (!force && !themeChanged && !photoChanged && !layoutChanged) return
 
         theme = nextTheme
+        layoutType = nextLayout
         if (photoChanged || force) {
             photo = if (nextStamp == 0L) null else BackgroundImage.load(context)
             photoStamp = nextStamp
@@ -201,7 +208,7 @@ class KeyboardView @JvmOverloads constructor(
     private fun restyle() {
         statusView.setTextColor(theme.status)
         // 사진 위에서는 글자가 묻힌다. 반투명 바탕을 깔아 읽히게 한다.
-        statusView.background = if (photo != null) roundRect(withAlpha(theme.background, 0.6f)) else null
+        statusView.background = if (photo != null) roundRect(withAlpha(theme.background, 0.5f)) else null
         listOf(aiButton, clipboardButton, settingsButton).forEach { styleToolbarButton(it) }
         styleCorrectionButton()
         clipboardTitle.setTextColor(theme.text)
@@ -251,8 +258,8 @@ class KeyboardView @JvmOverloads constructor(
 
     /**
      * 사진 위에서는 키를 반투명하게 한다. 사진을 깔았는데 안 보이면 깐 의미가 없다.
-     * 86% 로 시작했다가 "사진이 안 보인다" 는 말을 듣고 절반으로 내렸다. 글자는 진한 색
-     * 그대로라 흰 키가 반쯤 비쳐도 읽힌다.
+     * 86% → 50% → 30% 로, "사진이 더 보여야 한다" 는 말을 두 번 듣고 내렸다. 글자는
+     * 진한 색 그대로라 키가 거의 비쳐도 읽힌다.
      */
     private fun keyFill(color: Int): Int = if (photo != null) withAlpha(color, PHOTO_KEY_ALPHA) else color
 
@@ -380,6 +387,10 @@ class KeyboardView @JvmOverloads constructor(
         repeatHandler.removeCallbacksAndMessages(null)
         dismissAlternate()
         rowContainer.removeAllViews()
+        if (mode == KeyboardMode.KOREAN && layoutType == LayoutType.CHEONJIIN) {
+            renderCheonjiin()
+            return
+        }
         val rows = KeyboardLayout.rowsFor(mode, shifted)
 
         // 숫자 줄은 늘 떠 있다. 숫자 하나 넣자고 기호 자판을 오갈 일이 없어진다.
@@ -423,11 +434,48 @@ class KeyboardView @JvmOverloads constructor(
         })
     }
 
-    private fun buildRow(build: LinearLayout.() -> Unit): LinearLayout {
+    /**
+     * 천지인. 3×4 전화기 판 + 오른쪽 기능 열(⌫ ↵ 스페이스 한/영). 줄이 넷뿐이라
+     * 쿼티(다섯 줄)와 키보드 높이를 맞추려고 키를 더 높게 둔다.
+     */
+    private fun renderCheonjiin() {
+        val side = listOf<LinearLayout.() -> Unit>(
+            { addActionKey("⌫", KeyAction.BACKSPACE, weight = 2.5f, repeatable = true) },
+            { addActionKey("↵", KeyAction.ENTER, weight = 2.5f) },
+            { addActionKey("", KeyAction.SPACE, weight = 2.5f, letterKey = true) },
+            { addActionKey("한/영", KeyAction.LANGUAGE, weight = 2.5f) }
+        )
+        KeyboardLayout.CHEONJIIN_GRID.forEachIndexed { index, gridRow ->
+            rowContainer.addView(buildRow(heightDp = CHEONJIIN_KEY_HEIGHT_DP) {
+                gridRow.forEach { key ->
+                    when {
+                        key.key != null -> addCheonjiinKey(key.label, key.key)
+                        key.label == "!#1" -> addActionKey(key.label, KeyAction.SYMBOLS, weight = 2.5f)
+                        else -> addPunctuationKey(key.label)
+                    }
+                }
+                side[index](this)
+            })
+        }
+    }
+
+    private fun LinearLayout.addCheonjiinKey(label: String, key: Char) {
+        val view = keyView(label, keyBackground(isAction = false), textSp = if (label.length > 1) 19f else 22f)
+        attachKeyTouch(view, onPress = { listener?.onChar(key) })
+        addView(view, keyParams(2.5f))
+    }
+
+    private fun LinearLayout.addPunctuationKey(label: String) {
+        val view = keyView(label, keyBackground(isAction = false), textSp = 15f)
+        attachKeyTouch(view, onPress = { listener?.onPunctuationCycle() })
+        addView(view, keyParams(2.5f))
+    }
+
+    private fun buildRow(heightDp: Int = KEY_HEIGHT_DP, build: LinearLayout.() -> Unit): LinearLayout {
         val row = LinearLayout(context).apply {
             orientation = HORIZONTAL
             isMotionEventSplittingEnabled = true
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(KEY_HEIGHT_DP)).apply {
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(heightDp)).apply {
                 topMargin = dp(ROW_GAP_DP)
             }
             weightSum = 10f
@@ -537,12 +585,16 @@ class KeyboardView @JvmOverloads constructor(
 
     // 파라미터 이름을 background 로 두면 apply 블록 안에서 TextView 자신의
     // background 프로퍼티가 먼저 잡힌다. 조용히 배경이 사라지므로 이름을 달리한다.
-    private fun keyView(label: String, keyFace: StateListDrawable): TextView =
+    private fun keyView(
+        label: String,
+        keyFace: StateListDrawable,
+        textSp: Float = if (label.length > 1) 14f else 20f
+    ): TextView =
         TextView(context).apply {
             text = label
             gravity = Gravity.CENTER
             setTextColor(theme.text)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (label.length > 1) 14f else 20f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, textSp)
             isFocusable = false
             background = keyFace
             // 누름 시점에 처리하느라 onClick 을 쓰지 않는다. 화면 낭독기가 키를
@@ -743,7 +795,8 @@ class KeyboardView @JvmOverloads constructor(
         const val SPACE_HOLD_MS = 380L
         /** 커서 이동 모드에서 이만큼 밀 때마다 한 글자. */
         const val CURSOR_STEP_DP = 18
-        const val PHOTO_KEY_ALPHA = 0.5f
+        const val PHOTO_KEY_ALPHA = 0.3f
+        const val CHEONJIIN_KEY_HEIGHT_DP = 58
         const val CLIPBOARD_HEIGHT_DP = 244
         const val REPEAT_DELAY_MS = 400L
         const val REPEAT_INTERVAL_MS = 55L

@@ -183,3 +183,18 @@ Worker 는 사용자 근처 데이터센터에서 돌고, 한국 통신사 트�
   380ms 누르면 커서 모드, 18dp 마다 한 글자, 서비스는 DPAD 키 이벤트로 옮긴다.
 - **톤**: 키 아래 1dp 그림자(`keyFace`), 바탕 #E8EAEE, 키 48dp/틈 3dp/줄 간격 5dp, 도구 줄은 단색 기호.
 
+---
+
+## 천지인 · 토스 톤 설정 화면 · API 칸 제거 (2026-09-12)
+
+- **천지인**: `core/hangul/CheonjiinAutomata` (JVM 테스트 18개). 모음은 ㅣㆍㅡ 획 열로 들고
+  있다가 접는다(`VOWEL_TRANSITIONS`). 자음 연타(ㄱ→ㅋ→ㄲ)는 `press(key, repeat=true)` 로
+  받고, "같은 키를 700ms 안에" 는 서비스가 잰다(`MULTI_TAP_MS`). `.,?!` 키도 같은 창으로
+  돈다. 자판은 전화기 3×4 + 오른쪽 기능 열(⌫ ↵ 스페이스 한/영). 설정 → 키보드 → 자판.
+  `TypingSession.automata` 로 조립기를 갈아 끼운다(`JamoAutomata` 인터페이스).
+- **설정 화면**: 카드/행/알약/분할 선택은 `values/styles.xml`, 색은 `toss_*`(밤 값은
+  `values-night`). 시작하기 카드는 시스템에 물어 "완료" 를 표시한다. 문제 해결 카드는 접혀 있다.
+- **API 칸 제거**: 사용자 키·모델 칸과 그 코드 경로(`Prefs.userApiKey/model`)를 뺐다. AI 는
+  언제나 중계 서버, 모델은 `DEFAULT_MODEL` 에서 시작해 교정기가 스스로 갈아탄다.
+- **사진 위 키**: 30% 불투명.
+
