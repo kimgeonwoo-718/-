@@ -23,11 +23,17 @@ new_sqlite_classes = ["GoogleRelay"]
 PLAY_PACKAGE = "com.spellkeyboard.ko"
 FREE_DAILY_LIMIT = "5"
 IP_DAILY_LIMIT = "300"
+# 교정에 쓰는 모델. gpt-5-nano 는 띄어쓰기를 다시 나누다 단어를 지어냈다
+# ('오죽하겠냐마는' → '어쩜 하겠냐마는'). 지시문으로 눌러 봤지만 모델이 작아서 생기는
+# 일이라 한계가 있어 한 단계 올린다. 출력 $0.40 → $1.00 으로, 그래도 예전에 쓰던
+# gemini-3.5-flash-lite($2.50)보다 2.5 배 싸다. 되돌리려면 gpt-5-nano 로 고치면 된다.
+OPENAI_MODEL = "gpt-5-mini"
 
 # 지난 사용량과 만료된 캐시를 매일 새벽에 치운다.
 [triggers]
 crons = ["0 18 * * *"]
 
 # 비밀값은 여기 두지 않는다. CI 가 wrangler secret put 으로 넣는다:
-#   GEMINI_API_KEY         구글 Gemini 키
+#   OPENAI_API_KEY         OpenAI 키 (있으면 이쪽으로 간다)
+#   GEMINI_API_KEY         구글 Gemini 키 (OpenAI 키가 없을 때)
 #   PLAY_SERVICE_ACCOUNT   Play Developer API 서비스 계정 JSON (없으면 전부 무료로 본다)
