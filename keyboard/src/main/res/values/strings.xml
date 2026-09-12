@@ -58,22 +58,27 @@
     <string name="setting_plan_note">자동 교정은 요금제와 상관없이 언제나 무제한이에요. 결제는 Google Play 가 처리하고, Play 스토어에서 설치한 앱에서만 결제창이 떠요.</string>
     <string name="billing_subscribed">프리미엄이 확인됐어요. 이제 AI 교정을 하루 10만 자까지 쓸 수 있어요.</string>
 
-    <!-- 결제 화면 -->
-    <string name="paywall_close">✕</string>
-    <string name="paywall_headline">하루에 99원으로\n삶의 질을 높여보세요!</string>
-    <string name="paywall_price_line">월 2,990원 · 언제든 해지</string>
+    <!-- 결제 화면 (챗GPT Plus 업그레이드 화면 구조) -->
+    <string name="paywall_back">←</string>
+    <string name="paywall_title_app">맞춤법 키보드</string>
+    <string name="paywall_title_plan">프리미엄</string>
+    <string name="paywall_headline">하루에 99원으로 삶의 질을 높여보세요!</string>
+    <string name="paywall_col_features">주요 기능</string>
     <string name="paywall_col_free">무료</string>
     <string name="paywall_col_premium">프리미엄</string>
-    <string name="paywall_row_realtime">실시간 자동 교정</string>
-    <string name="paywall_unlimited">무제한</string>
+    <string name="paywall_row_realtime">실시간 맞춤법·띄어쓰기 교정</string>
+    <string name="paywall_row_keyboard">천지인 · 배경 사진 · 다크 모드</string>
     <string name="paywall_row_ai">AI 전체 교정</string>
     <string name="paywall_free_ai">하루 5회</string>
     <string name="paywall_premium_ai">하루 10만 자</string>
-    <string name="paywall_table_title">10만 자면 이만큼이에요</string>
-    <string name="paywall_table_sub">하루에 이 정도씩 고칠 수 있어요</string>
+    <string name="paywall_row_100">카톡 한 줄 (100자) 기준</string>
+    <string name="paywall_row_500">긴 문자 (500자) 기준</string>
+    <string name="paywall_row_2000">긴 글 (2,000자) 기준</string>
     <string name="paywall_times">%1$s번</string>
-    <string name="paywall_cta">월 2,990원으로 시작하기</string>
-    <string name="paywall_note">결제와 해지는 Google Play 에서 처리돼요. Play 스토어에서 설치한 앱에서만 결제창이 떠요. 실시간 자동 교정은 요금제와 상관없이 언제나 무제한이에요.</string>
+    <string name="paywall_restore">구독 복원</string>
+    <string name="paywall_cta_upgrade">₩2,990에 업그레이드하세요</string>
+    <string name="paywall_cta_free">무료로 계속 쓰기</string>
+    <string name="paywall_footer">매월 자동 갱신됩니다. 언제든지 취소할 수 있습니다.</string>
     <string name="billing_failed">결제를 시작하지 못했어요: %1$s</string>
     <string name="billing_product_missing">Play 스토어에서 설치한 앱에서만 결제할 수 있어요.</string>
     <string name="section_keyboard">키보드</string>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 결제 화면의 검은 알약 버튼. 챗GPT 업그레이드 버튼과 같은 모양. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#333333" />
+            <corners android:radius="28dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#111111" />
+            <corners android:radius="28dp" />
+        </shape>
+    </item>
+</selector>
