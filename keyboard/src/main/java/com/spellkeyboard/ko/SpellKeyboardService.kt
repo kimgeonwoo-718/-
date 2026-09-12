@@ -228,24 +228,31 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onChar(c: Char) {
         val editor = editor() ?: return
         keyboard?.clearShift()
+        lastTapKey = null
         punctuationIndex = -1
 
-        val korean = keyboard?.currentMode() == KeyboardMode.KOREAN
-        if (korean && session.automata === cheonjiinAutomata && CheonjiinAutomata.isKey(c)) {
-            val now = android.os.SystemClock.uptimeMillis()
-            val repeat = c == lastTapKey && now - lastTapAt <= MULTI_TAP_MS
-            session.pressJamo(editor, c, repeat)
-            lastTapKey = c
-            lastTapAt = now
-            return
-        }
-        lastTapKey = null
-
-        if (korean && Hangul.isJamo(c)) {
+        if (keyboard?.currentMode() == KeyboardMode.KOREAN && Hangul.isJamo(c)) {
             session.pressJamo(editor, c)
         } else {
             session.pressText(editor, c)
         }
+    }
+
+    /**
+     * 천지인 낱자 키. 자판 판별은 뷰가 이미 했다 — 여기로 왔다는 것 자체가 천지인이다.
+     * 만일을 위해 오토마타가 천지인이 아니면 지금 갈아 끼운다.
+     */
+    override fun onCheonjiinKey(key: Char) {
+        val editor = editor() ?: return
+        keyboard?.clearShift()
+        punctuationIndex = -1
+        if (session.automata !== cheonjiinAutomata) session.automata = cheonjiinAutomata
+
+        val now = android.os.SystemClock.uptimeMillis()
+        val repeat = key == lastTapKey && now - lastTapAt <= MULTI_TAP_MS
+        session.pressJamo(editor, key, repeat)
+        lastTapKey = key
+        lastTapAt = now
     }
 
     /**
@@ -318,6 +325,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
             KeyAction.LANGUAGE -> switchMode(editor, KeyboardMode.ENGLISH)
             KeyAction.SYMBOLS -> switchMode(editor, KeyboardMode.SYMBOLS)
+            KeyAction.SYMBOL_PAGE -> keyboard?.flipSymbolPage()
         }
     }
 

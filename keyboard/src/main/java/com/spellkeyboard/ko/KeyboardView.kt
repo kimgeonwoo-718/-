@@ -76,12 +76,21 @@ class KeyboardView @JvmOverloads constructor(
 
         /** 천지인의 `.,?!` 키. 연타하면 다음 부호로 바뀐다. 시간 판단은 받는 쪽 몫. */
         fun onPunctuationCycle()
+
+        /**
+         * 천지인 낱자 키. 두벌식과 달리 **전용 통로**로 보낸다 — onChar 로 보내면
+         * 서비스가 어느 자판인지 다시 판별해야 하고, 그 판별이 어긋나면 점(ㆍ)이 그냥
+         * 글자로 박혀 모음이 안 만들어진다(실기기에서 "안 모아짐"). 여기로 오면 무조건
+         * 천지인 오토마타로 간다.
+         */
+        fun onCheonjiinKey(key: Char)
     }
 
     var listener: Listener? = null
 
     private var mode = KeyboardMode.KOREAN
     private var shifted = false
+    private var symbolPage = 0
 
     /** 지금 팔레트. [applyAppearance] 가 설정을 읽어 바꾼다. */
     private var theme: KeyboardTheme = KeyboardTheme.current(context)
@@ -275,6 +284,13 @@ class KeyboardView @JvmOverloads constructor(
         if (mode == newMode) return
         mode = newMode
         shifted = false
+        symbolPage = 0
+        render()
+    }
+
+    /** 기호 페이지를 넘긴다(1/2 ↔ 2/2). */
+    fun flipSymbolPage() {
+        symbolPage = (symbolPage + 1) % KeyboardLayout.SYMBOL_PAGES.size
         render()
     }
 
@@ -304,21 +320,30 @@ class KeyboardView @JvmOverloads constructor(
         orientation = VERTICAL
         isVisible = false
 
+        clipboardTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+        clipboardTitle.typeface = android.graphics.Typeface.DEFAULT_BOLD
         val header = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(6), 0, 0, 0)
             addView(clipboardTitle, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
             addView(toolbarButton("✕") { hideClipboard() }, toolbarParams())
         }
-        addView(header, LayoutParams(LayoutParams.MATCH_PARENT, dp(40)))
+        addView(header, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
 
+        clipboardList.setPadding(dp(4), 0, dp(4), dp(6))
         addView(
-            ScrollView(this@KeyboardView.context).apply { addView(clipboardList) },
+            ScrollView(this@KeyboardView.context).apply {
+                isVerticalScrollBarEnabled = false
+                addView(clipboardList)
+            },
             LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
         )
     }
 
-    /** 클립보드 목록을 채운다. 비어 있으면 왜 비었는지 알려 준다. */
+    /**
+     * 클립보드 목록을 삼성처럼 2열 카드 격자로 채운다. 비어 있으면 왜 비었는지 알려 준다.
+     */
     fun showClipboardItems(items: List<String>) {
         clipboardList.removeAllViews()
         if (items.isEmpty()) {
@@ -327,38 +352,59 @@ class KeyboardView @JvmOverloads constructor(
                     text = context.getString(R.string.clipboard_empty)
                     setTextColor(theme.status)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                    setPadding(dp(12), dp(16), dp(12), dp(16))
+                    gravity = Gravity.CENTER
+                    setPadding(dp(24), dp(28), dp(24), dp(28))
                 }
             )
             return
         }
-        items.forEach { clipboardList.addView(clipboardItemView(it)) }
+        // 두 개씩 한 줄. 홀수면 마지막 칸은 빈 자리로 폭을 맞춘다.
+        items.chunked(2).forEach { pair ->
+            val row = LinearLayout(context).apply { orientation = HORIZONTAL }
+            pair.forEach { row.addView(clipboardCard(it), cardParams()) }
+            if (pair.size == 1) row.addView(View(context), cardParams())
+            clipboardList.addView(row)
+        }
     }
 
-    private fun clipboardItemView(text: String): View = LinearLayout(context).apply {
-        orientation = HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        background = roundRect(keyFill(theme.panelItem))
-        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-            setMargins(dp(6), dp(3), dp(6), dp(3))
-        }
+    private fun cardParams() = LayoutParams(0, dp(CLIPBOARD_CARD_HEIGHT_DP), 1f).apply {
+        setMargins(dp(4), dp(4), dp(4), dp(4))
+    }
 
-        val label = TextView(this@KeyboardView.context).apply {
+    /** 카드 하나 — 눌러 붙여넣기, 오른쪽 위 작은 ✕ 로 삭제. */
+    private fun clipboardCard(text: String): View {
+        val card = android.widget.FrameLayout(context).apply {
+            background = roundRect(keyFill(theme.panelItem))
+        }
+        val label = TextView(context).apply {
             this.text = text
             setTextColor(theme.text)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            maxLines = 2
+            maxLines = 4
             ellipsize = TextUtils.TruncateAt.END
-            setPadding(dp(12), dp(10), dp(8), dp(10))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
         }
-        addView(label, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-        attachKeyTouch(label, onPress = {
+        card.addView(label, android.widget.FrameLayout.LayoutParams(
+            LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT
+        ))
+        attachKeyTouch(card, onPress = {
             listener?.onClipboardPaste(text)
             hideClipboard()
         })
 
-        val delete = toolbarButton("✕") { listener?.onClipboardDelete(text) }
-        addView(delete, toolbarParams())
+        val delete = TextView(context).apply {
+            this.text = "✕"
+            gravity = Gravity.CENTER
+            setTextColor(theme.status)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            background = circle(theme.background)
+            attachKeyTouch(this) { listener?.onClipboardDelete(text) }
+        }
+        card.addView(delete, android.widget.FrameLayout.LayoutParams(dp(24), dp(24)).apply {
+            gravity = Gravity.TOP or Gravity.END
+            setMargins(0, dp(6), dp(6), 0)
+        })
+        return card
     }
 
     private fun showClipboard() {
@@ -389,6 +435,10 @@ class KeyboardView @JvmOverloads constructor(
         rowContainer.removeAllViews()
         if (mode == KeyboardMode.KOREAN && layoutType == LayoutType.CHEONJIIN) {
             renderCheonjiin()
+            return
+        }
+        if (mode == KeyboardMode.SYMBOLS) {
+            renderSymbols()
             return
         }
         val rows = KeyboardLayout.rowsFor(mode, shifted)
@@ -461,7 +511,7 @@ class KeyboardView @JvmOverloads constructor(
 
     private fun LinearLayout.addCheonjiinKey(label: String, key: Char) {
         val view = keyView(label, keyBackground(isAction = false), textSp = if (label.length > 1) 19f else 22f)
-        attachKeyTouch(view, onPress = { listener?.onChar(key) })
+        attachKeyTouch(view, onPress = { listener?.onCheonjiinKey(key) })
         addView(view, keyParams(2.5f))
     }
 
@@ -469,6 +519,31 @@ class KeyboardView @JvmOverloads constructor(
         val view = keyView(label, keyBackground(isAction = false), textSp = 15f)
         attachKeyTouch(view, onPress = { listener?.onPunctuationCycle() })
         addView(view, keyParams(2.5f))
+    }
+
+    /**
+     * 삼성식 기호 자판. 숫자·기호 3줄 + [1/2 · 특수 7키 · ⌫] 줄 + 바닥 기능 줄.
+     */
+    private fun renderSymbols() {
+        val page = KeyboardLayout.SYMBOL_PAGES[symbolPage]
+        rowContainer.addView(buildRow { page.rows[0].forEach { addCharKey(it) } })
+        rowContainer.addView(buildRow { page.rows[1].forEach { addCharKey(it) } })
+        rowContainer.addView(buildRow { page.rows[2].forEach { addCharKey(it) } })
+        rowContainer.addView(buildRow {
+            val label = "${symbolPage + 1}/${KeyboardLayout.SYMBOL_PAGES.size}"
+            addActionKey(label, KeyAction.SYMBOL_PAGE, weight = 1.5f)
+            page.extra.forEach { addCharKey(it, weight = 1f) }
+            addSpacer((7 - page.extra.length).coerceAtLeast(0) * 1f)
+            addActionKey("⌫", KeyAction.BACKSPACE, weight = 1.5f, repeatable = true)
+        })
+        rowContainer.addView(buildRow {
+            addActionKey("가A", KeyAction.SYMBOLS, weight = 1.35f)
+            addActionKey("한/영", KeyAction.LANGUAGE, weight = 1.05f)
+            addCharKey(',', weight = 0.9f)
+            addActionKey("", KeyAction.SPACE, weight = 4.35f, letterKey = true)
+            addCharKey('.', weight = 0.9f)
+            addActionKey("↵", KeyAction.ENTER, weight = 1.45f)
+        })
     }
 
     private fun buildRow(heightDp: Int = KEY_HEIGHT_DP, build: LinearLayout.() -> Unit): LinearLayout {
@@ -797,6 +872,7 @@ class KeyboardView @JvmOverloads constructor(
         const val CURSOR_STEP_DP = 18
         const val PHOTO_KEY_ALPHA = 0.3f
         const val CHEONJIIN_KEY_HEIGHT_DP = 58
+        const val CLIPBOARD_CARD_HEIGHT_DP = 76
         const val CLIPBOARD_HEIGHT_DP = 244
         const val REPEAT_DELAY_MS = 400L
         const val REPEAT_INTERVAL_MS = 55L

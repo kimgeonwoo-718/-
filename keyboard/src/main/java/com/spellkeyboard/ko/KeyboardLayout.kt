@@ -7,7 +7,9 @@ enum class KeyAction {
     SPACE,
     ENTER,
     LANGUAGE,
-    SYMBOLS
+    SYMBOLS,
+    /** 기호 자판의 1/2·2/2 — 다음 기호 페이지로 넘긴다. */
+    SYMBOL_PAGE
 }
 
 /** 키보드가 보여줄 문자 배열. */
@@ -28,6 +30,9 @@ enum class LayoutType {
  * (그 키의 첫 글자). null 이면 기능 키다.
  */
 data class CheonjiinKey(val label: String, val key: Char?)
+
+/** 기호 자판 한 페이지. [rows] 는 숫자·기호 3줄, [extra] 는 특수줄 7키. */
+data class SymbolPage(val rows: List<String>, val extra: String)
 
 /**
  * 두벌식/QWERTY 자판 배열.
@@ -55,10 +60,29 @@ object KeyboardLayout {
         "zxcvbnm"
     )
 
-    private val SYMBOLS = listOf(
-        "1234567890",
-        "-/:;()₩&@",
-        ".,?!'"
+    /**
+     * 삼성 키보드 기호 배열. 두 페이지다.
+     *
+     * 각 페이지는 [숫자·기호 3줄, 아래 특수줄 7키]. 특수줄은 1/2·2/2 토글과 백스페이스
+     * 사이에 끼는 일곱 키다. 삼성 배열을 눈으로 맞췄다.
+     */
+    val SYMBOL_PAGES: List<SymbolPage> = listOf(
+        SymbolPage(
+            rows = listOf(
+                "1234567890",
+                "+×÷=/_<>[]",
+                "!@#₩%^&*()"
+            ),
+            extra = "-'\":;,?"
+        ),
+        SymbolPage(
+            rows = listOf(
+                "1234567890",
+                "~`|•√π¶∆°μ",
+                "£¢€¥§{}\\℃℉"
+            ),
+            extra = "©®™℅★♥♡"
+        )
     )
 
     /**
@@ -104,7 +128,7 @@ object KeyboardLayout {
     fun rowsFor(mode: KeyboardMode, shifted: Boolean): List<String> = when (mode) {
         KeyboardMode.KOREAN -> if (shifted) KOREAN_SHIFTED else KOREAN
         KeyboardMode.ENGLISH -> if (shifted) ENGLISH.map { it.uppercase() } else ENGLISH
-        KeyboardMode.SYMBOLS -> SYMBOLS
+        KeyboardMode.SYMBOLS -> SYMBOL_PAGES.first().rows
     }
 
     /** 시프트가 의미 있는 배열인지. 기호 자판에는 시프트가 없다. */
