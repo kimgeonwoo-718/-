@@ -65,6 +65,9 @@ class KeyboardView @JvmOverloads constructor(
 
         fun onOpenSettings()
 
+        /** 자판 위 '교정' 동그라미. 실시간 교정을 끄고 켠다. */
+        fun onToggleAutoCorrect()
+
         /** 자판 위 '교정' 버튼. 실시간 온디바이스 교정을 끄고 켠다. */
 
         /** 스페이스를 꾹 누른 채 밀어서 커서를 [delta] 글자만큼 옮긴다. 음수면 왼쪽. */
@@ -109,6 +112,8 @@ class KeyboardView @JvmOverloads constructor(
     private val emojiButton: TextView
     private val aiButton: TextView
     private val clipboardButton: TextView
+    private val correctionButton: TextView
+    private var autoCorrectOn = true
     private val settingsButton: TextView
     private val clipboardTitle: TextView
     private val rowContainer: LinearLayout
@@ -160,20 +165,26 @@ class KeyboardView @JvmOverloads constructor(
         emojiButton = toolbarButton("☺\uFE0E") { showEmoji() }
         // AI 는 그림 대신 글자 "AI". 삼성의 ✨ 자리에 들어가는 우리 기능이라 이름을 그대로 쓴다.
         aiButton = toolbarButton("AI") { listener?.onAiCorrect() }.apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
         clipboardButton = toolbarButton("▤") { showClipboard() }
+        // 실시간 교정 켬/끔. 켜져 있으면 강조색 동그라미라 글자 없이도 상태가 보인다.
+        correctionButton = toolbarButton(context.getString(R.string.toolbar_correction)) {
+            listener?.onToggleAutoCorrect()
+        }.apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
         settingsButton = toolbarButton("⚙\uFE0E") { listener?.onOpenSettings() }
 
         // 삼성처럼 동그라미들을 줄 전체에 고르게 펼친다. 사이와 양끝의 빈칸이 같은 무게라
-        // 간격이 저절로 같아진다. 글자 버튼(예전 "교정" 토글)은 없다 — 자판 위에 글을
-        // 두지 않기로 했고, 실시간 교정은 설정에서 끄고 켠다.
+        // 간격이 저절로 같아진다.
         val toolbar = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(6), 0, dp(6), 0)
-            listOf(emojiButton, aiButton, clipboardButton, settingsButton).forEach { button ->
+            listOf(emojiButton, aiButton, clipboardButton, correctionButton, settingsButton).forEach { button ->
                 addView(View(context), LayoutParams(0, 1, 1f))
                 addView(button, toolbarParams())
             }
@@ -209,6 +220,12 @@ class KeyboardView @JvmOverloads constructor(
         addView(emojiPanel, LayoutParams(LayoutParams.MATCH_PARENT, dp(CLIPBOARD_HEIGHT_DP)))
 
         applyAppearance(force = true)
+    }
+
+    /** '교정' 동그라미의 켜짐 표시. 켜져 있으면 강조색, 꺼져 있으면 흐리게. */
+    fun setAutoCorrectOn(on: Boolean) {
+        autoCorrectOn = on
+        styleCorrectionButton()
     }
 
     /** AI 가 도는 동안 AI 버튼을 흐리게. */
@@ -291,6 +308,7 @@ class KeyboardView @JvmOverloads constructor(
     /** 자판 밖의 것들(도구 줄, 클립보드 머리)에 팔레트를 입힌다. 키는 [render] 가 한다. */
     private fun restyle() {
         listOf(emojiButton, aiButton, clipboardButton, settingsButton).forEach { styleToolbarButton(it) }
+        styleCorrectionButton()
         clipboardTitle.setTextColor(theme.text)
         emojiTitle.setTextColor(theme.text)
     }
@@ -298,6 +316,16 @@ class KeyboardView @JvmOverloads constructor(
     private fun styleToolbarButton(view: TextView) {
         view.setTextColor(theme.text)
         view.background = circle(keyFill(theme.toolbarButton))
+    }
+
+    private fun styleCorrectionButton() {
+        if (autoCorrectOn) {
+            correctionButton.setTextColor(theme.onAccent)
+            correctionButton.background = circle(theme.accent)
+        } else {
+            correctionButton.setTextColor(theme.hint)
+            correctionButton.background = circle(keyFill(theme.toolbarButton))
+        }
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -926,7 +954,9 @@ class KeyboardView @JvmOverloads constructor(
         TextView(context).apply {
             text = label
             gravity = Gravity.CENTER
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            // 삼성은 아이콘이 동그라미를 거의 채운다. 34dp 동그라미에 22sp 면 그 비율이다.
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+            includeFontPadding = false
             contentDescription = label
             attachKeyTouch(this, onPress = onPress)
             styleToolbarButton(this)
@@ -1252,9 +1282,12 @@ class KeyboardView @JvmOverloads constructor(
     ).toInt()
 
     private companion object {
-        /** 도구 줄. 삼성은 44dp 동그라미를 56dp 줄에 놓는다. */
-        const val TOOLBAR_HEIGHT_DP = 56
-        const val TOOLBAR_BUTTON_DP = 44
+        /**
+         * 도구 줄. 삼성 화면과 나란히 재 보니 동그라미가 화면 폭의 8%(≈33dp), 줄이 48dp 다.
+         * 처음엔 44dp/56dp 로 잡았는데 실기기에서 눈에 띄게 컸다.
+         */
+        const val TOOLBAR_HEIGHT_DP = 48
+        const val TOOLBAR_BUTTON_DP = 34
         const val FLASH_MS = 1600L
         // 삼성 키보드 실측에 맞춘 값. 키는 조금 높고, 틈은 조금 넓다.
         const val KEY_HEIGHT_DP = 48

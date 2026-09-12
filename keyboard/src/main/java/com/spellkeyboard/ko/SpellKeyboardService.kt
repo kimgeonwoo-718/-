@@ -164,6 +164,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         syncAutomata()
         fieldCorrectable = isCorrectableField(info)
         session.correctionEnabled = Prefs.autoCorrectEnabled(this) && fieldCorrectable
+        keyboard?.setAutoCorrectOn(Prefs.autoCorrectEnabled(this))
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
@@ -413,6 +414,13 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         session.reset()
         val key = if (delta < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
         repeat(kotlin.math.abs(delta)) { sendDownUpKeyEvents(key) }
+    }
+
+    override fun onToggleAutoCorrect() {
+        val enabled = !Prefs.autoCorrectEnabled(this)
+        Prefs.setAutoCorrectEnabled(this, enabled)
+        session.correctionEnabled = enabled && fieldCorrectable
+        keyboard?.setAutoCorrectOn(enabled)
     }
 
     override fun onCursorModeChanged(active: Boolean) {
