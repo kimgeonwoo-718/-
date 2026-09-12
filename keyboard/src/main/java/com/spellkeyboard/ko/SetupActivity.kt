@@ -113,18 +113,13 @@ class SetupActivity : AppCompatActivity() {
         findViewById<RadioGroup>(R.id.theme_group).apply {
             check(
                 when (Prefs.themeMode(this@SetupActivity)) {
-                    ThemeMode.SYSTEM -> R.id.theme_system
                     ThemeMode.LIGHT -> R.id.theme_light
                     ThemeMode.DARK -> R.id.theme_dark
                 }
             )
             // 리스너는 초기값을 넣은 **뒤에** 건다. 먼저 걸면 초기값 넣는 순간 화면이 다시 뜬다.
             setOnCheckedChangeListener { _, checkedId ->
-                val mode = when (checkedId) {
-                    R.id.theme_light -> ThemeMode.LIGHT
-                    R.id.theme_dark -> ThemeMode.DARK
-                    else -> ThemeMode.SYSTEM
-                }
+                val mode = if (checkedId == R.id.theme_dark) ThemeMode.DARK else ThemeMode.LIGHT
                 if (mode == Prefs.themeMode(this@SetupActivity)) return@setOnCheckedChangeListener
                 Prefs.setThemeMode(this@SetupActivity, mode)
                 AppCompatDelegate.setDefaultNightMode(nightModeOf(mode))
@@ -173,7 +168,6 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun nightModeOf(mode: ThemeMode): Int = when (mode) {
-        ThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
         ThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
         ThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
     }

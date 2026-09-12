@@ -68,9 +68,10 @@
     <string name="status_correction_on">실시간 교정을 켰습니다</string>
     <string name="status_correction_off">실시간 교정을 껐습니다 · 위의 \'교정\' 버튼으로 다시 켭니다</string>
     <string name="toolbar_correction">교정</string>
+    <string name="status_correction_disabled">실시간 교정 꺼짐 · 위의 \'교정\' 버튼으로 켭니다</string>
+    <string name="status_cursor_mode">◀ 좌우로 밀어 커서 이동 ▶</string>
 
     <string name="setting_appearance">키보드 모양</string>
-    <string name="setting_theme_system">시스템 따라가기</string>
     <string name="setting_theme_light">밝게</string>
     <string name="setting_theme_dark">어둡게</string>
     <string name="setting_background_pick">배경 사진 고르기</string>

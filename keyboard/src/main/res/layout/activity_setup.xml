@@ -108,13 +108,6 @@
             android:orientation="horizontal">
 
             <RadioButton
-                android:id="@+id/theme_system"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1.4"
-                android:text="@string/setting_theme_system" />
-
-            <RadioButton
                 android:id="@+id/theme_light"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"

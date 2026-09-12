@@ -10,7 +10,9 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Handler
 import android.os.Looper
@@ -65,6 +67,12 @@ class KeyboardView @JvmOverloads constructor(
 
         /** 자판 위 '교정' 버튼. 실시간 온디바이스 교정을 끄고 켠다. */
         fun onToggleAutoCorrect()
+
+        /** 스페이스를 꾹 누른 채 밀어서 커서를 [delta] 글자만큼 옮긴다. 음수면 왼쪽. */
+        fun onMoveCursor(delta: Int)
+
+        /** 커서 이동 모드에 들어가거나 나왔다. 상단 줄 안내를 바꿀 기회다. */
+        fun onCursorModeChanged(active: Boolean)
     }
 
     var listener: Listener? = null
@@ -115,12 +123,13 @@ class KeyboardView @JvmOverloads constructor(
             ellipsize = TextUtils.TruncateAt.END
             text = context.getString(R.string.status_idle)
         }
-        aiButton = toolbarButton("✨") { listener?.onAiCorrect() }
-        clipboardButton = toolbarButton("📋") { showClipboard() }
+        // 컬러 이모지는 삼성 키보드의 단색 선 아이콘과 톤이 어긋난다. 글꼴에 든 기호를 쓴다.
+        aiButton = toolbarButton("✦") { listener?.onAiCorrect() }
+        clipboardButton = toolbarButton("▤") { showClipboard() }
         correctionButton = toolbarButton(context.getString(R.string.toolbar_correction)) {
             listener?.onToggleAutoCorrect()
         }.apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f) }
-        settingsButton = toolbarButton("⚙") { listener?.onOpenSettings() }
+        settingsButton = toolbarButton("⚙\uFE0E") { listener?.onOpenSettings() }
 
         val toolbar = LinearLayout(context).apply {
             orientation = HORIZONTAL
@@ -192,7 +201,7 @@ class KeyboardView @JvmOverloads constructor(
     private fun restyle() {
         statusView.setTextColor(theme.status)
         // 사진 위에서는 글자가 묻힌다. 반투명 바탕을 깔아 읽히게 한다.
-        statusView.background = if (photo != null) roundRect(withAlpha(theme.background, 0.72f)) else null
+        statusView.background = if (photo != null) roundRect(withAlpha(theme.background, 0.6f)) else null
         listOf(aiButton, clipboardButton, settingsButton).forEach { styleToolbarButton(it) }
         styleCorrectionButton()
         clipboardTitle.setTextColor(theme.text)
@@ -200,7 +209,7 @@ class KeyboardView @JvmOverloads constructor(
 
     private fun styleToolbarButton(view: TextView) {
         view.setTextColor(theme.text)
-        view.background = circle(theme.toolbarButton)
+        view.background = circle(keyFill(theme.toolbarButton))
     }
 
     private fun styleCorrectionButton() {
@@ -240,8 +249,12 @@ class KeyboardView @JvmOverloads constructor(
         background = BitmapDrawable(resources, cropped)
     }
 
-    /** 사진 위에서는 키를 살짝 비쳐 보이게 한다. 사진을 깔았는데 안 보이면 깐 의미가 없다. */
-    private fun keyFill(color: Int): Int = if (photo != null) withAlpha(color, 0.86f) else color
+    /**
+     * 사진 위에서는 키를 반투명하게 한다. 사진을 깔았는데 안 보이면 깐 의미가 없다.
+     * 86% 로 시작했다가 "사진이 안 보인다" 는 말을 듣고 절반으로 내렸다. 글자는 진한 색
+     * 그대로라 흰 키가 반쯤 비쳐도 읽힌다.
+     */
+    private fun keyFill(color: Int): Int = if (photo != null) withAlpha(color, PHOTO_KEY_ALPHA) else color
 
     private fun withAlpha(color: Int, alpha: Float): Int =
         Color.argb((alpha * 255).toInt(), Color.red(color), Color.green(color), Color.blue(color))
@@ -415,7 +428,7 @@ class KeyboardView @JvmOverloads constructor(
             orientation = HORIZONTAL
             isMotionEventSplittingEnabled = true
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(KEY_HEIGHT_DP)).apply {
-                topMargin = dp(4)
+                topMargin = dp(ROW_GAP_DP)
             }
             weightSum = 10f
         }
@@ -438,8 +451,77 @@ class KeyboardView @JvmOverloads constructor(
         letterKey: Boolean = false
     ) {
         val view = keyView(label, keyBackground(isAction = !letterKey))
-        attachKeyTouch(view, onPress = { listener?.onAction(action) }, repeatable = repeatable)
+        if (action == KeyAction.SPACE) {
+            attachSpaceTouch(view)
+        } else {
+            attachKeyTouch(view, onPress = { listener?.onAction(action) }, repeatable = repeatable)
+        }
         addView(view, keyParams(weight))
+    }
+
+    /**
+     * 스페이스만 다르게 다룬다: **손을 뗄 때** 띄어쓰기가 들어가고, 꾹 누르면 커서 이동
+     * 모드다. 누르는 순간에 넣어 버리면 꾹 눌렀을 때 이미 들어간 공백을 도로 빼야 하고,
+     * 그 공백이 교정까지 한 번 돌린 뒤라 되돌리기가 지저분하다. 삼성 키보드도 스페이스는
+     * 떼는 순간에 넣는다.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun attachSpaceTouch(view: View) {
+        var cursorMode = false
+        var anchorX = 0f
+        val stepPx = dp(CURSOR_STEP_DP).toFloat()
+        val enterCursorMode = Runnable {
+            cursorMode = true
+            view.performHapticFeedback(
+                HapticFeedbackConstants.LONG_PRESS,
+                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+            )
+            listener?.onCursorModeChanged(true)
+        }
+
+        view.setOnTouchListener { target, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    cursorMode = false
+                    anchorX = event.x
+                    target.isPressed = true
+                    target.performHapticFeedback(
+                        HapticFeedbackConstants.KEYBOARD_TAP,
+                        HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                    )
+                    repeatHandler.postDelayed(enterCursorMode, SPACE_HOLD_MS)
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    if (cursorMode) {
+                        val steps = ((event.x - anchorX) / stepPx).toInt()
+                        if (steps != 0) {
+                            listener?.onMoveCursor(steps)
+                            anchorX += steps * stepPx
+                        }
+                    }
+                }
+
+                MotionEvent.ACTION_UP -> {
+                    target.isPressed = false
+                    repeatHandler.removeCallbacks(enterCursorMode)
+                    if (cursorMode) {
+                        listener?.onCursorModeChanged(false)
+                    } else {
+                        listener?.onAction(KeyAction.SPACE)
+                    }
+                    cursorMode = false
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+                    target.isPressed = false
+                    repeatHandler.removeCallbacks(enterCursorMode)
+                    if (cursorMode) listener?.onCursorModeChanged(false)
+                    cursorMode = false
+                }
+            }
+            true
+        }
     }
 
     private fun LinearLayout.addSpacer(weight: Float) {
@@ -449,8 +531,8 @@ class KeyboardView @JvmOverloads constructor(
 
     private fun keyParams(weight: Float) =
         LayoutParams(0, LayoutParams.MATCH_PARENT, weight).apply {
-            marginStart = dp(2)
-            marginEnd = dp(2)
+            marginStart = dp(KEY_GAP_DP)
+            marginEnd = dp(KEY_GAP_DP)
         }
 
     // 파라미터 이름을 background 로 두면 apply 블록 안에서 TextView 자신의
@@ -618,7 +700,20 @@ class KeyboardView @JvmOverloads constructor(
         val normalColor = keyFill(if (isAction) theme.actionKey else theme.key)
         return StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_pressed), roundRect(theme.pressed))
-            addState(intArrayOf(), roundRect(normalColor))
+            addState(intArrayOf(), keyFace(normalColor))
+        }
+    }
+
+    /**
+     * 키 면. 아래에 1dp 그림자를 깔아 살짝 떠 보이게 한다 — 삼성 키보드의 키가 평면
+     * 사각형과 다르게 보이는 이유가 이 한 줄이다. 사진 위에서는 그림자도 같이 비친다.
+     */
+    private fun keyFace(fill: Int): Drawable {
+        val shadow = roundRect(keyFill(theme.keyShadow))
+        val face = roundRect(fill)
+        return LayerDrawable(arrayOf(shadow, face)).apply {
+            setLayerInset(0, 0, dp(1), 0, 0)
+            setLayerInset(1, 0, 0, 0, dp(1))
         }
     }
 
@@ -640,7 +735,15 @@ class KeyboardView @JvmOverloads constructor(
     ).toInt()
 
     private companion object {
-        const val KEY_HEIGHT_DP = 46
+        // 삼성 키보드 실측에 맞춘 값. 키는 조금 높고, 틈은 조금 넓다.
+        const val KEY_HEIGHT_DP = 48
+        const val ROW_GAP_DP = 5
+        const val KEY_GAP_DP = 3
+        /** 스페이스를 이만큼 누르고 있으면 커서 이동 모드. 쌍자음보다 조금 길게. */
+        const val SPACE_HOLD_MS = 380L
+        /** 커서 이동 모드에서 이만큼 밀 때마다 한 글자. */
+        const val CURSOR_STEP_DP = 18
+        const val PHOTO_KEY_ALPHA = 0.5f
         const val CLIPBOARD_HEIGHT_DP = 244
         const val REPEAT_DELAY_MS = 400L
         const val REPEAT_INTERVAL_MS = 55L

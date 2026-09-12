@@ -7,15 +7,17 @@
   어디인지보다 자판 전체가 먼저 눈에 들어왔다.
 -->
 <resources>
-    <color name="keyboard_background">#F2F2F6</color>
+    <color name="keyboard_background">#E8EAEE</color>
     <color name="key_background">#FFFFFF</color>
-    <color name="key_action_background">#CDD1D9</color>
-    <color name="key_accent_background">#CDD1D9</color>
-    <color name="key_pressed_background">#B9BEC8</color>
-    <color name="key_text">#101114</color>
+    <color name="key_action_background">#CBD0D8</color>
+    <color name="key_accent_background">#CBD0D8</color>
+    <color name="key_pressed_background">#B3B9C4</color>
+    <color name="key_text">#141517</color>
     <color name="key_hint_text">#8A8F99</color>
     <color name="status_text">#5A606B</color>
-    <color name="toolbar_button">#E4E6EB</color>
+    <!-- 도구 줄 동그라미는 바탕보다 **밝다**. 삼성은 아이콘 자리를 살짝 띄워 놓는다. -->
+    <color name="toolbar_button">#F6F7F9</color>
+    <color name="key_shadow">#C3C7CF</color>
     <color name="popup_background">#2E7BF6</color>
     <color name="popup_text">#FFFFFF</color>
     <color name="panel_item_background">#FFFFFF</color>
@@ -33,4 +35,5 @@
     <color name="status_text_dark">#B4B7BE</color>
     <color name="toolbar_button_dark">#2E3036</color>
     <color name="panel_item_background_dark">#2E3036</color>
+    <color name="key_shadow_dark">#0E0F11</color>
 </resources>

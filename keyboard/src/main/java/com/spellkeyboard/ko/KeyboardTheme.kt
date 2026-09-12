@@ -1,11 +1,15 @@
 package com.spellkeyboard.ko
 
 import android.content.Context
-import android.content.res.Configuration
 import androidx.core.content.ContextCompat
 
-/** 사용자가 고른 밝기. 시스템을 따르거나 한쪽으로 고정한다. */
-enum class ThemeMode { SYSTEM, LIGHT, DARK }
+/**
+ * 사용자가 고른 밝기.
+ *
+ * "시스템 따라가기" 는 뺐다 — 폰 다크 모드와 키보드 밝기를 따로 두고 싶다는 요청이었고,
+ * 선택지가 셋이면 어느 게 지금 적용된 건지 한눈에 안 들어온다.
+ */
+enum class ThemeMode { LIGHT, DARK }
 
 /**
  * 키보드 팔레트.
@@ -25,23 +29,14 @@ data class KeyboardTheme(
     val toolbarButton: Int,
     val accent: Int,
     val onAccent: Int,
-    val panelItem: Int
+    val panelItem: Int,
+    /** 키 아래 얇은 그림자. 삼성 키보드의 키가 살짝 떠 보이는 이유다. */
+    val keyShadow: Int
 ) {
     companion object {
         /** 설정과 시스템 밝기를 합쳐 지금 써야 할 팔레트. */
-        fun current(context: Context): KeyboardTheme {
-            val dark = when (Prefs.themeMode(context)) {
-                ThemeMode.LIGHT -> false
-                ThemeMode.DARK -> true
-                ThemeMode.SYSTEM -> systemIsDark(context)
-            }
-            return if (dark) dark(context) else light(context)
-        }
-
-        fun systemIsDark(context: Context): Boolean {
-            val mask = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
-            return mask == Configuration.UI_MODE_NIGHT_YES
-        }
+        fun current(context: Context): KeyboardTheme =
+            if (Prefs.themeMode(context) == ThemeMode.DARK) dark(context) else light(context)
 
         private fun light(context: Context) = KeyboardTheme(
             dark = false,
@@ -55,7 +50,8 @@ data class KeyboardTheme(
             toolbarButton = color(context, R.color.toolbar_button),
             accent = color(context, R.color.popup_background),
             onAccent = color(context, R.color.popup_text),
-            panelItem = color(context, R.color.panel_item_background)
+            panelItem = color(context, R.color.panel_item_background),
+            keyShadow = color(context, R.color.key_shadow)
         )
 
         private fun dark(context: Context) = KeyboardTheme(
@@ -70,7 +66,8 @@ data class KeyboardTheme(
             toolbarButton = color(context, R.color.toolbar_button_dark),
             accent = color(context, R.color.popup_background),
             onAccent = color(context, R.color.popup_text),
-            panelItem = color(context, R.color.panel_item_background_dark)
+            panelItem = color(context, R.color.panel_item_background_dark),
+            keyShadow = color(context, R.color.key_shadow_dark)
         )
 
         private fun color(context: Context, id: Int) = ContextCompat.getColor(context, id)

@@ -31,7 +31,7 @@ object Prefs {
 
     fun themeMode(context: Context): ThemeMode =
         runCatching { ThemeMode.valueOf(prefs(context).getString(KEY_THEME, "").orEmpty()) }
-            .getOrDefault(ThemeMode.SYSTEM)
+            .getOrDefault(ThemeMode.LIGHT) // 예전 값 "SYSTEM" 도 여기로 떨어진다
 
     fun setThemeMode(context: Context, mode: ThemeMode) {
         prefs(context).edit().putString(KEY_THEME, mode.name).apply()

@@ -172,11 +172,14 @@ Worker 는 사용자 근처 데이터센터에서 돌고, 한국 통신사 트�
 
 ## 키보드 모양 설정 (2026-09-12)
 
-- **테마**: `ThemeMode`(시스템/밝게/어둡게) → `KeyboardTheme.current()` 가 팔레트를 고른다.
+- **테마**: `ThemeMode`(밝게/어둡게, 시스템 따라가기는 요청으로 뺌) → `KeyboardTheme.current()`.
   키보드 색은 전부 이 객체에서 나온다. 리소스 ID 를 직접 꺼내 쓰지 말 것.
 - **배경 사진**: 설정에서 고르면 `BackgroundImage.save()` 가 줄여서 `files/keyboard_background.jpg`
   에 둔다. 키보드는 `applyAppearance()` 에서 파일 수정 시각이 바뀐 경우에만 다시 푼다.
   사진 위에서는 키가 86% 불투명, 상단 문구엔 반투명 바탕.
 - **실시간 교정 토글**: 자판 도구 줄 '교정' 버튼 ↔ 설정 스위치, 둘 다 `Prefs.autoCorrectEnabled`.
   버튼은 지금 입력란에 즉시 먹는다(`session.correctionEnabled`).
+- **스페이스 꾹 → 커서 이동**: 스페이스는 다른 키와 달리 **뗄 때** 들어간다(`attachSpaceTouch`).
+  380ms 누르면 커서 모드, 18dp 마다 한 글자, 서비스는 DPAD 키 이벤트로 옮긴다.
+- **톤**: 키 아래 1dp 그림자(`keyFace`), 바탕 #E8EAEE, 키 48dp/틈 3dp/줄 간격 5dp, 도구 줄은 단색 기호.
 

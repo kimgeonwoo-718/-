@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
+import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -155,10 +156,12 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         keyboard?.applyAppearance()
         keyboard?.setAutoCorrectOn(Prefs.autoCorrectEnabled(this))
         keyboard?.showStatus(
-            if (session.correctionEnabled) {
-                getString(R.string.status_idle)
-            } else {
-                getString(R.string.status_disabled)
+            when {
+                session.correctionEnabled -> getString(R.string.status_idle)
+                // 사용자가 꺼 둔 것과 입력란이 막은 것은 다른 말로 알려야 한다. 같은 문구를
+                // 쓰면 "왜 이 칸에서는 안 되지" 하고 엉뚱한 데를 의심한다.
+                !Prefs.autoCorrectEnabled(this) -> getString(R.string.status_correction_disabled)
+                else -> getString(R.string.status_disabled)
             }
         )
         // 비밀번호 입력란에서는 AI 교정도 내놓지 않는다. 그 글이 서버로 나가면 안 된다.
@@ -303,6 +306,35 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      * 지금 입력란에 바로 먹는다 — 다음 입력란부터 적용되면 "껐는데 왜 고치냐" 가 된다.
      * 교정이 안 되는 입력란(비밀번호 등)에서는 값만 저장되고 동작은 그대로 꺼져 있다.
      */
+    /**
+     * 스페이스를 꾹 누른 채 좌우로 밀면 커서가 움직인다.
+     *
+     * 방향키 이벤트로 옮긴다 — 어느 입력란이든 받아 주고, 줄 바꿈이 있는 글에서도 글자
+     * 단위로 자연스럽게 움직인다. 조합 중인 글자는 먼저 확정한다. 커서가 딴 데로 가면
+     * 조합 상태는 의미가 없다.
+     */
+    override fun onMoveCursor(delta: Int) {
+        val editor = editor() ?: return
+        session.commitPending(editor)
+        session.reset()
+        val key = if (delta < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        repeat(kotlin.math.abs(delta)) { sendDownUpKeyEvents(key) }
+    }
+
+    override fun onCursorModeChanged(active: Boolean) {
+        keyboard?.showStatus(
+            if (active) {
+                getString(R.string.status_cursor_mode)
+            } else {
+                when {
+                    session.correctionEnabled -> getString(R.string.status_idle)
+                    !Prefs.autoCorrectEnabled(this) -> getString(R.string.status_correction_disabled)
+                    else -> getString(R.string.status_disabled)
+                }
+            }
+        )
+    }
+
     override fun onToggleAutoCorrect() {
         val enabled = !Prefs.autoCorrectEnabled(this)
         Prefs.setAutoCorrectEnabled(this, enabled)
