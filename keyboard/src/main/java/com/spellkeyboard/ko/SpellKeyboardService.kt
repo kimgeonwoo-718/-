@@ -174,7 +174,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         syncAutomata()
         // 설정에서 테마나 배경을 바꾸고 돌아왔을 수 있다. 바뀐 게 없으면 싸게 끝난다.
         keyboard?.applyAppearance()
-        keyboard?.setAutoCorrectOn(Prefs.autoCorrectEnabled(this))
         // 비밀번호 입력란에서는 AI 교정도 내놓지 않는다. 그 글이 서버로 나가면 안 된다.
         // 다만 자동 교정 스위치와는 묶지 않는다 — 그건 실시간 교정만 끄는 스위치다.
         val aiOn = Prefs.aiAvailable() && fieldCorrectable
@@ -420,13 +419,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 자판 위에 문구를 띄우지 않는다. 스페이스를 잡고 있는 손가락이 이미 알고 있다.
     }
 
-    override fun onToggleAutoCorrect() {
-        val enabled = !Prefs.autoCorrectEnabled(this)
-        Prefs.setAutoCorrectEnabled(this, enabled)
-        session.correctionEnabled = enabled && fieldCorrectable
-        keyboard?.setAutoCorrectOn(enabled)
-    }
-
     /**
      * 지금 복사돼 있는 글을 기록에 담는다.
      *
@@ -596,7 +588,11 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      * 이유처럼 꼭 알아야 할 것만 토스트로 잠깐 보여준다.
      */
     private fun notify(text: String) {
-        mainHandler.post { android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show() }
+        mainHandler.post {
+            val view = keyboard
+            if (view != null) view.flash(text)
+            else android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun switchMode(editor: Editor, target: KeyboardMode) {

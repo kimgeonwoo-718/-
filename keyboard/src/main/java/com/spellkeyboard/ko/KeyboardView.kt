@@ -66,7 +66,6 @@ class KeyboardView @JvmOverloads constructor(
         fun onOpenSettings()
 
         /** 자판 위 '교정' 버튼. 실시간 온디바이스 교정을 끄고 켠다. */
-        fun onToggleAutoCorrect()
 
         /** 스페이스를 꾹 누른 채 밀어서 커서를 [delta] 글자만큼 옮긴다. 음수면 왼쪽. */
         fun onMoveCursor(delta: Int)
@@ -104,14 +103,12 @@ class KeyboardView @JvmOverloads constructor(
     /** 사용자가 고른 배경 사진. 없으면 팔레트의 바탕색. */
     private var photo: Bitmap? = null
     private var photoStamp = -1L
-    private var autoCorrectOn = true
     private var layoutType: LayoutType = Prefs.layoutType(context)
     private var keyAlpha = alphaFor(Prefs.keyTransparency(context))
 
     private val emojiButton: TextView
     private val aiButton: TextView
     private val clipboardButton: TextView
-    private val correctionButton: TextView
     private val settingsButton: TextView
     private val clipboardTitle: TextView
     private val rowContainer: LinearLayout
@@ -140,6 +137,10 @@ class KeyboardView @JvmOverloads constructor(
     /** 손가락마다 어느 키를 잡고 있는지. 두 손가락이 동시에 눌려도 섞이지 않는다. */
     private val activeSlots = android.util.SparseArray<PadSlot>()
 
+    /** 잠깐 떴다 사라지는 알림. [flash] 참고. */
+    private var flashView: TextView? = null
+    private val hideFlash = Runnable { dismissFlash() }
+
     /** 길게 누르는 중에 떠 있는 미리보기. 손을 떼면 여기 글자가 들어간다. */
     private var bubble: TextView? = null
     private var pendingAlternate: Char? = null
@@ -157,27 +158,28 @@ class KeyboardView @JvmOverloads constructor(
 
         // 컬러 이모지는 삼성 키보드의 단색 선 아이콘과 톤이 어긋난다. 글꼴에 든 기호를 쓴다.
         emojiButton = toolbarButton("☺\uFE0E") { showEmoji() }
-        aiButton = toolbarButton("✦") { listener?.onAiCorrect() }
+        // AI 는 그림 대신 글자 "AI". 삼성의 ✨ 자리에 들어가는 우리 기능이라 이름을 그대로 쓴다.
+        aiButton = toolbarButton("AI") { listener?.onAiCorrect() }.apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
         clipboardButton = toolbarButton("▤") { showClipboard() }
-        correctionButton = toolbarButton(context.getString(R.string.toolbar_correction)) {
-            listener?.onToggleAutoCorrect()
-        }.apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f) }
         settingsButton = toolbarButton("⚙\uFE0E") { listener?.onOpenSettings() }
 
+        // 삼성처럼 동그라미들을 줄 전체에 고르게 펼친다. 사이와 양끝의 빈칸이 같은 무게라
+        // 간격이 저절로 같아진다. 글자 버튼(예전 "교정" 토글)은 없다 — 자판 위에 글을
+        // 두지 않기로 했고, 실시간 교정은 설정에서 끄고 켠다.
         val toolbar = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(2), 0, dp(2), 0)
-            addView(emojiButton, toolbarParams())
-            addView(aiButton, toolbarParams())
-            addView(clipboardButton, toolbarParams())
-            addView(correctionButton, toolbarParams())
-            addView(settingsButton, toolbarParams())
-            // 오른쪽은 비워 둔다. 예전엔 여기 상태 문구가 있었는데, 자판 위 설명글은
-            // 소음이라 뺐다. 실패는 토스트로, AI 가 도는 동안은 ✦ 버튼이 흐려지는 것으로 안다.
-            addView(View(context), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+            setPadding(dp(6), 0, dp(6), 0)
+            listOf(emojiButton, aiButton, clipboardButton, settingsButton).forEach { button ->
+                addView(View(context), LayoutParams(0, 1, 1f))
+                addView(button, toolbarParams())
+            }
+            addView(View(context), LayoutParams(0, 1, 1f))
         }
-        addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
+        addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOLBAR_HEIGHT_DP)))
 
         rowContainer = KeyPad(context).apply {
             orientation = VERTICAL
@@ -209,16 +211,51 @@ class KeyboardView @JvmOverloads constructor(
         applyAppearance(force = true)
     }
 
-    /** AI 가 도는 동안 ✦ 를 흐리게. 자판 위에 글을 띄우지 않고 알리는 유일한 수단이다. */
+    /** AI 가 도는 동안 AI 버튼을 흐리게. */
     fun setAiBusy(busy: Boolean) {
         aiButton.alpha = if (busy) 0.35f else 1f
     }
 
-    /** '교정' 버튼의 켜짐 표시. 켜져 있으면 강조색, 꺼져 있으면 흐리게. */
-    fun setAutoCorrectOn(on: Boolean) {
-        autoCorrectOn = on
-        styleCorrectionButton()
+    /**
+     * 자판 위에 작은 알림을 잠깐 띄웠다 지운다.
+     *
+     * 자판에 글을 상시로 두지 않기로 했으므로, 꼭 알아야 할 것(눌렀는데 안 된 이유,
+     * 고칠 게 없었다는 것)만 이렇게 스쳐 지나가게 한다. 시스템 토스트는 자판 아래
+     * 엉뚱한 데 뜨고 키를 가려서 쓰지 않는다. 오버레이에 그리므로 자판 배치는 안 흔들린다.
+     */
+    fun flash(text: String) {
+        dismissFlash()
+        val view = TextView(context).apply {
+            this.text = text
+            setTextColor(theme.onAccent)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(dp(14), dp(7), dp(14), dp(7))
+            background = roundRect(withAlpha(theme.text, 0.88f))
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            measure(
+                MeasureSpec.makeMeasureSpec(width - dp(24), MeasureSpec.AT_MOST),
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+            )
+        }
+        val left = (width - view.measuredWidth) / 2
+        val top = (dp(TOOLBAR_HEIGHT_DP) - view.measuredHeight) / 2 + dp(4)
+        view.layout(left, top, left + view.measuredWidth, top + view.measuredHeight)
+        view.alpha = 0f
+        overlay.add(view)
+        view.animate().alpha(1f).setDuration(120).start()
+        flashView = view
+        repeatHandler.postDelayed(hideFlash, FLASH_MS)
     }
+
+    private fun dismissFlash() {
+        repeatHandler.removeCallbacks(hideFlash)
+        flashView?.let { view ->
+            view.animate().alpha(0f).setDuration(220).withEndAction { overlay.remove(view) }.start()
+        }
+        flashView = null
+    }
+
 
     // --- 모양 -------------------------------------------------------------------
 
@@ -254,7 +291,6 @@ class KeyboardView @JvmOverloads constructor(
     /** 자판 밖의 것들(도구 줄, 클립보드 머리)에 팔레트를 입힌다. 키는 [render] 가 한다. */
     private fun restyle() {
         listOf(emojiButton, aiButton, clipboardButton, settingsButton).forEach { styleToolbarButton(it) }
-        styleCorrectionButton()
         clipboardTitle.setTextColor(theme.text)
         emojiTitle.setTextColor(theme.text)
     }
@@ -262,16 +298,6 @@ class KeyboardView @JvmOverloads constructor(
     private fun styleToolbarButton(view: TextView) {
         view.setTextColor(theme.text)
         view.background = circle(keyFill(theme.toolbarButton))
-    }
-
-    private fun styleCorrectionButton() {
-        if (autoCorrectOn) {
-            correctionButton.setTextColor(theme.onAccent)
-            correctionButton.background = circle(theme.accent)
-        } else {
-            correctionButton.setTextColor(theme.hint)
-            correctionButton.background = circle(theme.toolbarButton)
-        }
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -900,14 +926,13 @@ class KeyboardView @JvmOverloads constructor(
         TextView(context).apply {
             text = label
             gravity = Gravity.CENTER
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
             contentDescription = label
             attachKeyTouch(this, onPress = onPress)
             styleToolbarButton(this)
         }
 
-    private fun toolbarParams() =
-        LayoutParams(dp(36), dp(36)).apply { marginStart = dp(4); marginEnd = dp(4) }
+    private fun toolbarParams() = LayoutParams(dp(TOOLBAR_BUTTON_DP), dp(TOOLBAR_BUTTON_DP))
 
     /**
      * 키 하나를 손가락에 붙인다.
@@ -1227,6 +1252,10 @@ class KeyboardView @JvmOverloads constructor(
     ).toInt()
 
     private companion object {
+        /** 도구 줄. 삼성은 44dp 동그라미를 56dp 줄에 놓는다. */
+        const val TOOLBAR_HEIGHT_DP = 56
+        const val TOOLBAR_BUTTON_DP = 44
+        const val FLASH_MS = 1600L
         // 삼성 키보드 실측에 맞춘 값. 키는 조금 높고, 틈은 조금 넓다.
         const val KEY_HEIGHT_DP = 48
         const val ROW_GAP_DP = 5

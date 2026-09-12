@@ -15,7 +15,6 @@
     <string name="ai_no_key">이 빌드에는 AI 서버 주소가 없어 AI 교정을 쓸 수 없습니다.</string>
     <string name="ai_timeout">응답이 없어 그만뒀습니다. 네트워크를 확인해 주세요.</string>
     <string name="ai_empty">교정할 글이 없습니다</string>
-    <string name="toolbar_correction">교정</string>
 
     <!-- 설정 화면 -->
     <string name="home_subtitle">쓰는 대로 바로 고쳐 주는 키보드</string>
