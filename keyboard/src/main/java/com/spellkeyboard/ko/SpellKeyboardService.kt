@@ -251,11 +251,11 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
+    private fun isCheonjiin(): Boolean = Prefs.layoutType(this) == LayoutType.CHEONJIIN
+
     /** 설정의 자판에 맞는 조립기를 끼운다. 이미 맞으면 아무것도 안 한다. */
     private fun syncAutomata() {
-        ensureAutomata(
-            if (Prefs.layoutType(this) == LayoutType.CHEONJIIN) cheonjiinAutomata else qwertyAutomata
-        )
+        ensureAutomata(if (isCheonjiin()) cheonjiinAutomata else qwertyAutomata)
     }
 
     private fun ensureAutomata(wanted: com.spellkeyboard.core.hangul.JamoAutomata) {
@@ -342,7 +342,13 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 session.notifyDeleted(1)
             }
 
-            KeyAction.SPACE -> session.pressSpace(editor)
+            // 천지인의 스페이스는 "다음 글자" 를 겸한다. 한 키에 자음이 둘셋 실려서
+            // "안녕" 의 ㄴ→ㄴ 처럼 같은 키를 연달아 눌러야 하는 글자는 연타(ㄴ→ㄹ)와
+            // 구별하려고 기다려야 하는데, 그 기다림을 스페이스가 끊어 준다. 조합 중이면
+            // 글자만 끊고, 끊긴 뒤에 또 누르면 그때 띄어쓰기가 들어간다 — 삼성과 같다.
+            KeyAction.SPACE ->
+                if (isCheonjiin() && session.composingText().isNotEmpty()) session.commitPending(editor)
+                else session.pressSpace(editor)
 
             KeyAction.ENTER -> {
                 session.pressEnter(editor)
@@ -357,10 +363,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 session.commitPending(editor)
                 keyboard?.setMode(KeyboardMode.KOREAN)
             }
-
-            // 조합 중인 글자를 끝내기만 한다. 아무것도 넣지 않는다. 위에서 lastTapKey 를
-            // 비웠으므로 같은 키를 바로 다시 눌러도 연타(ㄴ→ㄹ)가 아니라 새 글자가 된다.
-            KeyAction.NEXT_CHAR -> session.commitPending(editor)
         }
     }
 

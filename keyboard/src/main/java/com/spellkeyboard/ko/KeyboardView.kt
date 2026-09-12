@@ -132,6 +132,15 @@ class KeyboardView @JvmOverloads constructor(
     private var heldSpaceFlush: (() -> Unit)? = null
     private val repeatHandler = Handler(Looper.getMainLooper())
 
+    /**
+     * 지금 자판에 올라 있는 키들. [KeyPad] 가 여기서 손가락 아래 키를 찾는다.
+     * 자판을 다시 그릴 때마다 비운다.
+     */
+    private val keySlots = ArrayList<PadSlot>()
+
+    /** 손가락마다 어느 키를 잡고 있는지. 두 손가락이 동시에 눌려도 섞이지 않는다. */
+    private val activeSlots = android.util.SparseArray<PadSlot>()
+
     /** 길게 누르는 중에 떠 있는 미리보기. 손을 떼면 여기 글자가 들어간다. */
     private var bubble: TextView? = null
     private var pendingAlternate: Char? = null
@@ -145,7 +154,7 @@ class KeyboardView @JvmOverloads constructor(
 
     init {
         orientation = VERTICAL
-        setPadding(dp(2), dp(4), dp(2), dp(6))
+        setPadding(0, dp(4), 0, 0)
 
         statusView = TextView(context).apply {
             gravity = Gravity.CENTER_VERTICAL
@@ -168,6 +177,7 @@ class KeyboardView @JvmOverloads constructor(
         val toolbar = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), 0, dp(2), 0)
             addView(emojiButton, toolbarParams())
             addView(aiButton, toolbarParams())
             addView(clipboardButton, toolbarParams())
@@ -177,10 +187,11 @@ class KeyboardView @JvmOverloads constructor(
         }
         addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
 
-        rowContainer = LinearLayout(context).apply {
+        rowContainer = KeyPad(context).apply {
             orientation = VERTICAL
-            // 손가락 두 개가 서로 다른 줄의 키를 동시에 눌러도 둘 다 받는다.
-            isMotionEventSplittingEnabled = true
+            // 자판 둘레의 여백. **판 바깥이 아니라 판 안쪽 여백이어야 한다** — 그래야
+            // 화면 맨 아래나 좌우 가장자리를 눌러도 가까운 키가 받는다.
+            setPadding(dp(2), 0, dp(2), dp(6))
         }
         addView(rowContainer, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
@@ -361,6 +372,7 @@ class KeyboardView @JvmOverloads constructor(
     private fun buildClipboardPanel(): LinearLayout = LinearLayout(context).apply {
         orientation = VERTICAL
         isVisible = false
+        setPadding(dp(2), 0, dp(2), dp(6))
 
         clipboardTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
         clipboardTitle.typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -475,6 +487,7 @@ class KeyboardView @JvmOverloads constructor(
     private fun buildEmojiPanel(): LinearLayout = LinearLayout(context).apply {
         orientation = VERTICAL
         isVisible = false
+        setPadding(dp(2), 0, dp(2), dp(6))
 
         val header = LinearLayout(context).apply {
             orientation = HORIZONTAL
@@ -540,6 +553,9 @@ class KeyboardView @JvmOverloads constructor(
         // 반복 입력이 그대로 살아 있으면 손을 뗀 뒤에 글자가 튀어나온다.
         repeatHandler.removeCallbacksAndMessages(null)
         dismissAlternate()
+        // 사라질 뷰를 가리키는 키가 남아 있으면, 손을 떼는 순간 없는 키가 입력된다.
+        keySlots.clear()
+        activeSlots.clear()
         rowContainer.removeAllViews()
         if (layoutType == LayoutType.CHEONJIIN) {
             when (mode) {
@@ -622,10 +638,10 @@ class KeyboardView @JvmOverloads constructor(
             addActionKey("!#1", KeyAction.NUMPAD, weight = GRID_W / 2)
             addActionKey("한/영", KeyAction.LANGUAGE, weight = GRID_W / 2)
             addCheonjiinKey(KeyboardLayout.CHEONJIIN_ZERO_KEY)
+            // 삼성처럼 스페이스가 "다음 글자" 를 겸한다. 조합 중이면 한 번 눌러 글자를
+            // 끊고, 한 번 더 누르면 그때 띄어쓰기다. 처리는 SpellKeyboardService 쪽에 있다.
             addActionKey("", KeyAction.SPACE, weight = GRID_W, letterKey = true)
-            // 쉼표 자리를 "다음" 에 내줬다. 쉼표는 오른쪽 .,?! 키에서 나온다. 같은 키를
-            // 연달아 눌러야 하는 글자("안녕" 의 ㄴㄴ)를 기다리지 않고 칠 수 있는 쪽이 훨씬 잦다.
-            addActionKey("다음", KeyAction.NEXT_CHAR, weight = GRID_W)
+            addCharKey(',', weight = GRID_W)
         })
     }
 
@@ -683,8 +699,7 @@ class KeyboardView @JvmOverloads constructor(
     /** 천지인 낱자 키. 오른쪽 위 숫자 힌트, 길게 누르면 그 숫자. */
     private fun LinearLayout.addCheonjiinKey(key: CheonjiinKey) {
         val view = hintedKeyView(key.label, key.hint, if (key.label.length > 1) 19f else 22f)
-        attachKeyTouch(view, onPress = { listener?.onCheonjiinKey(key.key) }, alternate = key.hint)
-        addView(view, keyParams(GRID_W))
+        addPadKey(view, GRID_W, charTouch(view, onPress = { listener?.onCheonjiinKey(key.key) }, alternate = key.hint))
     }
 
     /**
@@ -718,8 +733,7 @@ class KeyboardView @JvmOverloads constructor(
 
     private fun LinearLayout.addPunctuationKey(label: String, options: String) {
         val view = keyView(label, keyBackground(isAction = true), textSp = 15f)
-        attachKeyTouch(view, onPress = { listener?.onPunctuationCycle(options) })
-        addView(view, keyParams(GRID_W))
+        addPadKey(view, GRID_W, charTouch(view, onPress = { listener?.onPunctuationCycle(options) }))
     }
 
     /**
@@ -763,8 +777,7 @@ class KeyboardView @JvmOverloads constructor(
     private fun LinearLayout.addCharKey(c: Char, weight: Float = 1f) {
         val alternate = KeyboardLayout.longPressOf(c)
         val view = keyView(c.toString(), keyBackground(isAction = false))
-        attachKeyTouch(view, onPress = { listener?.onChar(c) }, alternate = alternate)
-        addView(view, keyParams(weight))
+        addPadKey(view, weight, charTouch(view, onPress = { listener?.onChar(c) }, alternate = alternate))
     }
 
     private fun LinearLayout.addActionKey(
@@ -775,11 +788,18 @@ class KeyboardView @JvmOverloads constructor(
         letterKey: Boolean = false
     ) {
         val view = keyView(label, keyBackground(isAction = !letterKey))
-        if (action == KeyAction.SPACE) {
-            attachSpaceTouch(view)
-        } else {
-            attachKeyTouch(view, onPress = { listener?.onAction(action) }, repeatable = repeatable)
-        }
+        val touch =
+            if (action == KeyAction.SPACE) spaceTouch(view)
+            else charTouch(view, onPress = { listener?.onAction(action) }, repeatable = repeatable)
+        addPadKey(view, weight, touch)
+    }
+
+    /**
+     * 키를 줄에 넣고 판에 등록한다. **뷰에 리스너를 달지 않는다** — 손가락을 어느 키에
+     * 줄지는 [KeyPad] 가 정한다.
+     */
+    private fun LinearLayout.addPadKey(view: View, weight: Float, touch: KeyTouch) {
+        keySlots += PadSlot(view, touch)
         addView(view, keyParams(weight))
     }
 
@@ -789,71 +809,68 @@ class KeyboardView @JvmOverloads constructor(
      * 그 공백이 교정까지 한 번 돌린 뒤라 되돌리기가 지저분하다. 삼성 키보드도 스페이스는
      * 떼는 순간에 넣는다.
      */
-    @SuppressLint("ClickableViewAccessibility")
-    private fun attachSpaceTouch(view: View) {
-        var cursorMode = false
-        var consumed = false
-        var anchorX = 0f
-        val stepPx = dp(CURSOR_STEP_DP).toFloat()
-        val enterCursorMode = Runnable {
+    private fun spaceTouch(key: View): KeyTouch = object : KeyTouch {
+        private var cursorMode = false
+        private var consumed = false
+        private var anchorX = 0f
+        private val stepPx = dp(CURSOR_STEP_DP).toFloat()
+        private val enterCursorMode = Runnable {
             cursorMode = true
-            view.performHapticFeedback(
+            key.performHapticFeedback(
                 HapticFeedbackConstants.LONG_PRESS,
                 HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
             )
             listener?.onCursorModeChanged(true)
         }
 
-        view.setOnTouchListener { target, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    flushHeldSpace()
-                    cursorMode = false
-                    consumed = false
-                    anchorX = event.x
-                    target.isPressed = true
-                    target.performHapticFeedback(
-                        HapticFeedbackConstants.KEYBOARD_TAP,
-                        HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
-                    )
-                    repeatHandler.postDelayed(enterCursorMode, SPACE_HOLD_MS)
-                    // 다음 키가 눌리면 그 키보다 먼저 이 스페이스를 넣는다.
-                    heldSpaceFlush = {
-                        repeatHandler.removeCallbacks(enterCursorMode)
-                        if (!cursorMode && !consumed) {
-                            consumed = true
-                            listener?.onAction(KeyAction.SPACE)
-                        }
-                    }
-                }
-
-                MotionEvent.ACTION_MOVE -> {
-                    if (cursorMode) {
-                        val steps = ((event.x - anchorX) / stepPx).toInt()
-                        if (steps != 0) {
-                            listener?.onMoveCursor(steps)
-                            anchorX += steps * stepPx
-                        }
-                    }
-                }
-
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
-                    target.isPressed = false
-                    repeatHandler.removeCallbacks(enterCursorMode)
-                    heldSpaceFlush = null
-                    if (cursorMode) {
-                        listener?.onCursorModeChanged(false)
-                    } else if (!consumed) {
-                        // 취소(CANCEL)도 탭으로 친다. 스페이스는 화면 맨 아래라 제스처
-                        // 영역에 걸려 취소되는 일이 있는데, 그때 띄어쓰기가 통째로 사라졌다.
-                        listener?.onAction(KeyAction.SPACE)
-                    }
+        override fun down(x: Float, y: Float) {
+            flushHeldSpace()
+            cursorMode = false
+            consumed = false
+            anchorX = x
+            key.isPressed = true
+            key.performHapticFeedback(
+                HapticFeedbackConstants.KEYBOARD_TAP,
+                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+            )
+            repeatHandler.postDelayed(enterCursorMode, SPACE_HOLD_MS)
+            // 다음 키가 눌리면 그 키보다 먼저 이 스페이스를 넣는다.
+            heldSpaceFlush = {
+                repeatHandler.removeCallbacks(enterCursorMode)
+                if (!cursorMode && !consumed) {
                     consumed = true
-                    cursorMode = false
+                    listener?.onAction(KeyAction.SPACE)
                 }
             }
-            true
         }
+
+        override fun move(x: Float, y: Float, inside: Boolean) {
+            if (!cursorMode) return
+            val steps = ((x - anchorX) / stepPx).toInt()
+            if (steps != 0) {
+                listener?.onMoveCursor(steps)
+                anchorX += steps * stepPx
+            }
+        }
+
+        override fun up() {
+            key.isPressed = false
+            repeatHandler.removeCallbacks(enterCursorMode)
+            heldSpaceFlush = null
+            if (cursorMode) {
+                listener?.onCursorModeChanged(false)
+            } else if (!consumed) {
+                listener?.onAction(KeyAction.SPACE)
+            }
+            consumed = true
+            cursorMode = false
+        }
+
+        /**
+         * 취소도 탭으로 친다. 스페이스는 화면 맨 아래라 제스처 영역에 걸려 취소되는
+         * 일이 있는데, 그때 띄어쓰기가 통째로 사라졌다.
+         */
+        override fun cancel() = up()
     }
 
     private fun flushHeldSpace() {
@@ -906,82 +923,90 @@ class KeyboardView @JvmOverloads constructor(
         LayoutParams(dp(36), dp(36)).apply { marginStart = dp(4); marginEnd = dp(4) }
 
     /**
-     * 키를 손가락에 붙인다.
+     * 키 하나를 손가락에 붙인다.
      *
-     * **누르는 순간(ACTION_DOWN)에 입력한다.** onClick 은 손을 뗄 때까지 기다리고
-     * 이동 거리까지 따져서, 빨리 치면 눌린 게 씹힌 것처럼 느껴진다. 시중 키보드가
-     * 전부 누름 시점에 반응하는 이유다.
+     * **누르는 순간(down)에 입력한다.** onClick 은 손을 뗄 때까지 기다리고 이동 거리까지
+     * 따져서, 빨리 치면 눌린 게 씹힌 것처럼 느껴진다. 시중 키보드가 전부 누름 시점에
+     * 반응하는 이유다.
      *
-     * [alternate] 가 있으면 **꾹 누르는 동안 미리보기를 띄우고, 손을 떼는 순간**
-     * 그 글자로 바꾼다. 예전에는 타이머가 울리는 즉시 바꿔 버려서, 바뀐 줄 모르고
-     * 계속 누르고 있다 손을 떼면 이미 딴 글자가 들어가 있었다. 삼성 키보드처럼
-     * 떼는 순간에 확정해야 무엇이 들어갈지 보고 결정할 수 있다.
+     * [alternate] 가 있으면 **꾹 누르는 동안 미리보기를 띄우고, 손을 떼는 순간** 그
+     * 글자로 바꾼다. 예전에는 타이머가 울리는 즉시 바꿔 버려서, 바뀐 줄 모르고 계속
+     * 누르고 있다 손을 떼면 이미 딴 글자가 들어가 있었다.
      */
-    @SuppressLint("ClickableViewAccessibility")
-    private fun attachKeyTouch(
-        view: View,
+    private fun charTouch(
+        key: View,
         onPress: () -> Unit,
         alternate: Char? = null,
         repeatable: Boolean = false
-    ) {
+    ): KeyTouch = object : KeyTouch {
         // **이 상태는 키마다 따로 있어야 한다.** 빠르게 치면 앞 손가락이 떨어지기 전에
         // 다음 손가락이 닿아서 두 키가 동시에 눌린 상태가 된다. 상태를 하나로 공유하면
         // 나중 키를 떼는 순간 앞 키의 대체 글자가 들어가고, 앞 키를 떼면 아무 일도
         // 일어나지 않는다 — 엉뚱한 글자가 들어가거나 씹힌 것처럼 보인다.
-        var previewing = false
-        val showPreview = alternate?.let { alt ->
+        private var previewing = false
+        private val showPreview = alternate?.let { alt ->
             Runnable {
-                showAlternate(view, alt)
+                showAlternate(key, alt)
                 previewing = true
             }
         }
 
+        override fun down(x: Float, y: Float) {
+            // 잡고 있던 스페이스가 있으면 이 키보다 먼저 들어가야 한다.
+            flushHeldSpace()
+            previewing = false
+            key.isPressed = true
+            key.performHapticFeedback(
+                HapticFeedbackConstants.KEYBOARD_TAP,
+                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+            )
+            onPress()
+            showPreview?.let { repeatHandler.postDelayed(it, LONG_PRESS_MS) }
+            if (repeatable) repeatHandler.postDelayed(repeatBackspace, REPEAT_DELAY_MS)
+        }
+
+        override fun move(x: Float, y: Float, inside: Boolean) {
+            // 키 밖으로 끌고 나가면 대체 글자만 취소한다. 이미 들어간 글자는 그대로
+            // 둔다 — 여기서 지우면 빠르게 칠 때 글자가 사라진다.
+            if (previewing && !inside) {
+                showPreview?.let { repeatHandler.removeCallbacks(it) }
+                previewing = false
+                dismissAlternate()
+            }
+        }
+
+        override fun up() {
+            key.isPressed = false
+            showPreview?.let { repeatHandler.removeCallbacks(it) }
+            repeatHandler.removeCallbacks(repeatBackspace)
+            // 미리보기를 띄운 것이 **이 키** 일 때만 갈아 끼운다.
+            if (previewing && alternate != null) listener?.onLongPressChar(alternate)
+            if (previewing) dismissAlternate()
+            previewing = false
+        }
+
+        override fun cancel() {
+            key.isPressed = false
+            showPreview?.let { repeatHandler.removeCallbacks(it) }
+            repeatHandler.removeCallbacks(repeatBackspace)
+            if (previewing) dismissAlternate()
+            previewing = false
+        }
+    }
+
+    /**
+     * 자판 밖의 키(도구 줄, 이모티콘 칸, 클립보드 칸)는 뷰마다 리스너를 단다. 이쪽은
+     * 키가 드문드문 있어서 "가까운 것을 누른 것으로 친다" 가 오히려 해롭다.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun attachKeyTouch(view: View, onPress: () -> Unit) {
+        val touch = charTouch(view, onPress)
         view.setOnTouchListener { target, event ->
             when (event.actionMasked) {
-                // **POINTER_DOWN 도 눌린 것이다.** 손가락 하나가 아직 이 키에 있는 채로
-                // 두 번째 손가락이 같은 키에 닿으면 DOWN 이 아니라 POINTER_DOWN 이 온다.
-                // 이것을 안 받아서, 빠르게 칠 때 그 입력이 조용히 사라졌다 — "키가 씹힌다".
-                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    // 잡고 있던 스페이스가 있으면 이 키보다 먼저 들어가야 한다.
-                    flushHeldSpace()
-                    previewing = false
-                    target.isPressed = true
-                    target.performHapticFeedback(
-                        HapticFeedbackConstants.KEYBOARD_TAP,
-                        HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
-                    )
-                    onPress()
-                    showPreview?.let { repeatHandler.postDelayed(it, LONG_PRESS_MS) }
-                    if (repeatable) repeatHandler.postDelayed(repeatBackspace, REPEAT_DELAY_MS)
-                }
-
-                MotionEvent.ACTION_MOVE -> {
-                    // 키 밖으로 끌고 나가면 대체 글자만 취소한다. 이미 들어간 글자는
-                    // 그대로 둔다 — 여기서 지우면 빠르게 칠 때 글자가 사라진다.
-                    if (previewing && !insideView(target, event)) {
-                        showPreview?.let { repeatHandler.removeCallbacks(it) }
-                        previewing = false
-                        dismissAlternate()
-                    }
-                }
-
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
-                    target.isPressed = false
-                    showPreview?.let { repeatHandler.removeCallbacks(it) }
-                    repeatHandler.removeCallbacks(repeatBackspace)
-                    // 미리보기를 띄운 것이 **이 키** 일 때만 갈아 끼운다.
-                    if (previewing && alternate != null) listener?.onLongPressChar(alternate)
-                    if (previewing) dismissAlternate()
-                    previewing = false
-                }
-
-                MotionEvent.ACTION_CANCEL -> {
-                    target.isPressed = false
-                    showPreview?.let { repeatHandler.removeCallbacks(it) }
-                    repeatHandler.removeCallbacks(repeatBackspace)
-                    if (previewing) dismissAlternate()
-                    previewing = false
-                }
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> touch.down(event.x, event.y)
+                MotionEvent.ACTION_MOVE -> touch.move(event.x, event.y, insideView(target, event))
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> touch.up()
+                MotionEvent.ACTION_CANCEL -> touch.cancel()
             }
             true
         }
@@ -990,6 +1015,139 @@ class KeyboardView @JvmOverloads constructor(
     private fun insideView(view: View, event: MotionEvent): Boolean {
         val bounds = Rect(0, 0, view.width, view.height)
         return bounds.contains(event.x.toInt(), event.y.toInt())
+    }
+
+    // --- 자판 바닥 전체가 키다 ---------------------------------------------------
+
+    /**
+     * 자판 바닥.
+     *
+     * **키와 키 사이의 여백, 화면 가장자리까지 전부 어느 한 키에 속한다.** 삼성
+     * 키보드가 그렇다 — ㅅ과 ㅎ 사이를 누르면 가까운 쪽이 눌리고, 줄 맨 끝 키는
+     * 화면 가장자리까지가 제 영역이다.
+     *
+     * 키 뷰마다 리스너를 달면 그 여백은 아무 키도 아니어서 입력이 조용히 사라진다.
+     * 빠르게 칠수록 손가락이 키 한가운데에 정확히 떨어지지 않으니 자주 겪는다 —
+     * 220타로 칠 때 "키가 씹힌다" 던 것의 정체다. 그래서 손가락을 어느 키에 줄지는
+     * 뷰에 맡기지 않고 판이 직접 정한다.
+     */
+    private inner class KeyPad(context: Context) : LinearLayout(context) {
+        override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+            routeTouch(event)
+            return true
+        }
+    }
+
+    /** 자판 위의 키 한 자리. */
+    private class PadSlot(val view: View, val touch: KeyTouch) {
+        /** 판 기준 좌표. 누를 때마다 다시 잰다 — 줄 높이나 자판이 바뀔 수 있다. */
+        val bounds = Rect()
+    }
+
+    /**
+     * 키 하나가 손가락에 반응하는 법. 판이 직접 불러 주거나([KeyPad]), 자판 밖에서는
+     * 뷰의 터치 리스너가 불러 준다([attachKeyTouch]).
+     */
+    private interface KeyTouch {
+        /** 좌표는 키 왼쪽 위 기준. */
+        fun down(x: Float, y: Float)
+
+        /** [inside] 는 손가락이 아직 이 키의 영역에 있는지. */
+        fun move(x: Float, y: Float, inside: Boolean)
+        fun up()
+        fun cancel()
+    }
+
+    /**
+     * 손가락을 키에 나눠 준다.
+     *
+     * 손가락(pointer)마다 처음 닿은 키를 끝까지 잡고 있는다. 여러 손가락이 동시에
+     * 눌려도 서로 섞이지 않고, 한 키 위에 손가락 두 개가 겹쳐도 둘 다 입력된다.
+     */
+    private fun routeTouch(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                // 첫 손가락이라면 남아 있는 것은 전부 놓친 것이다(화면이 바뀌는 사이
+                // 손을 떼면 UP 이 안 온다). 그대로 두면 ⌫ 반복이 멎지 않는다.
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) cancelActiveSlots()
+                val index = event.actionIndex
+                val x = event.getX(index)
+                val y = event.getY(index)
+                val slot = slotAt(x, y) ?: return
+                activeSlots.put(event.getPointerId(index), slot)
+                slot.touch.down(x - slot.bounds.left, y - slot.bounds.top)
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                for (index in 0 until event.pointerCount) {
+                    val slot = activeSlots.get(event.getPointerId(index)) ?: continue
+                    val x = event.getX(index)
+                    val y = event.getY(index)
+                    // 끌고 나가도 키는 바뀌지 않는다. 이미 들어간 글자가 있으니
+                    // 넘겨줄 수 없다 — 대체 글자 미리보기만 취소된다.
+                    val inside = slotAt(x, y) === slot
+                    slot.touch.move(x - slot.bounds.left, y - slot.bounds.top, inside)
+                }
+            }
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                val pointer = event.getPointerId(event.actionIndex)
+                activeSlots.get(pointer)?.touch?.up()
+                activeSlots.remove(pointer)
+            }
+
+            MotionEvent.ACTION_CANCEL -> cancelActiveSlots()
+        }
+    }
+
+    private fun cancelActiveSlots() {
+        for (i in 0 until activeSlots.size()) activeSlots.valueAt(i).touch.cancel()
+        activeSlots.clear()
+    }
+
+    /**
+     * 이 점을 품은 키. 없으면 **가장 가까운** 키.
+     *
+     * 여백은 양쪽 키의 한가운데를 경계로 갈린다. 키 사이 거리가 3dp 안팎이라 이
+     * 한 줄이 곧 "키보드 전체가 키" 다.
+     */
+    private fun slotAt(x: Float, y: Float): PadSlot? {
+        var nearest: PadSlot? = null
+        var best = Float.MAX_VALUE
+        for (slot in keySlots) {
+            // 아직 자리를 못 잡은 키(폭 0)는 거리가 엉뚱하게 나온다.
+            if (slot.view.width == 0) continue
+            fillBounds(slot)
+            val dx = gapTo(x, slot.bounds.left.toFloat(), slot.bounds.right.toFloat())
+            val dy = gapTo(y, slot.bounds.top.toFloat(), slot.bounds.bottom.toFloat())
+            if (dx == 0f && dy == 0f) return slot
+            val distance = dx * dx + dy * dy
+            if (distance < best) {
+                best = distance
+                nearest = slot
+            }
+        }
+        return nearest
+    }
+
+    /** 구간 [min]~[max] 에서 [value] 가 벗어난 거리. 안에 있으면 0. */
+    private fun gapTo(value: Float, min: Float, max: Float): Float = when {
+        value < min -> min - value
+        value > max -> value - max
+        else -> 0f
+    }
+
+    /** 키의 자리를 판 기준 좌표로 잰다. 키는 줄 안에 있고, 줄은 판 안에 있다. */
+    private fun fillBounds(slot: PadSlot) {
+        var view: View? = slot.view
+        var left = 0
+        var top = 0
+        while (view != null && view !== rowContainer) {
+            left += view.left
+            top += view.top
+            view = view.parent as? View
+        }
+        slot.bounds.set(left, top, left + slot.view.width, top + slot.view.height)
     }
 
     /**
