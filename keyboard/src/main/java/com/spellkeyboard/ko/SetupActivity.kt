@@ -74,6 +74,12 @@ class SetupActivity : AppCompatActivity() {
         showQuota()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 결제 화면에서 돌아왔을 때 구독 상태가 바뀌었을 수 있다.
+        showQuota()
+    }
+
     override fun onDestroy() {
         billing?.destroy()
         billing = null
@@ -133,7 +139,10 @@ class SetupActivity : AppCompatActivity() {
                 showQuota()
             }
         }.also { it.start() }
-        findViewById<View>(R.id.subscribe_button).setOnClickListener { billing?.subscribe(this) }
+        // 결제창을 바로 띄우지 않는다. 무엇을 얼마에 사는지 먼저 보여주는 화면을 거친다.
+        findViewById<View>(R.id.subscribe_button).setOnClickListener {
+            startActivity(android.content.Intent(this, PaywallActivity::class.java))
+        }
     }
 
     /**
@@ -149,6 +158,10 @@ class SetupActivity : AppCompatActivity() {
         view.text = when {
             quota == null -> getString(R.string.setting_quota_unknown)
             quota.remaining == null -> getString(R.string.setting_quota_unlimited)
+            quota.countsChars -> getString(
+                R.string.setting_quota_premium,
+                String.format(java.util.Locale.KOREA, "%,d", quota.remaining)
+            )
             else -> getString(R.string.setting_quota_free, quota.remaining, quota.limit ?: 0)
         }
     }

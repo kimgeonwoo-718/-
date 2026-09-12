@@ -125,21 +125,58 @@ test('자정을 넘기면 되살아난다', async () => {
   assert.equal(res.headers.get('x-quota-remaining'), '4');
 });
 
-test('구독자는 한도가 없고 세지도 않는다', async () => {
+/** 구독자 요청. 글자 수를 재야 하니 고칠 글이 들어 있어야 한다. */
+function paidGenerate(chars) {
+  const text = '가'.repeat(chars);
+  return generate({ 'x-purchase-token': 'paid-token' }, JSON.stringify({ contents: [{ parts: [{ text }] }] }));
+}
+
+test('구독자는 횟수 대신 글자 수로 세고, IP 한도는 거치지 않는다', async () => {
   const { pem } = await testKeyPair();
-  const e = env({ PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }) });
+  const e = env({
+    PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }),
+    SUB_DAILY_CHARS: '1000',
+    IP_DAILY_LIMIT: '1',
+  });
   const up = upstream({ activeToken: 'paid-token' });
   const deps = { fetch: up.fetchImpl, now: () => NOON_KST };
 
+  // 무료 하루 5회를 훌쩍 넘겨도 글자 수 안이면 된다.
   for (let i = 0; i < 7; i++) {
-    const res = await handle(generate({ 'x-purchase-token': 'paid-token' }), e, deps);
+    const res = await handle(paidGenerate(100), e, deps);
     assert.equal(res.status, 200, `${i + 1}번째`);
     assert.equal(res.headers.get('x-plan'), 'subscriber');
-    assert.equal(res.headers.get('x-quota-remaining'), null);
+    assert.equal(res.headers.get('x-quota-unit'), 'chars');
+    assert.equal(res.headers.get('x-quota-limit'), '1000');
+    assert.equal(res.headers.get('x-quota-remaining'), String(1000 - 100 * (i + 1)));
   }
-  assert.equal(e.DB.usage.size, 0, '구독자는 세지 않는다');
+  // 300 남았는데 400 자짜리는 안 된다. 다 쓴 요청은 세지 않는다.
+  const over = await handle(paidGenerate(400), e, deps);
+  assert.equal(over.status, 402);
+  assert.equal((await over.json()).error.message, 'sub_daily_limit');
+  assert.equal(over.headers.get('x-quota-remaining'), '300');
+  // 300 자짜리는 딱 맞게 들어간다.
+  const fits = await handle(paidGenerate(300), e, deps);
+  assert.equal(fits.status, 200);
+  assert.equal(fits.headers.get('x-quota-remaining'), '0');
   // 확인 결과를 캐시해서 구글에는 한 번만 물어본다.
   assert.equal(up.calls.filter((c) => c.url.includes('androidpublisher')).length, 1);
+});
+
+test('구독자의 아주 짧은 요청도 최소 50 자로 친다 — 한 글자짜리 만 번이 공짜가 되지 않게', async () => {
+  const { pem } = await testKeyPair();
+  const e = env({
+    PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }),
+    SUB_DAILY_CHARS: '1000',
+  });
+  const deps = { fetch: upstream({ activeToken: 'paid-token' }).fetchImpl, now: () => NOON_KST };
+  const res = await handle(paidGenerate(1), e, deps);
+  assert.equal(res.headers.get('x-quota-remaining'), '950');
+});
+
+test('무료 사용자의 헤더에는 단위가 횟수로 실린다', async () => {
+  const res = await handle(generate(), env(), { fetch: upstream().fetchImpl, now: () => NOON_KST });
+  assert.equal(res.headers.get('x-quota-unit'), 'calls');
 });
 
 test('가짜 구매 토큰은 무료로 취급한다', async () => {

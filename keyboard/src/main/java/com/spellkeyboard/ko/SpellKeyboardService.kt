@@ -589,8 +589,13 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      * 무제한이면 빈 문자열이다 — 구독자에게 횟수를 들이밀 이유가 없다.
      */
     private fun remainingSuffix(): String {
-        val remaining = Prefs.lastQuota(this)?.remaining ?: return ""
-        return getString(R.string.ai_remaining_suffix, remaining)
+        val quota = Prefs.lastQuota(this) ?: return ""
+        val remaining = quota.remaining ?: return ""
+        return if (quota.countsChars) {
+            getString(R.string.ai_remaining_chars_suffix, String.format(java.util.Locale.KOREA, "%,d", remaining))
+        } else {
+            getString(R.string.ai_remaining_suffix, remaining)
+        }
     }
 
     /**

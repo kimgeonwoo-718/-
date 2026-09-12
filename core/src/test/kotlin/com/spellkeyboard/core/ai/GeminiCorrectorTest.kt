@@ -501,10 +501,43 @@ class GeminiCorrectorTest {
         val result = corrector.correct("원문")
 
         assertTrue(result.isFailure)
-        assertContains(GeminiCorrector.explain(result.exceptionOrNull()?.message), "구독")
+        // 막힌 자리가 곧 결제 지점이다. 프리미엄이 있다는 것을 알려야 한다.
+        assertContains(GeminiCorrector.explain(result.exceptionOrNull()?.message), "프리미엄")
         // 서버가 한도라고 했는데 다른 모델을 두드려 봐야 소용없다. 한 번으로 끝낸다.
         assertEquals(1, transport.urls.size)
         assertEquals(0, corrector.lastQuota?.remaining)
+        // 단위 헤더가 없는 옛 서버는 횟수로 읽는다.
+        assertEquals(false, corrector.lastQuota?.countsChars)
+    }
+
+    @Test
+    fun `구독자는 글자 수 단위로 남은 양을 받는다`() {
+        val transport = ScriptedTransport(
+            GeminiCorrector.HttpResponse(
+                200,
+                ok("고침").body,
+                mapOf(
+                    "x-plan" to "subscriber",
+                    "x-quota-remaining" to "87000",
+                    "x-quota-limit" to "100000",
+                    "x-quota-unit" to "chars"
+                )
+            )
+        )
+        val corrector = GeminiCorrector("", transport = transport, sleep = {}, baseUrl = PROXY)
+        corrector.correct("원문")
+
+        val quota = corrector.lastQuota
+        assertEquals(true, quota?.countsChars)
+        assertEquals(87000, quota?.remaining)
+        assertEquals(100000, quota?.limit)
+    }
+
+    @Test
+    fun `프리미엄 하루 한도를 다 쓰면 내일을 안내한다`() {
+        val explained = GeminiCorrector.explain("sub_daily_limit")
+        assertContains(explained, "10만 자")
+        assertContains(explained, "내일")
     }
 
     @Test

@@ -20,6 +20,7 @@
     <string name="ai_unchanged">AI 가 보기에 고칠 것이 없습니다</string>
     <string name="ai_failed">AI 교정 실패: %1$s</string>
     <string name="ai_remaining_suffix"> · 오늘 %1$d회 남음</string>
+    <string name="ai_remaining_chars_suffix"> · 오늘 %1$s자 남음</string>
     <string name="ai_busy">이미 교정하는 중입니다</string>
     <string name="ai_no_connection">입력란과 연결되지 않았습니다</string>
     <string name="ai_no_key">이 빌드에는 AI 서버 주소가 없어 AI 교정을 쓸 수 없습니다.</string>
@@ -49,12 +50,30 @@
     <string name="setting_ai_title">AI 전체 교정</string>
     <string name="setting_ai_sub">자판 위 ✦ 버튼을 누르면 문장 전체를 다듬어요</string>
     <string name="setting_quota_free">오늘 %1$d회 남음 (무료 하루 %2$d회)</string>
-    <string name="setting_quota_unlimited">구독 중 · 무제한</string>
+    <string name="setting_quota_unlimited">프리미엄 · 이용 중</string>
+    <string name="setting_quota_premium">프리미엄 · 오늘 %1$s자 남음</string>
     <string name="setting_quota_unknown">한 번 쓰면 남은 횟수가 여기 보여요</string>
     <string name="setting_quota_no_server">이 빌드에는 AI 서버 주소가 없어요</string>
-    <string name="setting_plan_subscribe">월 2,990원으로 무제한 쓰기</string>
+    <string name="setting_plan_subscribe">프리미엄 알아보기 · 월 2,990원</string>
     <string name="setting_plan_note">자동 교정은 요금제와 상관없이 언제나 무제한이에요. 결제는 Google Play 가 처리하고, Play 스토어에서 설치한 앱에서만 결제창이 떠요.</string>
-    <string name="billing_subscribed">구독이 확인됐어요. 이제 AI 교정이 무제한이에요.</string>
+    <string name="billing_subscribed">프리미엄이 확인됐어요. 이제 AI 교정을 하루 10만 자까지 쓸 수 있어요.</string>
+
+    <!-- 결제 화면 -->
+    <string name="paywall_close">✕</string>
+    <string name="paywall_headline">하루에 99원으로\n삶의 질을 높여보세요!</string>
+    <string name="paywall_price_line">월 2,990원 · 언제든 해지</string>
+    <string name="paywall_col_free">무료</string>
+    <string name="paywall_col_premium">프리미엄</string>
+    <string name="paywall_row_realtime">실시간 자동 교정</string>
+    <string name="paywall_unlimited">무제한</string>
+    <string name="paywall_row_ai">AI 전체 교정</string>
+    <string name="paywall_free_ai">하루 5회</string>
+    <string name="paywall_premium_ai">하루 10만 자</string>
+    <string name="paywall_table_title">10만 자면 이만큼이에요</string>
+    <string name="paywall_table_sub">하루에 이 정도씩 고칠 수 있어요</string>
+    <string name="paywall_times">%1$s번</string>
+    <string name="paywall_cta">월 2,990원으로 시작하기</string>
+    <string name="paywall_note">결제와 해지는 Google Play 에서 처리돼요. Play 스토어에서 설치한 앱에서만 결제창이 떠요. 실시간 자동 교정은 요금제와 상관없이 언제나 무제한이에요.</string>
     <string name="billing_failed">결제를 시작하지 못했어요: %1$s</string>
     <string name="billing_product_missing">Play 스토어에서 설치한 앱에서만 결제할 수 있어요.</string>
     <string name="section_keyboard">키보드</string>

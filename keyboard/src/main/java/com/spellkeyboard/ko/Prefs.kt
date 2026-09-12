@@ -19,6 +19,7 @@ object Prefs {
     private const val KEY_QUOTA_PLAN = "quota_plan"
     private const val KEY_QUOTA_REMAINING = "quota_remaining"
     private const val KEY_QUOTA_LIMIT = "quota_limit"
+    private const val KEY_QUOTA_UNIT = "quota_unit"
 
     fun autoCorrectEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_AUTO_CORRECT, true)
@@ -124,7 +125,8 @@ object Prefs {
         val plan = prefs(context).getString(KEY_QUOTA_PLAN, null) ?: return null
         val remaining = prefs(context).getInt(KEY_QUOTA_REMAINING, -1).takeIf { it >= 0 }
         val limit = prefs(context).getInt(KEY_QUOTA_LIMIT, -1).takeIf { it >= 0 }
-        return GeminiCorrector.Quota(remaining, limit, plan)
+        val unit = prefs(context).getString(KEY_QUOTA_UNIT, null)
+        return GeminiCorrector.Quota(remaining, limit, plan, unit)
     }
 
     fun rememberQuota(context: Context, quota: GeminiCorrector.Quota) {
@@ -132,6 +134,7 @@ object Prefs {
             .putString(KEY_QUOTA_PLAN, quota.plan)
             .putInt(KEY_QUOTA_REMAINING, quota.remaining ?: -1)
             .putInt(KEY_QUOTA_LIMIT, quota.limit ?: -1)
+            .putString(KEY_QUOTA_UNIT, quota.unit)
             .apply()
     }
 

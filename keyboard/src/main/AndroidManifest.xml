@@ -38,6 +38,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 결제 화면. 설정 안에서만 열리므로 밖으로 내보내지 않는다. -->
+        <activity
+            android:name=".PaywallActivity"
+            android:exported="false"
+            android:label="@string/app_name" />
     </application>
 
 </manifest>

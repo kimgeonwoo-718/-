@@ -52,8 +52,9 @@ export function fakeDb() {
                 return;
               }
               if (sql.startsWith('INSERT INTO usage')) {
+                // 세 번째 인자가 더할 양이다(bumpBy). 구독자는 글자 수를 쌓는다.
                 const k = key(args[0], args[1]);
-                usage.set(k, (usage.get(k) ?? 0) + 1);
+                usage.set(k, (usage.get(k) ?? 0) + (args[2] ?? 1));
                 return;
               }
               if (sql.startsWith('INSERT OR REPLACE INTO cache')) {

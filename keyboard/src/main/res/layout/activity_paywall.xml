@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  결제 화면. 결제창을 바로 띄우지 않고 무엇을 얼마에 사는지 먼저 보여준다 — 챗GPT 의
+  업그레이드 화면처럼 무료와 프리미엄을 나란히 놓는다.
+
+  "10만 자면 이만큼" 표의 줄들은 PaywallActivity 가 코드로 채운다. 숫자는 서버 한도에서
+  계산되므로 여기 박아 두면 어긋난다.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/toss_bg"
+    android:fillViewport="true"
+    android:importantForAutofill="noExcludeDescendants"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="32dp">
+
+        <TextView
+            android:id="@+id/paywall_close"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_gravity="end"
+            android:background="@drawable/bg_button_secondary"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="@string/paywall_close"
+            android:textColor="@color/toss_text2"
+            android:textSize="18sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:lineSpacingExtra="4dp"
+            android:text="@string/paywall_headline"
+            android:textColor="@color/toss_text"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/paywall_price_line"
+            android:textColor="@color/toss_text2"
+            android:textSize="15sp" />
+
+        <!-- 무료 vs 프리미엄 -->
+        <LinearLayout style="@style/Card">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingBottom="10dp">
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1.4" />
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/paywall_col_free"
+                    android:textColor="@color/toss_text3"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/paywall_col_premium"
+                    android:textColor="@color/toss_blue"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:minHeight="52dp"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1.4"
+                    android:text="@string/paywall_row_realtime"
+                    android:textColor="@color/toss_text"
+                    android:textSize="15sp" />
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/paywall_unlimited"
+                    android:textColor="@color/toss_text2"
+                    android:textSize="15sp" />
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/paywall_unlimited"
+                    android:textColor="@color/toss_text"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:minHeight="52dp"
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1.4"
+                    android:text="@string/paywall_row_ai"
+                    android:textColor="@color/toss_text"
+                    android:textSize="15sp" />
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/paywall_free_ai"
+                    android:textColor="@color/toss_text2"
+                    android:textSize="15sp" />
+                <TextView
+                    android:id="@+id/paywall_premium_ai"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/paywall_premium_ai"
+                    android:textColor="@color/toss_blue"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 10만 자면 이만큼 -->
+        <LinearLayout style="@style/Card">
+            <TextView
+                android:id="@+id/paywall_table_title"
+                style="@style/CardTitle"
+                android:text="@string/paywall_table_title" />
+            <TextView
+                style="@style/RowSub"
+                android:layout_marginBottom="6dp"
+                android:text="@string/paywall_table_sub" />
+
+            <LinearLayout
+                android:id="@+id/paywall_table"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/paywall_cta"
+            style="@style/PrimaryButton"
+            android:layout_marginTop="20dp"
+            android:text="@string/paywall_cta" />
+
+        <TextView
+            android:id="@+id/paywall_status"
+            style="@style/Caption"
+            android:layout_marginTop="10dp"
+            android:gravity="center" />
+
+        <TextView
+            style="@style/Caption"
+            android:layout_marginTop="14dp"
+            android:text="@string/paywall_note" />
+    </LinearLayout>
+</ScrollView>

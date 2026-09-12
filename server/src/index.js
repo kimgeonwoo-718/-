@@ -14,7 +14,7 @@
  * 백여 개가 그걸 지키고 있어서, 여기서 다시 만들면 두 벌이 어긋난다. 서버는 얇게 둔다.
  * 경로도 구글과 똑같이 둬서 앱은 호스트만 바꾸면 된다.
  */
-import { kstDay, decide, validInstallId } from './quota.js';
+import { kstDay, decide, validInstallId, chargeFor, decideChars, DEFAULT_SUB_DAILY_CHARS } from './quota.js';
 import { fetchAccessToken, verifySubscription } from './play.js';
 import { cacheGet, cacheSet } from './cache.js';
 import {
@@ -120,14 +120,29 @@ async function correct(request, env, url, fetchImpl, now) {
 
   const nowMs = now();
   const day = kstDay(nowMs);
-  const limit = Number(env.FREE_DAILY_LIMIT ?? 5);
   const purchaseToken = request.headers.get('x-purchase-token') ?? '';
   const subscriber = await isSubscriber(env, purchaseToken, fetchImpl, nowMs);
   const plan = subscriber ? 'subscriber' : 'free';
 
   let usage = null;
   let ipKey = null;
-  if (!subscriber) {
+  let limit;
+  let unit;
+  // 구독자만 쓴다: 오늘 글자 수를 쌓는 키와, 이 요청이 깎을 글자 수.
+  let charsKey = null;
+  let charge = 0;
+  if (subscriber) {
+    // 구독자는 횟수가 아니라 글자 수로 센다 — 요금이 글자 수에 붙기 때문이다.
+    // 앱에는 "하루 10만 자" 로 안내한다. IP 한도는 거치지 않는다(돈 낸 사람이다).
+    unit = 'chars';
+    limit = Number(env.SUB_DAILY_CHARS ?? DEFAULT_SUB_DAILY_CHARS);
+    charsKey = 'chars:' + installId;
+    charge = chargeFor(safeUserLength(body));
+    usage = decideChars(await used(env.DB, charsKey, day), charge, limit);
+    if (!usage.allowed) return withQuota(fail(402, 'sub_daily_limit'), usage, limit, plan, unit);
+  } else {
+    unit = 'calls';
+    limit = Number(env.FREE_DAILY_LIMIT ?? 5);
     // 설치 ID 를 갈아 끼우며 무료를 무한히 쓰는 것을 IP 로 한 번 더 막는다. 완벽하지
     // 않지만(통신사 NAT), 무료 한도를 우회하려는 사람에게 값을 치르게 하는 정도는 된다.
     ipKey = await ipBucket(request);
@@ -137,7 +152,7 @@ async function correct(request, env, url, fetchImpl, now) {
     usage = decide(await used(env.DB, installId, day), limit);
     // 402 를 쓰는 이유: 앱은 429 와 5xx 를 "붐빔" 으로 보고 다른 모델로 옮겨 다시
     // 보낸다. 한도 초과에 그러면 헛요청 세 번이다. 402 는 그 목록에 없어 바로 멈춘다.
-    if (!usage.allowed) return withQuota(fail(402, 'free_daily_limit'), usage, limit, plan);
+    if (!usage.allowed) return withQuota(fail(402, 'free_daily_limit'), usage, limit, plan, unit);
   }
 
   const model = openAiModel(env);
@@ -152,12 +167,15 @@ async function correct(request, env, url, fetchImpl, now) {
     await recordTokens(env.DB, day, usageOf(reply.text));
     // 성공했을 때만 깎는다. 구글이 거절한 요청까지 세면 사용자는 아무것도 못 받고
     // 하루치만 잃는다 — 앱이 예전에 지키던 규칙과 같다.
-    if (!subscriber) {
+    if (subscriber) {
+      await bumpBy(env.DB, charsKey, day, charge);
+      usage = { remaining: Math.max(0, usage.remaining - charge) };
+    } else {
       await Promise.all([bump(env.DB, installId, day), bump(env.DB, ipKey, day)]);
       usage = { remaining: Math.max(0, usage.remaining - 1) };
     }
   }
-  return withQuota(asResponse(reply), usage, limit, plan);
+  return withQuota(asResponse(reply), usage, limit, plan, unit);
 }
 
 /**
@@ -282,13 +300,17 @@ async function passthrough(res) {
   });
 }
 
-/** 남은 횟수를 헤더로 실어 준다. 앱은 이걸 읽어 "오늘 3회 남음" 을 보여준다. */
-function withQuota(response, usage, limit, plan) {
+/**
+ * 남은 양을 헤더로 실어 준다. 앱은 이걸 읽어 "오늘 3회 남음" / "오늘 87,000자 남음" 을
+ * 보여준다. 단위(`x-quota-unit`)가 없으면 옛 앱은 횟수로 읽는다.
+ */
+function withQuota(response, usage, limit, plan, unit = 'calls') {
   const headers = new Headers(response.headers);
   headers.set('x-plan', plan);
   if (usage) {
     headers.set('x-quota-remaining', String(usage.remaining));
     headers.set('x-quota-limit', String(limit));
+    headers.set('x-quota-unit', unit);
   }
   return new Response(response.body, { status: response.status, headers });
 }
@@ -342,10 +364,26 @@ async function used(db, id, day) {
 }
 
 async function bump(db, id, day) {
+  await bumpBy(db, id, day, 1);
+}
+
+async function bumpBy(db, id, day, amount) {
   await db
-    .prepare('INSERT INTO usage (id, day, used) VALUES (?, ?, 1) ON CONFLICT(id, day) DO UPDATE SET used = used + 1')
-    .bind(id, day)
+    .prepare(
+      'INSERT INTO usage (id, day, used) VALUES (?, ?, ?) ' +
+        'ON CONFLICT(id, day) DO UPDATE SET used = used + excluded.used'
+    )
+    .bind(id, day, amount)
     .run();
+}
+
+/** 고칠 글의 길이. 본문이 깨져 있으면 0 — 어차피 바깥에서 거절당한다. */
+function safeUserLength(body) {
+  try {
+    return userTextOf(body).length;
+  } catch {
+    return 0;
+  }
 }
 
 /** 이틀 지난 사용량과 만료된 캐시를 치운다. 크론이 하루 한 번 부른다. */

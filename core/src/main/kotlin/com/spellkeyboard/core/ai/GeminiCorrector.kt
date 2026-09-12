@@ -50,8 +50,13 @@ class GeminiCorrector(
     var lastQuota: Quota? = null
         private set
 
-    /** 서버가 알려 준 요금 상태. [remaining]/[limit] 는 무제한이면 null. */
-    data class Quota(val remaining: Int?, val limit: Int?, val plan: String?)
+    /**
+     * 서버가 알려 준 요금 상태. [remaining]/[limit] 는 서버가 안 알려 줬으면 null.
+     * [unit] 은 "calls"(무료: 횟수) 또는 "chars"(구독: 글자 수). 옛 서버는 안 보낸다 — 횟수다.
+     */
+    data class Quota(val remaining: Int?, val limit: Int?, val plan: String?, val unit: String? = null) {
+        val countsChars: Boolean get() = unit == "chars"
+    }
 
     /**
      * 지금 쓰는 모델 이름.
@@ -144,7 +149,8 @@ class GeminiCorrector(
         lastQuota = Quota(
             remaining = response.headers["x-quota-remaining"]?.toIntOrNull(),
             limit = response.headers["x-quota-limit"]?.toIntOrNull(),
-            plan = plan
+            plan = plan,
+            unit = response.headers["x-quota-unit"]
         )
     }
 
@@ -361,10 +367,10 @@ class GeminiCorrector(
             checks += Check("모델 자동 교체", true, "$before → $activeModel (이 이름을 저장하세요)")
         }
         lastQuota?.let { quota ->
-            val detail = if (quota.remaining == null) {
-                "구독 · 무제한"
-            } else {
-                "무료 · 오늘 ${quota.remaining}/${quota.limit ?: "?"}회 남음"
+            val detail = when {
+                quota.remaining == null -> "구독 · 무제한"
+                quota.countsChars -> "프리미엄 · 오늘 ${quota.remaining}/${quota.limit ?: "?"}자 남음"
+                else -> "무료 · 오늘 ${quota.remaining}/${quota.limit ?: "?"}회 남음"
             }
             checks += Check("요금제", true, detail)
         }
@@ -453,7 +459,10 @@ class GeminiCorrector(
 
                 // 우리 중계 서버가 돌려주는 코드들. 구글 오류와 같은 자리에 실려 온다.
                 "free_daily_limit" in lower ->
-                    "오늘 무료 AI 교정을 다 썼습니다. 구독하면 무제한입니다."
+                    "오늘 무료 AI 교정을 다 썼습니다. 프리미엄은 하루 10만 자까지 쓸 수 있어요."
+
+                "sub_daily_limit" in lower ->
+                    "오늘 프리미엄 한도(10만 자)를 다 썼습니다. 내일 다시 쓸 수 있어요."
 
                 // IP 한도. 학교·회사 와이파이처럼 여럿이 주소 하나를 쓰는 곳에서 걸린다 —
                 // 이 사람이 잘못한 게 아니다. 나무라지 말고, 구독하면 풀린다는 것을 알린다.
