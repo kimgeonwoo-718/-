@@ -74,12 +74,6 @@ class SetupActivity : AppCompatActivity() {
         showQuota()
     }
 
-    override fun onResume() {
-        super.onResume()
-        // 결제 화면에서 돌아왔을 때 구독 상태가 바뀌었을 수 있다.
-        showQuota()
-    }
-
     override fun onDestroy() {
         billing?.destroy()
         billing = null
