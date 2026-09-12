@@ -398,7 +398,7 @@ class KeyboardView @JvmOverloads constructor(
             setTextColor(theme.status)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             background = circle(theme.background)
-            attachKeyTouch(this) { listener?.onClipboardDelete(text) }
+            attachKeyTouch(this, onPress = { listener?.onClipboardDelete(text) })
         }
         card.addView(delete, android.widget.FrameLayout.LayoutParams(dp(24), dp(24)).apply {
             gravity = Gravity.TOP or Gravity.END
