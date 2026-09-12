@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { handle } from '../src/index.js';
-import { toOpenAiRequest, toGeminiReply, modelList } from '../src/openai.js';
+import { toOpenAiRequest, toGeminiReply, modelList, KO_SYSTEM_PROMPT } from '../src/openai.js';
 import { fakeDb } from './fakeDb.js';
 
 const INSTALL = '3f2a9c1e-7b4d-4e8a-9c2f-1a2b3c4d5e6f';
@@ -53,14 +53,30 @@ function openAi({ status = 200, content = '안녕하세요 반갑습니다', fin
 test('구글 모양을 OpenAI 모양으로 옮긴다', () => {
   const sent = JSON.parse(toOpenAiRequest(APP_BODY, 'gpt-5-nano'));
   assert.equal(sent.model, 'gpt-5-nano');
-  assert.deepEqual(sent.messages, [
-    { role: 'system', content: '너는 교정기다' },
-    { role: 'user', content: '안녕하세요 반갑읍니다' },
-  ]);
-  assert.equal(sent.reasoning_effort, 'minimal');
+  assert.equal(sent.messages.length, 2);
+  assert.equal(sent.messages[1].content, '안녕하세요 반갑읍니다');
+  assert.equal(sent.reasoning_effort, 'low');
   // gpt-5 계열은 temperature 를 받으면 400 을 돌려준다. 보내지 않는다.
   assert.equal('temperature' in sent, false);
   assert.equal('max_tokens' in sent, false);
+});
+
+test('지시문은 앱 것이 아니라 서버 것을 쓴다', () => {
+  const sent = JSON.parse(toOpenAiRequest(APP_BODY, 'gpt-5-nano'));
+  assert.equal(sent.messages[0].role, 'system');
+  assert.equal(sent.messages[0].content, KO_SYSTEM_PROMPT);
+  assert.notEqual(sent.messages[0].content, '너는 교정기다');
+
+  // 캐싱은 1024 토큰부터 걸린다. 그 아래로 줄면 입력값이 10배가 된다.
+  assert.ok(KO_SYSTEM_PROMPT.length > 900, '지시문이 캐싱 문턱 아래로 짧아졌다');
+
+  const fromApp = JSON.parse(toOpenAiRequest(APP_BODY, 'gpt-5-nano', { prompt: 'app' }));
+  assert.equal(fromApp.messages[0].content, '너는 교정기다');
+});
+
+test('숙고 세기를 환경변수로 바꾼다', () => {
+  const sent = JSON.parse(toOpenAiRequest(APP_BODY, 'gpt-5-nano', { reasoning: 'medium' }));
+  assert.equal(sent.reasoning_effort, 'medium');
 });
 
 test('숙고 토큰도 출력 한도에서 깎이므로 앱이 부른 값보다 넉넉히 준다', () => {
@@ -195,7 +211,7 @@ test('숙고 항목을 거절하면 빼고 한 번 더 보낸다', async () => {
   const res = await handle(generate(), env(), { fetch: fetchImpl });
   assert.equal(res.status, 200);
   assert.equal(calls.length, 2);
-  assert.equal(calls[0].reasoning_effort, 'minimal');
+  assert.equal(calls[0].reasoning_effort, 'low');
   assert.equal('reasoning_effort' in calls[1], false);
 });
 

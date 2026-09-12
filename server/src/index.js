@@ -175,7 +175,12 @@ function openAiModel(env) {
 async function askOpenAi(fetchImpl, env, model, body) {
   let request;
   try {
-    request = toOpenAiRequest(body, model);
+    // 지시문과 숙고 세기는 환경변수로 바꿀 수 있다. 교정 품질을 손볼 때 코드를 고치고
+    // 배포하는 대신 값만 바꿔 돌려 보려고 열어 둔 자리다.
+    request = toOpenAiRequest(body, model, {
+      reasoning: (env.OPENAI_REASONING ?? '').trim(),
+      prompt: (env.OPENAI_PROMPT ?? '').trim(),
+    });
   } catch {
     return { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) };
   }
