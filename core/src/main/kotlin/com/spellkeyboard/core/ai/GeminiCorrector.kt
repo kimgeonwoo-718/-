@@ -68,13 +68,13 @@ class GeminiCorrector(
     private var cachedModels: List<String>? = null
 
     /**
-     * 숙고를 끄고 보낼 것인가.
+     * "숙고 끄기" 항목을 거절한 모델들. 그 모델에만 빼고 보낸다.
      *
-     * 이 항목을 모르는 모델은 400 으로 거절한다. 그러면 한 번 물러서서 빼고 보낸다 —
-     * 모델마다 되는지 확인할 방법이 없으니 서버에게 물어보는 셈이다.
+     * 예전에는 한 번 거절당하면 **모든 모델에 영영** 뺐다. 그러면 그 순간부터 답마다
+     * 숙고 토큰이 붙고, 숙고 토큰은 출력 요금으로 청구된다 — 조용히 돈이 샜다.
+     * 모델을 갈아타면 새 모델에는 다시 끄고 보낸다.
      */
-    @Volatile
-    private var skipThinking = true
+    private val thinkingRejected: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
 
     /** HTTP 호출부. 테스트에서 갈아 끼울 수 있게 열어 둔다. */
     fun interface Transport {
@@ -99,15 +99,7 @@ class GeminiCorrector(
     fun correct(text: String): Result<String> = runCatching {
         require(text.isNotBlank()) { "고칠 글이 없다" }
 
-        var body = buildRequest(text)
-        var response = attempt(body)
-
-        // 이 모델이 thinkingConfig 를 모르면 400 으로 거절한다. 한 번 빼고 다시 보낸다.
-        if (skipThinking && rejectsThinking(response)) {
-            skipThinking = false
-            body = buildRequest(text)
-            response = attempt(body)
-        }
+        var response = send(text)
 
         // 붐비거나 없는 이름이면 **기다리지 말고 다른 모델로 옮긴다.**
         //
@@ -121,16 +113,29 @@ class GeminiCorrector(
             tried += next
             activeModel = next
             hops++
-            response = attempt(body)
+            response = send(text)
         }
 
         // 쓸 만한 모델이 전부 붐빌 때만 그제야 한 번 쉬었다 다시 본다.
         if (isTransient(response)) {
             sleep(RETRY_MS)
-            response = attempt(body)
+            response = attempt(buildRequest(text))
         }
         noteQuota(response)
         readCorrection(response)
+    }
+
+    /**
+     * 지금 모델로 한 번 보낸다. 숙고 끄기 항목을 넣고 갔다가 400 이 오면 **이 모델에만**
+     * 빼고 한 번 더 간다. 다른 이유의 400 이면 두 번째도 똑같이 거절당하고, 그 이유가
+     * 그대로 사용자에게 간다.
+     */
+    private fun send(text: String): HttpResponse {
+        val withThinkingOff = activeModel !in thinkingRejected
+        val response = attempt(buildRequest(text))
+        if (!withThinkingOff || !rejectsThinking(response)) return response
+        thinkingRejected += activeModel
+        return attempt(buildRequest(text))
     }
 
     /** 중계 서버가 헤더로 실어 준 요금 상태를 기억한다. 한도 초과(402)에도 실려 온다. */
@@ -269,7 +274,7 @@ class GeminiCorrector(
         append(""""maxOutputTokens":$MAX_OUTPUT_TOKENS""")
         // 맞춤법 교정에 숙고는 필요 없다. 켜 두면 몇 초씩 더 걸리고 값도 더 나간다 —
         // 실기기에서 gemini-3 계열이 8 초 타임아웃을 넘긴 이유다.
-        if (skipThinking) append(""","thinkingConfig":{"thinkingBudget":0}""")
+        if (activeModel !in thinkingRejected) append(""","thinkingConfig":{"thinkingBudget":0}""")
         append("}}")
     }
 

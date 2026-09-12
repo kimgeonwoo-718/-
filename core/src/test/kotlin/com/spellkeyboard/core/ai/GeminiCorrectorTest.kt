@@ -419,6 +419,33 @@ class GeminiCorrectorTest {
     }
 
     @Test
+    fun `숙고 거절은 그 모델에만 기억하고 옮긴 모델에는 다시 끄고 보낸다`() {
+        val bodies = mutableListOf<String?>()
+        val urls = mutableListOf<String>()
+        var call = 0
+        val transport = GeminiCorrector.Transport { _, url, _, body ->
+            call++
+            if (body == null) return@Transport modelList("gemini-a", "gemini-b")
+            bodies += body
+            urls += url
+            when (call) {
+                // gemini-a: 숙고 끄기를 거절하고, 빼고 보내면 붐빔 → 옮긴다
+                2 -> GeminiCorrector.HttpResponse(400, "{\"error\":{\"message\":\"Request contains an invalid argument.\"}}")
+                3 -> overloaded()
+                else -> ok("고침")
+            }
+        }
+        val corrector = GeminiCorrector("key", model = "gemini-a", transport = transport, sleep = {})
+        corrector.prefetchModels()
+
+        assertEquals("고침", corrector.correct("원문").getOrNull())
+        assertContains(bodies[0].orEmpty(), "thinkingBudget", message = "처음엔 끄고 보낸다")
+        assertTrue(!bodies[1].orEmpty().contains("thinkingBudget"), "거절한 모델엔 빼고")
+        assertContains(urls[2], "gemini-b")
+        assertContains(bodies[2].orEmpty(), "thinkingBudget", message = "옮긴 모델에는 다시 끄고 보낸다 — 숙고 토큰은 돈이다")
+    }
+
+    @Test
     fun `미리 받을 때 못 쓰는 이름이면 그 자리에서 갈아 끼운다`() {
         // 교정할 때 실패하고 옮기면 그 왕복이 사용자 대기 시간이 된다.
         val transport = ScriptedTransport(modelList("gemini-3.8-flash"))

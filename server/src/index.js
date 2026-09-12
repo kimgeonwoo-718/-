@@ -78,6 +78,11 @@ export async function handle(request, env, deps = {}) {
   if (request.method === 'GET' && url.pathname === '/v1beta/models') {
     return proxy(fetchImpl, env, url, 'GET', null);
   }
+  // 날짜별 토큰 사용량. 개인 정보는 없고 합계뿐이라 열어 둔다 — 요금이 얼마나 나가는지
+  // 구글 콘솔을 안 열고도 보려고. 숙고 토큰(thoughts)이 따로 찍히니 그게 새는지도 보인다.
+  if (request.method === 'GET' && url.pathname === '/stats') {
+    return json(200, { days: await tokenStats(env.DB) });
+  }
   const isGenerate = /^\/v1beta\/models\/[^/]+:generateContent$/.test(url.pathname);
   if (request.method === 'POST' && isGenerate) {
     return correct(request, env, url, fetchImpl, now);
@@ -117,15 +122,19 @@ async function correct(request, env, url, fetchImpl, now) {
     if (!usage.allowed) return withQuota(fail(402, 'free_daily_limit'), usage, limit, plan);
   }
 
-  const upstream = await proxy(fetchImpl, env, url, 'POST', body);
+  const reply = await relay(fetchImpl, env, url, 'POST', body);
 
-  // 성공했을 때만 깎는다. 구글이 거절한 요청까지 세면 사용자는 아무것도 못 받고
-  // 하루치만 잃는다 — 앱이 예전에 지키던 규칙과 같다.
-  if (upstream.status === 200 && !subscriber) {
-    await Promise.all([bump(env.DB, installId, day), bump(env.DB, ipKey, day)]);
-    usage = { remaining: Math.max(0, usage.remaining - 1) };
+  if (reply.status === 200) {
+    // 구글이 알려 준 토큰 수를 날짜별로 쌓는다. 실패한 요청은 안 세고 돈도 안 나간다.
+    await recordTokens(env.DB, day, usageOf(reply.text));
+    // 성공했을 때만 깎는다. 구글이 거절한 요청까지 세면 사용자는 아무것도 못 받고
+    // 하루치만 잃는다 — 앱이 예전에 지키던 규칙과 같다.
+    if (!subscriber) {
+      await Promise.all([bump(env.DB, installId, day), bump(env.DB, ipKey, day)]);
+      usage = { remaining: Math.max(0, usage.remaining - 1) };
+    }
   }
-  return withQuota(upstream, usage, limit, plan);
+  return withQuota(asResponse(reply), usage, limit, plan);
 }
 
 /**
@@ -133,14 +142,60 @@ async function correct(request, env, url, fetchImpl, now) {
  * 토큰이 구글로 새어 나갈 이유가 없고, 우리 키만 붙이면 된다.
  */
 async function proxy(fetchImpl, env, url, method, body) {
+  return asResponse(await relay(fetchImpl, env, url, 'GET' === method ? 'GET' : method, body));
+}
+
+/** 구글에 보내고 상태와 본문 문자열만 받는다. 본문을 읽어야 토큰 수를 셀 수 있다. */
+async function relay(fetchImpl, env, url, method, body) {
   const target = UPSTREAM + url.pathname + url.search;
+  let res;
   if (env.RELAY) {
     const stub = env.RELAY.get(env.RELAY.idFromName(RELAY_NAME), { locationHint: RELAY_LOCATION });
-    return passthrough(await stub.fetch(target, { method, body }));
+    res = await stub.fetch(target, { method, body });
+  } else {
+    // 중계 객체가 없는 환경(테스트)에서는 여기서 바로 보낸다.
+    res = await fetchImpl(target, { method, headers: googleHeaders(env), body });
   }
-  // 중계 객체가 없는 환경(테스트)에서는 여기서 바로 보낸다.
-  const res = await fetchImpl(target, { method, headers: googleHeaders(env), body });
-  return passthrough(res);
+  return { status: res.status, text: await res.text() };
+}
+
+function asResponse(reply) {
+  return new Response(reply.text, {
+    status: reply.status,
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+  });
+}
+
+/** 구글 응답의 usageMetadata. 없거나 깨졌으면 0 으로. */
+function usageOf(text) {
+  try {
+    const meta = JSON.parse(text)?.usageMetadata ?? {};
+    return {
+      prompt: Number(meta.promptTokenCount ?? 0),
+      output: Number(meta.candidatesTokenCount ?? 0),
+      thoughts: Number(meta.thoughtsTokenCount ?? 0),
+    };
+  } catch {
+    return { prompt: 0, output: 0, thoughts: 0 };
+  }
+}
+
+async function recordTokens(db, day, usage) {
+  await db
+    .prepare(
+      'INSERT INTO tokens (day, requests, prompt, output, thoughts) VALUES (?, 1, ?, ?, ?) ' +
+        'ON CONFLICT(day) DO UPDATE SET requests = requests + 1, prompt = prompt + excluded.prompt, ' +
+        'output = output + excluded.output, thoughts = thoughts + excluded.thoughts'
+    )
+    .bind(day, usage.prompt, usage.output, usage.thoughts)
+    .run();
+}
+
+async function tokenStats(db) {
+  const { results } = await db
+    .prepare('SELECT day, requests, prompt, output, thoughts FROM tokens ORDER BY day DESC LIMIT 31')
+    .all();
+  return results ?? [];
 }
 
 function googleHeaders(env) {
@@ -231,6 +286,7 @@ async function sweep(env) {
   const nowMs = Date.now();
   await env.DB.prepare('DELETE FROM usage WHERE day < ?').bind(kstDay(nowMs - 2 * 86_400_000)).run();
   await env.DB.prepare('DELETE FROM cache WHERE expires_at < ?').bind(nowMs).run();
+  await env.DB.prepare('DELETE FROM tokens WHERE day < ?').bind(kstDay(nowMs - 90 * 86_400_000)).run();
 }
 
 async function ipBucket(request) {

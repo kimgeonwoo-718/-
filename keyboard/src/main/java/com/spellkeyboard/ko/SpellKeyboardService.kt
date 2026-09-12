@@ -503,8 +503,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 되읽기가 안 되는 앱에서는 우리가 써 넣은 사본으로 대신한다. 온디바이스 교정이
         // 쓰는 것과 같은 폴백이다 — 이게 없으면 그런 앱에서 AI 만 영영 안 된다.
         val editor = ConnectionEditor(connection)
-        val before = session.readBeforeCursor(editor, AI_CONTEXT_CHARS)
-        val after = connection.getTextAfterCursor(AI_CONTEXT_CHARS, 0)?.toString().orEmpty()
+        val before = session.readBeforeCursor(editor, AI_BEFORE_CHARS)
+        val after = connection.getTextAfterCursor(AI_AFTER_CHARS, 0)?.toString().orEmpty()
         val original = before + after
         if (original.isBlank()) {
             keyboard?.showStatus(getString(R.string.ai_empty))
@@ -688,8 +688,15 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
          */
         const val SELF_EDIT_WINDOW_MS = 200L
 
-        /** AI 교정에 실어 보낼 커서 앞뒤 최대 글자 수. */
-        const val AI_CONTEXT_CHARS = 2000
+        /**
+         * AI 교정에 실어 보낼 커서 앞·뒤 최대 글자 수.
+         *
+         * 보내는 글자가 곧 요금이다 — 답도 그만큼 통째로 돌아오니 두 배로. 앞뒤 2,000 자씩
+         * 보내던 것을 줄였다. 키보드에서 고치는 글은 대개 메시지 한 통이고, 그보다 긴 글은
+         * 커서 앞 부분만 고쳐진다.
+         */
+        const val AI_BEFORE_CHARS = 1500
+        const val AI_AFTER_CHARS = 500
 
         /**
          * "교정하는 중…" 을 이보다 오래 붙잡지 않는다.

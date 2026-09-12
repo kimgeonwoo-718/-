@@ -37,7 +37,10 @@ function upstream({ status = 200, activeToken = null } = {}) {
     }
     if (url.includes(':generateContent')) {
       if (status !== 200) return new Response(JSON.stringify({ error: { message: 'boom' } }), { status });
-      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '고침' }] } }] }), { status: 200 });
+      return new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: '고침' }] } }],
+        usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 30, thoughtsTokenCount: 7 },
+      }), { status: 200 });
     }
     throw new Error(`unexpected upstream ${url}`);
   };
@@ -256,3 +259,33 @@ test('중계 객체는 키를 붙여 구글로 그대로 넘긴다', async () =>
     globalThis.fetch = realFetch;
   }
 });
+
+// --- 토큰 사용량 ---------------------------------------------------------------
+
+test('성공한 교정의 토큰 수를 날짜별로 쌓고 /stats 로 보여준다', async () => {
+  const e = env();
+  const up = upstream();
+  const deps = { fetch: up.fetchImpl, now: () => NOON_KST };
+  await handle(generate(), e, deps);
+  await handle(generate(), e, deps);
+  // 구글이 거절한 것은 세지 않는다 — 돈도 안 나간다.
+  await handle(generate(), e, { fetch: upstream({ status: 503 }).fetchImpl, now: () => NOON_KST });
+
+  const res = await handle(new Request('https://spell.test/stats'), e, deps);
+  assert.equal(res.status, 200);
+  const { days } = await res.json();
+  assert.equal(days.length, 1);
+  assert.deepEqual(days[0], { day: '2026-01-01', requests: 2, prompt: 240, output: 60, thoughts: 14 });
+});
+
+test('usageMetadata 가 없어도 죽지 않는다', async () => {
+  const e = env();
+  const fetchImpl = async (url) =>
+    url.includes(':generateContent')
+      ? new Response('{"candidates":[]}', { status: 200 })
+      : new Response('{"models":[]}', { status: 200 });
+  const res = await handle(generate(), e, { fetch: fetchImpl, now: () => NOON_KST });
+  assert.equal(res.status, 200);
+  assert.deepEqual(e.DB.tokens.get('2026-01-01'), { requests: 1, prompt: 0, output: 0, thoughts: 0 });
+});
+
