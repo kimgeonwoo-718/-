@@ -262,3 +262,11 @@ test('지시문은 백틱과 치환식을 담지 않는다', () => {
   assert.equal(KO_SYSTEM_PROMPT.includes('${'), false);
   assert.match(KO_SYSTEM_PROMPT, /오죽하겠냐마는/);
 });
+
+test('걸린 시간을 헤더로 알려 준다', async () => {
+  const up = openAi();
+  const res = await handle(generate(), env(), { fetch: up.fetchImpl });
+  const took = res.headers.get('x-upstream-ms');
+  assert.notEqual(took, null);
+  assert.ok(Number(took) >= 0, `숫자가 아니다: ${took}`);
+});

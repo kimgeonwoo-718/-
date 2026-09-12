@@ -532,8 +532,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }, AI_WATCHDOG_MS)
 
         Thread {
+            val startedAt = android.os.SystemClock.elapsedRealtime()
             val engine = runCatching { corrector() }
             val result = engine.mapCatching { it.correct(original).getOrThrow() }
+            val tookMs = android.os.SystemClock.elapsedRealtime() - startedAt
             // 서버가 헤더로 알려 준 남은 횟수. 한도 초과(402)에도 실려 오니 실패해도 받는다.
             val quota = engine.getOrNull()?.lastQuota
             mainHandler.post {
@@ -542,7 +544,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 aiBusy = false
                 quota?.let { Prefs.rememberQuota(this, it) }
                 result
-                    .onSuccess { applyAiResult(before, after, it) }
+                    .onSuccess { applyAiResult(before, after, it, tookMs) }
                     .onFailure {
                         // 영어 원문을 그대로 실으면 두 줄에서 잘려 정작 원인이 안 보인다.
                         keyboard?.showStatus(
@@ -556,9 +558,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
-    private fun applyAiResult(before: String, after: String, corrected: String) {
+    private fun applyAiResult(before: String, after: String, corrected: String, tookMs: Long) {
         if (corrected == before + after) {
-            keyboard?.showStatus(getString(R.string.ai_unchanged) + remainingSuffix())
+            keyboard?.showStatus(getString(R.string.ai_unchanged) + tookSuffix(tookMs) + remainingSuffix())
             return
         }
         val connection = currentInputConnection ?: return
@@ -568,8 +570,18 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         connection.endBatchEdit()
         // 글을 통째로 갈아 끼웠으니 조합 상태와 사본을 버린다.
         session.reset()
-        keyboard?.showStatus(getString(R.string.ai_done) + remainingSuffix())
+        keyboard?.showStatus(getString(R.string.ai_done) + tookSuffix(tookMs) + remainingSuffix())
     }
+
+    /**
+     * " · 2.4초" 처럼 뒤에 붙일 문구.
+     *
+     * 느리다는 느낌만으로는 어디를 손볼지 알 수 없다 — 네트워크가 먼 것인지, 모델이
+     * 오래 생각하는 것인지, 글이 길어 되뱉을 것이 많은 것인지. 실제 숫자가 있어야
+     * 고친 뒤에 나아졌는지도 잴 수 있다.
+     */
+    private fun tookSuffix(tookMs: Long): String =
+        getString(R.string.ai_took_suffix, tookMs / 1000.0)
 
     /**
      * " · 오늘 3회 남음" 처럼 뒤에 붙일 문구.

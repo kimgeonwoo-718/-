@@ -141,9 +141,11 @@ async function correct(request, env, url, fetchImpl, now) {
   }
 
   const model = openAiModel(env);
+  const startedAt = Date.now();
   const reply = model
     ? await askOpenAi(fetchImpl, env, model, body)
     : await relay(fetchImpl, env, url, 'POST', body);
+  reply.tookMs = Date.now() - startedAt;
 
   if (reply.status === 200) {
     // 응답이 알려 준 토큰 수를 날짜별로 쌓는다. 실패한 요청은 안 세고 돈도 안 나간다.
@@ -220,10 +222,11 @@ async function relayTo(fetchImpl, env, target, method, body) {
 }
 
 function asResponse(reply) {
-  return new Response(reply.text, {
-    status: reply.status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
-  });
+  const headers = { 'content-type': 'application/json; charset=utf-8' };
+  // 느리다는 말만으로는 어디를 손볼지 알 수 없다. 이 숫자는 **모델이 쓴 시간**이라,
+  // 앱이 재는 전체 시간에서 이걸 빼면 한국-미국 왕복이 얼마인지도 나온다.
+  if (reply.tookMs != null) headers['x-upstream-ms'] = String(reply.tookMs);
+  return new Response(reply.text, { status: reply.status, headers });
 }
 
 /** 응답의 usageMetadata. 없거나 깨졌으면 0 으로. */

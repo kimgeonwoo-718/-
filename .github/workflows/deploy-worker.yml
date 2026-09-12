@@ -155,8 +155,11 @@ jobs:
           jq -r '.models[]?.name' models.json 2>/dev/null | head -n 40 || true
           [ -s models.json ] && ! jq -e '.models' models.json >/dev/null 2>&1 && head -c 600 models.json && echo
           echo "----- 교정 한 번 (설치 ID 는 CI 전용) -----"
-          curl -sS --max-time 30 -o gen.json -w 'HTTP %{http_code}\n' -X POST \
+          # 걸린 시간도 같이 잰다. 미국 러너에서 재는 것이라 모델이 쓴 시간에 가깝다 —
+          # 실기기 시간에서 이걸 빼면 한국-미국 왕복이 얼마인지 나온다.
+          curl -sS --max-time 30 -o gen.json -D gen.head -w 'HTTP %{http_code} · 전체 %{time_total}초\n' -X POST \
             -H 'Content-Type: application/json' -H 'X-Install-Id: ci-smoke-test-0000' \
             --data '{"contents":[{"parts":[{"text":"안녕하새요 라고만 답해"}]}]}' \
             "$url/v1beta/models/gemini-3.5-flash-lite:generateContent" || true
+          grep -i '^x-upstream-ms' gen.head || true
           head -c 1200 gen.json; echo
