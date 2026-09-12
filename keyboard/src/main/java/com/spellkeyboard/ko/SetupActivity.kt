@@ -7,6 +7,7 @@ import android.provider.Settings
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.CompoundButton
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.PickVisualMediaRequest
@@ -182,6 +183,26 @@ class SetupActivity : AppCompatActivity() {
         findViewById<View>(R.id.background_clear).setOnClickListener {
             BackgroundImage.clear(this)
             showBackgroundStatus()
+        }
+
+        val transparencyValue = findViewById<TextView>(R.id.key_transparency_value)
+        findViewById<SeekBar>(R.id.key_transparency).apply {
+            fun show(percent: Int) {
+                transparencyValue.text = getString(R.string.setting_key_transparency_value, percent)
+            }
+            progress = Prefs.keyTransparency(this@SetupActivity)
+            show(progress)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) = show(value)
+
+                // 끌고 있는 동안은 숫자만 바꾸고, 손을 뗄 때 저장한다. 끄는 내내 저장하면
+                // 한 번 움직일 때마다 디스크에 쓴다.
+                override fun onStartTrackingTouch(bar: SeekBar) = Unit
+
+                override fun onStopTrackingTouch(bar: SeekBar) {
+                    Prefs.setKeyTransparency(this@SetupActivity, bar.progress)
+                }
+            })
         }
     }
 

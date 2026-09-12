@@ -357,6 +357,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 session.commitPending(editor)
                 keyboard?.setMode(KeyboardMode.KOREAN)
             }
+
+            // 조합 중인 글자를 끝내기만 한다. 아무것도 넣지 않는다. 위에서 lastTapKey 를
+            // 비웠으므로 같은 키를 바로 다시 눌러도 연타(ㄴ→ㄹ)가 아니라 새 글자가 된다.
+            KeyAction.NEXT_CHAR -> session.commitPending(editor)
         }
     }
 

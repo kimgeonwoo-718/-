@@ -12,6 +12,7 @@ object Prefs {
     private const val KEY_AUTO_CORRECT = "auto_correct"
     private const val KEY_THEME = "theme_mode"
     private const val KEY_LAYOUT = "layout_type"
+    private const val KEY_KEY_ALPHA = "key_alpha_percent"
     private const val KEY_CLIPBOARD = "clipboard"
     private const val KEY_INSTALL_ID = "install_id"
     private const val KEY_PURCHASE_TOKEN = "purchase_token"
@@ -44,6 +45,20 @@ object Prefs {
     fun setLayoutType(context: Context, type: LayoutType) {
         prefs(context).edit().putString(KEY_LAYOUT, type.name).apply()
     }
+
+    /**
+     * 배경 사진 위에서 키를 얼마나 비치게 할지. 0 = 키가 꽉 차서 사진이 안 보임,
+     * 100 = 키가 거의 사라지고 사진만 보임. 기본 70 은 예전에 고정값이던 30% 불투명과 같다.
+     * 배경 사진이 없으면 이 값은 쓰이지 않는다.
+     */
+    fun keyTransparency(context: Context): Int =
+        prefs(context).getInt(KEY_KEY_ALPHA, DEFAULT_KEY_TRANSPARENCY).coerceIn(0, 100)
+
+    fun setKeyTransparency(context: Context, percent: Int) {
+        prefs(context).edit().putInt(KEY_KEY_ALPHA, percent.coerceIn(0, 100)).apply()
+    }
+
+    const val DEFAULT_KEY_TRANSPARENCY = 70
 
     // --- AI 경로 ----------------------------------------------------------------
 

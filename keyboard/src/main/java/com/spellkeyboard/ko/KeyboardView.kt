@@ -106,6 +106,7 @@ class KeyboardView @JvmOverloads constructor(
     private var photoStamp = -1L
     private var autoCorrectOn = true
     private var layoutType: LayoutType = Prefs.layoutType(context)
+    private var keyAlpha = alphaFor(Prefs.keyTransparency(context))
 
     private val statusView: TextView
     private val emojiButton: TextView
@@ -228,13 +229,16 @@ class KeyboardView @JvmOverloads constructor(
         val nextTheme = KeyboardTheme.current(context)
         val nextStamp = BackgroundImage.stamp(context)
         val nextLayout = Prefs.layoutType(context)
+        val nextAlpha = alphaFor(Prefs.keyTransparency(context))
         val themeChanged = nextTheme != theme
         val photoChanged = nextStamp != photoStamp
         val layoutChanged = nextLayout != layoutType
-        if (!force && !themeChanged && !photoChanged && !layoutChanged) return
+        val alphaChanged = nextAlpha != keyAlpha
+        if (!force && !themeChanged && !photoChanged && !layoutChanged && !alphaChanged) return
 
         theme = nextTheme
         layoutType = nextLayout
+        keyAlpha = nextAlpha
         if (photoChanged || force) {
             photo = if (nextStamp == 0L) null else BackgroundImage.load(context)
             photoStamp = nextStamp
@@ -248,7 +252,9 @@ class KeyboardView @JvmOverloads constructor(
     private fun restyle() {
         statusView.setTextColor(theme.status)
         // 사진 위에서는 글자가 묻힌다. 반투명 바탕을 깔아 읽히게 한다.
-        statusView.background = if (photo != null) roundRect(withAlpha(theme.background, 0.5f)) else null
+        // 상단 문구는 키보다 조금 더 진하게 남겨 둔다. 여기까지 투명해지면 글자가 안 읽힌다.
+        statusView.background =
+            if (photo != null) roundRect(withAlpha(theme.background, (keyAlpha + 0.2f).coerceAtMost(0.85f))) else null
         listOf(emojiButton, aiButton, clipboardButton, settingsButton).forEach { styleToolbarButton(it) }
         styleCorrectionButton()
         clipboardTitle.setTextColor(theme.text)
@@ -302,7 +308,7 @@ class KeyboardView @JvmOverloads constructor(
      * 86% → 50% → 30% 로, "사진이 더 보여야 한다" 는 말을 두 번 듣고 내렸다. 글자는
      * 진한 색 그대로라 키가 거의 비쳐도 읽힌다.
      */
-    private fun keyFill(color: Int): Int = if (photo != null) withAlpha(color, PHOTO_KEY_ALPHA) else color
+    private fun keyFill(color: Int): Int = if (photo != null) withAlpha(color, keyAlpha) else color
 
     private fun withAlpha(color: Int, alpha: Float): Int =
         Color.argb((alpha * 255).toInt(), Color.red(color), Color.green(color), Color.blue(color))
@@ -617,7 +623,9 @@ class KeyboardView @JvmOverloads constructor(
             addActionKey("한/영", KeyAction.LANGUAGE, weight = GRID_W / 2)
             addCheonjiinKey(KeyboardLayout.CHEONJIIN_ZERO_KEY)
             addActionKey("", KeyAction.SPACE, weight = GRID_W, letterKey = true)
-            addCharKey(',', weight = GRID_W)
+            // 쉼표 자리를 "다음" 에 내줬다. 쉼표는 오른쪽 .,?! 키에서 나온다. 같은 키를
+            // 연달아 눌러야 하는 글자("안녕" 의 ㄴㄴ)를 기다리지 않고 칠 수 있는 쪽이 훨씬 잦다.
+            addActionKey("다음", KeyAction.NEXT_CHAR, weight = GRID_W)
         })
     }
 
@@ -798,7 +806,7 @@ class KeyboardView @JvmOverloads constructor(
 
         view.setOnTouchListener { target, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                     flushHeldSpace()
                     cursorMode = false
                     consumed = false
@@ -829,7 +837,7 @@ class KeyboardView @JvmOverloads constructor(
                     }
                 }
 
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
                     target.isPressed = false
                     repeatHandler.removeCallbacks(enterCursorMode)
                     heldSpaceFlush = null
@@ -930,7 +938,10 @@ class KeyboardView @JvmOverloads constructor(
 
         view.setOnTouchListener { target, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
+                // **POINTER_DOWN 도 눌린 것이다.** 손가락 하나가 아직 이 키에 있는 채로
+                // 두 번째 손가락이 같은 키에 닿으면 DOWN 이 아니라 POINTER_DOWN 이 온다.
+                // 이것을 안 받아서, 빠르게 칠 때 그 입력이 조용히 사라졌다 — "키가 씹힌다".
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                     // 잡고 있던 스페이스가 있으면 이 키보다 먼저 들어가야 한다.
                     flushHeldSpace()
                     previewing = false
@@ -954,7 +965,7 @@ class KeyboardView @JvmOverloads constructor(
                     }
                 }
 
-                MotionEvent.ACTION_UP -> {
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                     target.isPressed = false
                     showPreview?.let { repeatHandler.removeCallbacks(it) }
                     repeatHandler.removeCallbacks(repeatBackspace)
@@ -1079,7 +1090,8 @@ class KeyboardView @JvmOverloads constructor(
         const val SPACE_HOLD_MS = 380L
         /** 커서 이동 모드에서 이만큼 밀 때마다 한 글자. */
         const val CURSOR_STEP_DP = 18
-        const val PHOTO_KEY_ALPHA = 0.3f
+        /** 설정의 "키 투명도"(0~100)를 불투명도로. 100 이어도 완전히 사라지지는 않게 둔다. */
+        fun alphaFor(transparency: Int): Float = (1f - transparency / 100f).coerceIn(0.08f, 1f)
         const val CHEONJIIN_KEY_HEIGHT_DP = 58
         /** 천지인·숫자 판의 한 칸 너비(weightSum 10 기준). 넷이면 딱 맞는다. */
         const val GRID_W = 2.5f

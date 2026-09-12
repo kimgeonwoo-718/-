@@ -70,6 +70,9 @@
     <string name="setting_background_set">사진을 쓰고 있어요</string>
     <string name="setting_background_saving">사진을 준비하는 중…</string>
     <string name="setting_background_failed">사진을 불러오지 못했어요. 다른 사진으로 해 보세요.</string>
+    <string name="setting_key_transparency">키 투명도</string>
+    <string name="setting_key_transparency_sub">배경 사진을 썼을 때 키를 얼마나 비치게 할지 정해요. 오른쪽으로 갈수록 사진이 잘 보여요.</string>
+    <string name="setting_key_transparency_value">%1$d%%</string>
     <string name="section_trouble">문제 해결</string>
     <string name="trouble_sub">AI 나 교정이 안 될 때 어디서 막히는지 확인해요</string>
     <string name="selftest_run">교정 엔진 점검</string>

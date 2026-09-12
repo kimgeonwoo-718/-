@@ -184,6 +184,45 @@
                     android:layout_marginStart="6dp"
                     android:text="@string/setting_background_clear" />
             </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="14dp"
+                android:paddingBottom="6dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        style="@style/RowTitle"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/setting_key_transparency" />
+
+                    <TextView
+                        android:id="@+id/key_transparency_value"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/toss_blue"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView style="@style/RowSub" android:text="@string/setting_key_transparency_sub" />
+
+                <SeekBar
+                    android:id="@+id/key_transparency"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:max="100" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- 문제 해결 (접힘) -->
