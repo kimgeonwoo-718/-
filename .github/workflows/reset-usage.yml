@@ -1,0 +1,31 @@
+name: Reset AI usage
+
+# 오늘치 무료 AI 교정 한도를 되돌린다. 테스트하다 5회를 다 썼을 때 Actions 탭에서
+# "Run workflow" 한 번이면 된다. 설치 ID·IP 사용량 행을 오늘 날짜(한국 시간)로 지운다.
+# 서버 코드는 건드리지 않는다.
+on:
+  workflow_dispatch:
+
+jobs:
+  reset:
+    name: 오늘 사용량 지우기
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: D1 에서 오늘 행 삭제
+        working-directory: server
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || { echo "CLOUDFLARE_API_TOKEN 이 없다" >&2; exit 1; }
+          id=$(npx --yes wrangler@3 d1 list --json | jq -r '.[] | select(.name=="spell-keyboard") | (.uuid // .id)' | head -n 1)
+          [ -n "$id" ] || { echo "D1 spell-keyboard 를 찾지 못했다" >&2; exit 1; }
+          sed -i "s/DATABASE_ID_PLACEHOLDER/$id/" wrangler.toml
+          today=$(TZ=Asia/Seoul date +%F)
+          npx --yes wrangler@3 d1 execute spell-keyboard --remote --command "DELETE FROM usage WHERE day = '$today'"
+          echo "::notice title=AI 사용량 초기화::오늘($today) 사용량을 지웠다. 무료 5회가 다시 찬다."

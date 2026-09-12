@@ -235,4 +235,6 @@ Worker 는 사용자 근처 데이터센터에서 돌고, 한국 통신사 트�
 - 서버가 구글 응답의 `usageMetadata` 를 날짜별로 D1 `tokens` 에 쌓는다.
   `GET /stats` → `{days:[{day, requests, prompt, output, thoughts}]}` (최근 31일).
   `thoughts` 가 0 이 아니면 어딘가에서 숙고가 켜진 것이다.
+- **한도 되돌리기**: Actions → "Reset AI usage" → Run workflow. 오늘(KST) `usage` 행을 지운다.
+  테스트하다 무료 5회를 다 썼을 때. 서버·앱 코드와 무관.
 
