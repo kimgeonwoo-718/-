@@ -63,7 +63,22 @@
     <string name="setup_step_3">3. 여기서 시험해 보기</string>
     <string name="setup_test_hint">예: 아버지가방에들어가신다 / 할수있다 / 됬다 / 왠만하면</string>
 
-    <string name="setting_auto_correct">자동 교정 사용</string>
+    <string name="setting_auto_correct">실시간 자동 교정 사용</string>
+    <string name="setting_auto_correct_note">타이핑 중 어절이 끝날 때마다 기기 안에서 고칩니다. 자판 위 \'교정\' 버튼으로도 바로 끄고 켤 수 있습니다.</string>
+    <string name="status_correction_on">실시간 교정을 켰습니다</string>
+    <string name="status_correction_off">실시간 교정을 껐습니다 · 위의 \'교정\' 버튼으로 다시 켭니다</string>
+    <string name="toolbar_correction">교정</string>
+
+    <string name="setting_appearance">키보드 모양</string>
+    <string name="setting_theme_system">시스템 따라가기</string>
+    <string name="setting_theme_light">밝게</string>
+    <string name="setting_theme_dark">어둡게</string>
+    <string name="setting_background_pick">배경 사진 고르기</string>
+    <string name="setting_background_clear">배경 사진 지우기</string>
+    <string name="setting_background_none">배경: 기본색</string>
+    <string name="setting_background_set">배경: 사진 사용 중</string>
+    <string name="setting_background_saving">사진을 준비하는 중…</string>
+    <string name="setting_background_failed">사진을 불러오지 못했습니다. 다른 사진으로 해 보세요.</string>
 
     <string name="privacy_notice">입력한 내용은 기기 밖으로 나가지 않습니다. 교정은 전부 기기 안에서 처리하며 서버로 보내거나 저장하지 않습니다. 비밀번호·이메일·URL 입력란에서는 교정이 자동으로 꺼집니다.</string>
 </resources>

@@ -10,6 +10,7 @@ object Prefs {
 
     private const val FILE = "spell_keyboard"
     private const val KEY_AUTO_CORRECT = "auto_correct"
+    private const val KEY_THEME = "theme_mode"
     private const val KEY_API_KEY = "gemini_api_key"
     private const val KEY_MODEL = "gemini_model"
     private const val KEY_CLIPBOARD = "clipboard"
@@ -24,6 +25,16 @@ object Prefs {
 
     fun setAutoCorrectEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_AUTO_CORRECT, enabled).apply()
+    }
+
+    // --- 모양 ------------------------------------------------------------------
+
+    fun themeMode(context: Context): ThemeMode =
+        runCatching { ThemeMode.valueOf(prefs(context).getString(KEY_THEME, "").orEmpty()) }
+            .getOrDefault(ThemeMode.SYSTEM)
+
+    fun setThemeMode(context: Context, mode: ThemeMode) {
+        prefs(context).edit().putString(KEY_THEME, mode.name).apply()
     }
 
     // --- AI 경로 ----------------------------------------------------------------

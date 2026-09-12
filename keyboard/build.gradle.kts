@@ -84,6 +84,9 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
+    // 사진 고르기(PickVisualMedia — 저장소 권한 없이 시스템 선택창을 띄운다)와 EXIF 회전.
+    implementation("androidx.activity:activity-ktx:1.9.3")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 
     // Google Play 구독. 결제창을 띄우고 구매 토큰을 받는 것까지만 한다 —
     // "구독자인가" 는 서버가 그 토큰을 Play 에 물어 판단한다.

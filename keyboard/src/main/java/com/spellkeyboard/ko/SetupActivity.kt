@@ -8,9 +8,13 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.CompoundButton
 import android.widget.EditText
+import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import com.spellkeyboard.core.ai.GeminiCorrector
 import com.spellkeyboard.core.correct.CorrectionEngine
 import com.spellkeyboard.core.correct.SelfTestSamples
@@ -28,9 +32,29 @@ import java.io.File
 class SetupActivity : AppCompatActivity() {
 
     private var quotaOutput: TextView? = null
+    private var backgroundStatus: TextView? = null
     private var billing: BillingManager? = null
 
+    /**
+     * 시스템 사진 선택창. 저장소 권한 없이 사용자가 고른 그 한 장만 받는다.
+     * 원본은 크므로 [BackgroundImage] 가 줄여서 앱 폴더에 넣는다 — 그 동안 화면이
+     * 멎지 않게 다른 스레드에서 한다.
+     */
+    private val pickBackground = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        backgroundStatus?.setText(R.string.setting_background_saving)
+        Thread {
+            val saved = BackgroundImage.save(this, uri)
+            runOnUiThread {
+                if (!saved) Toast.makeText(this, R.string.setting_background_failed, Toast.LENGTH_LONG).show()
+                showBackgroundStatus()
+            }
+        }.start()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 설정 화면도 키보드와 같은 밝기를 따른다. 키보드는 어두운데 설정만 하얗게 뜨면 어색하다.
+        AppCompatDelegate.setDefaultNightMode(nightModeOf(Prefs.themeMode(this)))
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_setup)
 
@@ -86,6 +110,37 @@ class SetupActivity : AppCompatActivity() {
             }
         }
 
+        findViewById<RadioGroup>(R.id.theme_group).apply {
+            check(
+                when (Prefs.themeMode(this@SetupActivity)) {
+                    ThemeMode.SYSTEM -> R.id.theme_system
+                    ThemeMode.LIGHT -> R.id.theme_light
+                    ThemeMode.DARK -> R.id.theme_dark
+                }
+            )
+            // 리스너는 초기값을 넣은 **뒤에** 건다. 먼저 걸면 초기값 넣는 순간 화면이 다시 뜬다.
+            setOnCheckedChangeListener { _, checkedId ->
+                val mode = when (checkedId) {
+                    R.id.theme_light -> ThemeMode.LIGHT
+                    R.id.theme_dark -> ThemeMode.DARK
+                    else -> ThemeMode.SYSTEM
+                }
+                if (mode == Prefs.themeMode(this@SetupActivity)) return@setOnCheckedChangeListener
+                Prefs.setThemeMode(this@SetupActivity, mode)
+                AppCompatDelegate.setDefaultNightMode(nightModeOf(mode))
+            }
+        }
+
+        backgroundStatus = findViewById(R.id.background_status)
+        showBackgroundStatus()
+        findViewById<Button>(R.id.background_pick).setOnClickListener {
+            pickBackground.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+        }
+        findViewById<Button>(R.id.background_clear).setOnClickListener {
+            BackgroundImage.clear(this)
+            showBackgroundStatus()
+        }
+
         quotaOutput = findViewById(R.id.quota_output)
         val billingStatus = findViewById<TextView>(R.id.billing_status)
         billing = BillingManager(this) { message ->
@@ -109,6 +164,18 @@ class SetupActivity : AppCompatActivity() {
         billing?.destroy()
         billing = null
         super.onDestroy()
+    }
+
+    private fun showBackgroundStatus() {
+        backgroundStatus?.setText(
+            if (BackgroundImage.exists(this)) R.string.setting_background_set else R.string.setting_background_none
+        )
+    }
+
+    private fun nightModeOf(mode: ThemeMode): Int = when (mode) {
+        ThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        ThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
+        ThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
     }
 
     /**

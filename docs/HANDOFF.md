@@ -167,3 +167,16 @@ Worker 는 사용자 근처 데이터센터에서 돌고, 한국 통신사 트�
 - D1 무료 등급: 하루 쓰기 10 만 건. 교정 한 번에 쓰기 두 번(설치 ID, IP).
 - Billing 라이브러리 7.1.1 의 `PendingPurchasesParams` API 는 이 컨테이너에서 컴파일해
   보지 못했다(AGP 차단). CI 가 첫 검증이다.
+
+---
+
+## 키보드 모양 설정 (2026-09-12)
+
+- **테마**: `ThemeMode`(시스템/밝게/어둡게) → `KeyboardTheme.current()` 가 팔레트를 고른다.
+  키보드 색은 전부 이 객체에서 나온다. 리소스 ID 를 직접 꺼내 쓰지 말 것.
+- **배경 사진**: 설정에서 고르면 `BackgroundImage.save()` 가 줄여서 `files/keyboard_background.jpg`
+  에 둔다. 키보드는 `applyAppearance()` 에서 파일 수정 시각이 바뀐 경우에만 다시 푼다.
+  사진 위에서는 키가 86% 불투명, 상단 문구엔 반투명 바탕.
+- **실시간 교정 토글**: 자판 도구 줄 '교정' 버튼 ↔ 설정 스위치, 둘 다 `Prefs.autoCorrectEnabled`.
+  버튼은 지금 입력란에 즉시 먹는다(`session.correctionEnabled`).
+

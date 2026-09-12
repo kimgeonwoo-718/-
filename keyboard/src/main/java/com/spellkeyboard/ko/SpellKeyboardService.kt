@@ -151,6 +151,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // 설정에서 테마나 배경을 바꾸고 돌아왔을 수 있다. 바뀐 게 없으면 싸게 끝난다.
+        keyboard?.applyAppearance()
+        keyboard?.setAutoCorrectOn(Prefs.autoCorrectEnabled(this))
         keyboard?.showStatus(
             if (session.correctionEnabled) {
                 getString(R.string.status_idle)
@@ -291,6 +294,22 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         startActivity(
             Intent(this, SetupActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+
+    /**
+     * 자판 위 '교정' 버튼. 설정 화면의 스위치와 같은 값을 뒤집는다.
+     *
+     * 지금 입력란에 바로 먹는다 — 다음 입력란부터 적용되면 "껐는데 왜 고치냐" 가 된다.
+     * 교정이 안 되는 입력란(비밀번호 등)에서는 값만 저장되고 동작은 그대로 꺼져 있다.
+     */
+    override fun onToggleAutoCorrect() {
+        val enabled = !Prefs.autoCorrectEnabled(this)
+        Prefs.setAutoCorrectEnabled(this, enabled)
+        session.correctionEnabled = enabled && fieldCorrectable
+        keyboard?.setAutoCorrectOn(enabled)
+        keyboard?.showStatus(
+            getString(if (enabled) R.string.status_correction_on else R.string.status_correction_off)
         )
     }
 

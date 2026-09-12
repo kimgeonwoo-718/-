@@ -2,7 +2,14 @@ package com.spellkeyboard.ko
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Matrix
+import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Handler
@@ -17,7 +24,6 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 
 /**
@@ -56,6 +62,9 @@ class KeyboardView @JvmOverloads constructor(
         fun onClipboardDelete(text: String)
 
         fun onOpenSettings()
+
+        /** 자판 위 '교정' 버튼. 실시간 온디바이스 교정을 끄고 켠다. */
+        fun onToggleAutoCorrect()
     }
 
     var listener: Listener? = null
@@ -63,9 +72,20 @@ class KeyboardView @JvmOverloads constructor(
     private var mode = KeyboardMode.KOREAN
     private var shifted = false
 
+    /** 지금 팔레트. [applyAppearance] 가 설정을 읽어 바꾼다. */
+    private var theme: KeyboardTheme = KeyboardTheme.current(context)
+
+    /** 사용자가 고른 배경 사진. 없으면 팔레트의 바탕색. */
+    private var photo: Bitmap? = null
+    private var photoStamp = -1L
+    private var autoCorrectOn = true
+
     private val statusView: TextView
     private val aiButton: TextView
     private val clipboardButton: TextView
+    private val correctionButton: TextView
+    private val settingsButton: TextView
+    private val clipboardTitle: TextView
     private val rowContainer: LinearLayout
     private val clipboardPanel: LinearLayout
     private val clipboardList: LinearLayout
@@ -84,13 +104,11 @@ class KeyboardView @JvmOverloads constructor(
 
     init {
         orientation = VERTICAL
-        setBackgroundColor(color(R.color.keyboard_background))
         setPadding(dp(2), dp(4), dp(2), dp(6))
 
         statusView = TextView(context).apply {
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), 0, dp(8), 0)
-            setTextColor(color(R.color.status_text))
+            setPadding(dp(8), dp(2), dp(8), dp(2))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             // 서버 오류 메시지가 잘리면 원인을 알 수 없다. 두 줄까지 보여준다.
             maxLines = 2
@@ -99,15 +117,19 @@ class KeyboardView @JvmOverloads constructor(
         }
         aiButton = toolbarButton("✨") { listener?.onAiCorrect() }
         clipboardButton = toolbarButton("📋") { showClipboard() }
-        val settingsButton = toolbarButton("⚙") { listener?.onOpenSettings() }
+        correctionButton = toolbarButton(context.getString(R.string.toolbar_correction)) {
+            listener?.onToggleAutoCorrect()
+        }.apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f) }
+        settingsButton = toolbarButton("⚙") { listener?.onOpenSettings() }
 
         val toolbar = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(aiButton, toolbarParams())
             addView(clipboardButton, toolbarParams())
+            addView(correctionButton, toolbarParams())
             addView(settingsButton, toolbarParams())
-            addView(statusView, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+            addView(statusView, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
         }
         addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
 
@@ -119,16 +141,110 @@ class KeyboardView @JvmOverloads constructor(
         addView(rowContainer, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
         clipboardList = LinearLayout(context).apply { orientation = VERTICAL }
+        clipboardTitle = TextView(context).apply {
+            text = context.getString(R.string.clipboard_title)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setPadding(dp(10), 0, 0, 0)
+        }
         clipboardPanel = buildClipboardPanel()
         addView(clipboardPanel, LayoutParams(LayoutParams.MATCH_PARENT, dp(CLIPBOARD_HEIGHT_DP)))
 
-        render()
+        applyAppearance(force = true)
     }
 
     /** 상단 줄 문구를 바꾼다. 무엇을 검사했고 무엇을 고쳤는지 보여주는 자리다. */
     fun showStatus(text: String) {
         statusView.text = text
     }
+
+    /** '교정' 버튼의 켜짐 표시. 켜져 있으면 강조색, 꺼져 있으면 흐리게. */
+    fun setAutoCorrectOn(on: Boolean) {
+        autoCorrectOn = on
+        styleCorrectionButton()
+    }
+
+    // --- 모양 -------------------------------------------------------------------
+
+    /**
+     * 설정(테마·배경 사진)을 다시 읽어 적용한다.
+     *
+     * 키보드가 뜰 때마다 불린다. 바뀐 게 없으면 아무것도 하지 않는다 — 자판을 다시
+     * 조립하는 건 싸지 않고, 사진을 다시 푸는 건 더 비싸다.
+     */
+    fun applyAppearance(force: Boolean = false) {
+        val nextTheme = KeyboardTheme.current(context)
+        val nextStamp = BackgroundImage.stamp(context)
+        val themeChanged = nextTheme != theme
+        val photoChanged = nextStamp != photoStamp
+        if (!force && !themeChanged && !photoChanged) return
+
+        theme = nextTheme
+        if (photoChanged || force) {
+            photo = if (nextStamp == 0L) null else BackgroundImage.load(context)
+            photoStamp = nextStamp
+        }
+        restyle()
+        render()
+        updateBackground()
+    }
+
+    /** 자판 밖의 것들(도구 줄, 클립보드 머리)에 팔레트를 입힌다. 키는 [render] 가 한다. */
+    private fun restyle() {
+        statusView.setTextColor(theme.status)
+        // 사진 위에서는 글자가 묻힌다. 반투명 바탕을 깔아 읽히게 한다.
+        statusView.background = if (photo != null) roundRect(withAlpha(theme.background, 0.72f)) else null
+        listOf(aiButton, clipboardButton, settingsButton).forEach { styleToolbarButton(it) }
+        styleCorrectionButton()
+        clipboardTitle.setTextColor(theme.text)
+    }
+
+    private fun styleToolbarButton(view: TextView) {
+        view.setTextColor(theme.text)
+        view.background = circle(theme.toolbarButton)
+    }
+
+    private fun styleCorrectionButton() {
+        if (autoCorrectOn) {
+            correctionButton.setTextColor(theme.onAccent)
+            correctionButton.background = circle(theme.accent)
+        } else {
+            correctionButton.setTextColor(theme.hint)
+            correctionButton.background = circle(theme.toolbarButton)
+        }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w != oldw || h != oldh) updateBackground()
+    }
+
+    /**
+     * 바탕을 깐다. 사진이 있으면 키보드 크기에 맞춰 가운데를 잘라 쓴다.
+     *
+     * 크기가 정해진 뒤에만 그릴 수 있어서 [onSizeChanged] 에서도 부른다. 클립보드를
+     * 열면 높이가 바뀌므로 그때도 다시 잘린다.
+     */
+    private fun updateBackground() {
+        val source = photo
+        if (source == null || width <= 0 || height <= 0) {
+            background = ColorDrawable(theme.background)
+            return
+        }
+        val scale = maxOf(width / source.width.toFloat(), height / source.height.toFloat())
+        val matrix = Matrix().apply {
+            setScale(scale, scale)
+            postTranslate((width - source.width * scale) / 2f, (height - source.height * scale) / 2f)
+        }
+        val cropped = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        Canvas(cropped).drawBitmap(source, matrix, Paint(Paint.FILTER_BITMAP_FLAG))
+        background = BitmapDrawable(resources, cropped)
+    }
+
+    /** 사진 위에서는 키를 살짝 비쳐 보이게 한다. 사진을 깔았는데 안 보이면 깐 의미가 없다. */
+    private fun keyFill(color: Int): Int = if (photo != null) withAlpha(color, 0.86f) else color
+
+    private fun withAlpha(color: Int, alpha: Float): Int =
+        Color.argb((alpha * 255).toInt(), Color.red(color), Color.green(color), Color.blue(color))
 
     /** API 키가 설정돼 있을 때만 AI 교정 버튼을 띄운다. */
     fun setAiAvailable(available: Boolean) {
@@ -171,15 +287,7 @@ class KeyboardView @JvmOverloads constructor(
         val header = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(
-                TextView(this@KeyboardView.context).apply {
-                    text = context.getString(R.string.clipboard_title)
-                    setTextColor(color(R.color.key_text))
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                    setPadding(dp(10), 0, 0, 0)
-                },
-                LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
-            )
+            addView(clipboardTitle, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
             addView(toolbarButton("✕") { hideClipboard() }, toolbarParams())
         }
         addView(header, LayoutParams(LayoutParams.MATCH_PARENT, dp(40)))
@@ -197,7 +305,7 @@ class KeyboardView @JvmOverloads constructor(
             clipboardList.addView(
                 TextView(context).apply {
                     text = context.getString(R.string.clipboard_empty)
-                    setTextColor(color(R.color.status_text))
+                    setTextColor(theme.status)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
                     setPadding(dp(12), dp(16), dp(12), dp(16))
                 }
@@ -210,14 +318,14 @@ class KeyboardView @JvmOverloads constructor(
     private fun clipboardItemView(text: String): View = LinearLayout(context).apply {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        background = roundRect(color(R.color.panel_item_background))
+        background = roundRect(keyFill(theme.panelItem))
         layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
             setMargins(dp(6), dp(3), dp(6), dp(3))
         }
 
         val label = TextView(this@KeyboardView.context).apply {
             this.text = text
-            setTextColor(color(R.color.key_text))
+            setTextColor(theme.text)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
@@ -351,7 +459,7 @@ class KeyboardView @JvmOverloads constructor(
         TextView(context).apply {
             text = label
             gravity = Gravity.CENTER
-            setTextColor(color(R.color.key_text))
+            setTextColor(theme.text)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, if (label.length > 1) 14f else 20f)
             isFocusable = false
             background = keyFace
@@ -364,11 +472,10 @@ class KeyboardView @JvmOverloads constructor(
         TextView(context).apply {
             text = label
             gravity = Gravity.CENTER
-            setTextColor(color(R.color.key_text))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            background = circle(color(R.color.toolbar_button))
             contentDescription = label
             attachKeyTouch(this, onPress = onPress)
+            styleToolbarButton(this)
         }
 
     private fun toolbarParams() =
@@ -475,9 +582,9 @@ class KeyboardView @JvmOverloads constructor(
         val view = TextView(context).apply {
             text = alternate.toString()
             gravity = Gravity.CENTER
-            setTextColor(color(R.color.popup_text))
+            setTextColor(theme.onAccent)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
-            background = roundRect(color(R.color.popup_background))
+            background = roundRect(theme.accent)
             measure(
                 MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
@@ -508,13 +615,9 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     private fun keyBackground(isAction: Boolean): StateListDrawable {
-        val normalColor =
-            if (isAction) color(R.color.key_action_background) else color(R.color.key_background)
+        val normalColor = keyFill(if (isAction) theme.actionKey else theme.key)
         return StateListDrawable().apply {
-            addState(
-                intArrayOf(android.R.attr.state_pressed),
-                roundRect(color(R.color.key_pressed_background))
-            )
+            addState(intArrayOf(android.R.attr.state_pressed), roundRect(theme.pressed))
             addState(intArrayOf(), roundRect(normalColor))
         }
     }
@@ -529,8 +632,6 @@ class KeyboardView @JvmOverloads constructor(
         shape = GradientDrawable.OVAL
         setColor(fill)
     }
-
-    private fun color(id: Int) = ContextCompat.getColor(context, id)
 
     private fun dp(value: Int): Int = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP,

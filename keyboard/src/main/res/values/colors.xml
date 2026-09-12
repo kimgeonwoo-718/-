@@ -19,4 +19,18 @@
     <color name="popup_background">#2E7BF6</color>
     <color name="popup_text">#FFFFFF</color>
     <color name="panel_item_background">#FFFFFF</color>
+
+    <!--
+      어두운 테마. 삼성 키보드 다크를 기준으로, 바탕은 거의 검정, 글자 키는 한 단계
+      밝은 회색, 기능 키는 바탕에 가깝게. 밝은 테마와 마찬가지로 대비를 낮게 둔다.
+    -->
+    <color name="keyboard_background_dark">#1B1C1F</color>
+    <color name="key_background_dark">#3A3C42</color>
+    <color name="key_action_background_dark">#26282D</color>
+    <color name="key_pressed_background_dark">#5A5D66</color>
+    <color name="key_text_dark">#F2F2F4</color>
+    <color name="key_hint_text_dark">#9A9DA5</color>
+    <color name="status_text_dark">#B4B7BE</color>
+    <color name="toolbar_button_dark">#2E3036</color>
+    <color name="panel_item_background_dark">#2E3036</color>
 </resources>
