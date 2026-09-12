@@ -81,7 +81,7 @@
     <string name="setting_listing_models">진단하는 중… (최대 20초)</string>
     <string name="setting_models_failed">진단 실패: %1$s</string>
     <string name="diag_no_server">이 빌드에는 AI 서버 주소가 없어요.</string>
-    <string name="ai_notice">AI 전체 교정을 누를 때만 그 입력란의 글이 서버를 거쳐 Google Gemini 로 가요. 타이핑 중 실시간 교정은 기기 안에서만 처리돼요.</string>
+    <string name="ai_notice">AI 전체 교정을 누를 때만 그 입력란의 글이 서버를 거쳐 OpenAI 로 가요. 타이핑 중 실시간 교정은 기기 안에서만 처리돼요.</string>
 
     <string name="privacy_notice">타이핑한 내용은 기기 밖으로 나가지 않아요. 실시간 교정은 전부 기기 안에서 처리하고, 비밀번호·이메일·URL 입력란에서는 자동으로 꺼져요.</string>
 </resources>

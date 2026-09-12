@@ -309,3 +309,56 @@ JSON 전체를 GitHub 비밀값 `PLAY_SERVICE_ACCOUNT` → "Deploy AI server" �
 `SpellKeyboardService.onAction` 의 `KeyAction.SPACE` 가 천지인이면서 조합 중일 때만
 `commitPending` 을 한다. `onAction` 첫머리에서 `lastTapKey` 를 비우므로, 끊은 뒤
 같은 키를 바로 눌러도 연타(ㄴ→ㄹ)가 아니라 새 글자가 된다.
+
+---
+
+## AI 모델을 gpt-5-nano 로 (2026-09-12)
+
+### 왜
+
+gemini-3.5-flash-lite 는 출력 100만 토큰에 **$2.50**, gpt-5-nano 는 **$0.40** 이다.
+맞춤법 교정은 원문을 통째로 다시 뱉는 일이라 출력이 요금의 8할이고, 그래서 바꾸는
+것만으로 요금이 **6분의 1** 이 된다. 교정은 판단이 아니라 패턴이라 nano 로 충분하다.
+
+조사한 것들(2026-09 기준, 입력/출력 100만 토큰당): Gemini 3.5 Flash-Lite $0.30/$2.50,
+Gemini 3.1 Flash-Lite $0.25/$1.50, **GPT-5 nano $0.05/$0.40**, Qwen3.7 Flash $0.03/$0.13,
+DeepSeek V4 Flash $0.12/$0.35, 하이퍼클로바X DASH ₩0.001/토큰. Qwen 이 제일 싸지만
+키보드에 치는 모든 글이 중국 업체로 가는 것이 걸려서 뺐다. GPT-5.4 nano 는 $0.20/$1.25
+로 오히려 비싸다.
+
+한 달 요금(2,000자 × 하루 150회 기준): 41,784원 → **6,721원**.
+
+### 어떻게 — 앱은 그대로 두고 서버에서 번역한다
+
+이미 깔린 APK 들은 구글 모양으로 보내고 구글 모양 응답을 읽는다. 그래서 번역을
+서버에 뒀다. **앱을 다시 깔지 않아도 적용된다.**
+
+- `server/src/openai.js` (새 파일): `toOpenAiRequest` / `toGeminiReply` / `modelList`.
+- `server/src/index.js`: `OPENAI_API_KEY` 비밀값이 있으면 OpenAI, 없으면 예전처럼 구글.
+  **되돌리기는 비밀값 하나 지우는 것**이다.
+- 앱이 보낸 모델 이름은 쓰지 않는다. 무엇으로 고칠지는 서버가 정한다
+  (`OPENAI_MODEL` 환경변수로 바꿀 수 있고, 기본은 `gpt-5-nano`).
+- `/v1beta/models` 는 물어보지 않고 쓰는 이름 하나만 돌려준다.
+
+주의해서 다룬 것들:
+
+- **잘린 답은 주지 않는다.** 앱은 받은 글로 입력란을 통째로 덮으므로, `finish_reason`
+  이 `length` 면 502 로 실패시킨다. 안 그러면 사용자 글의 뒷부분이 사라진다.
+- **출력 한도를 넉넉히 준다.** OpenAI 는 숙고 토큰도 `max_completion_tokens` 에서
+  깎는다. 앱이 부른 4096 을 그대로 주면 긴 글에서 잘린다. 2배로 주되 2048~16384 로 자른다.
+- **temperature 를 안 보낸다.** gpt-5 계열은 이 항목을 받으면 400 이다.
+- **`reasoning_effort: 'minimal'`**. 거절당하면 빼고 한 번 더 보낸다(앱이 구글의
+  thinkingBudget 에 하던 것과 같은 수법).
+- **토큰 집계**: OpenAI 의 `completion_tokens` 에는 숙고가 들어 있고 구글의
+  `candidatesTokenCount` 에는 없다. 빼서 넣어야 `/stats` 가 두 번 세지 않는다.
+- 중계 Durable Object(`enam` 고정)는 그대로 쓴다. OpenAI 도 홍콩을 지원 지역에서 뺐다.
+- 개인정보 처리방침 페이지와 앱의 고지 문구를 "OpenAI" 로 바꿨다. 방침 페이지는
+  실제 설정을 따라가므로 구글로 되돌리면 문구도 같이 돌아간다.
+
+### 남은 일
+
+사용자가 OpenAI 키를 만들어 GitHub 비밀값 `OPENAI_API_KEY` 에 넣고 "Deploy AI server"
+를 돌려야 한다. 그 전까지는 서버가 예전처럼 구글로 간다.
+
+다음 단계(더 큰 절감): 지금은 고친 문장 **전체**를 다시 뱉게 한다. 바뀐 부분만
+내보내게 하면 출력이 1/5~1/10 로 준다. 모델 교체와 곱해져 지금의 30~50분의 1이 된다.

@@ -51,7 +51,7 @@ class KeyboardView @JvmOverloads constructor(
 
         fun onAction(action: KeyAction)
 
-        /** 문장 전체를 Gemini API 로 교정한다. */
+        /** 문장 전체를 중계 서버(AI)로 교정한다. */
         fun onAiCorrect()
 
         /** 클립보드 목록을 열었다. 지금 복사돼 있는 것을 담을 기회다. */

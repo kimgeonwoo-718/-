@@ -17,17 +17,27 @@
 import { kstDay, decide, validInstallId } from './quota.js';
 import { fetchAccessToken, verifySubscription } from './play.js';
 import { cacheGet, cacheSet } from './cache.js';
+import {
+  OPENAI_URL,
+  DEFAULT_OPENAI_MODEL,
+  toOpenAiRequest,
+  toGeminiReply,
+  modelList,
+  withoutReasoning,
+  rejectsReasoning,
+} from './openai.js';
 
 const UPSTREAM = 'https://generativelanguage.googleapis.com';
 
 /**
- * 구글로 나가는 요청을 보내는 자리.
+ * 바깥으로 나가는 요청을 보내는 자리.
  *
  * Worker 는 사용자와 가까운 데이터센터에서 돈다. 한국 통신사에서 온 요청은 서울이 아니라
  * 홍콩 센터에 붙는 일이 잦은데, 구글은 홍콩 IP 에 "User location is not supported" 로
  * 거절한다 (실기기 진단으로 확인, 2026-09). 미국 CI 에서는 같은 요청이 멀쩡히 됐다.
- * 그래서 구글 호출만 미국에 붙박이인 Durable Object 안에서 한다 — 위치 힌트는 객체를
- * 처음 만들 때 한 번 먹고, 그 뒤로는 그 자리에 머문다.
+ * OpenAI 도 홍콩을 지원 지역에서 빼 놓았으니 사정이 같다. 그래서 바깥 호출은 전부
+ * 미국에 붙박이인 Durable Object 안에서 한다 — 위치 힌트는 객체를 처음 만들 때 한 번
+ * 먹고, 그 뒤로는 그 자리에 머문다.
  */
 const RELAY_NAME = 'google-relay';
 const RELAY_LOCATION = 'enam';
@@ -46,8 +56,11 @@ export default {
 };
 
 /**
- * 구글 호출을 실제로 하는 Durable Object. 하는 일은 키를 붙여 그대로 넘기는 것뿐이다.
+ * 바깥 호출을 실제로 하는 Durable Object. 하는 일은 키를 붙여 그대로 넘기는 것뿐이다.
  * 키는 여기서 붙인다 — Worker 와 이 객체 사이에도 키가 오갈 이유가 없다.
+ *
+ * 이름이 GoogleRelay 인 것은 처음 만들 때 구글만 있었기 때문이다. 클래스 이름을 바꾸면
+ * Durable Object 이전(migration)을 해야 하고 그 사이 배포가 깨진다. 이름값보다 안전이 낫다.
  */
 export class GoogleRelay {
   constructor(_state, env) {
@@ -58,7 +71,7 @@ export class GoogleRelay {
     const body = request.method === 'GET' ? null : await request.text();
     const res = await fetch(request.url, {
       method: request.method,
-      headers: googleHeaders(this.env),
+      headers: upstreamHeaders(this.env, request.url),
       body,
     });
     return passthrough(res);
@@ -74,11 +87,13 @@ export async function handle(request, env, deps = {}) {
   if (url.pathname === '/health') return json(200, { ok: true });
   // Play 는 키보드 앱에 개인정보 처리방침 주소를 요구한다. 따로 호스팅할 데가 없어 여기서 낸다.
   if (request.method === 'GET' && url.pathname === '/privacy') return privacyPage(env);
-  if (!env.GEMINI_API_KEY) return fail(503, 'server_not_configured');
+  if (!env.GEMINI_API_KEY && !env.OPENAI_API_KEY) return fail(503, 'server_not_configured');
 
-  // 모델 목록은 돈이 안 든다. 한도 없이 그대로 넘긴다.
+  // 모델 목록은 돈이 안 든다. 한도 없이 그대로 넘긴다. OpenAI 쪽은 우리가 모델을
+  // 정하므로 물어볼 것 없이 쓰는 이름 하나만 알려 준다.
   if (request.method === 'GET' && url.pathname === '/v1beta/models') {
-    return proxy(fetchImpl, env, url, 'GET', null);
+    const model = openAiModel(env);
+    return model ? json(200, modelList(model)) : proxy(fetchImpl, env, url, 'GET', null);
   }
   // 날짜별 토큰 사용량. 개인 정보는 없고 합계뿐이라 열어 둔다 — 요금이 얼마나 나가는지
   // 구글 콘솔을 안 열고도 보려고. 숙고 토큰(thoughts)이 따로 찍히니 그게 새는지도 보인다.
@@ -124,10 +139,13 @@ async function correct(request, env, url, fetchImpl, now) {
     if (!usage.allowed) return withQuota(fail(402, 'free_daily_limit'), usage, limit, plan);
   }
 
-  const reply = await relay(fetchImpl, env, url, 'POST', body);
+  const model = openAiModel(env);
+  const reply = model
+    ? await askOpenAi(fetchImpl, env, model, body)
+    : await relay(fetchImpl, env, url, 'POST', body);
 
   if (reply.status === 200) {
-    // 구글이 알려 준 토큰 수를 날짜별로 쌓는다. 실패한 요청은 안 세고 돈도 안 나간다.
+    // 응답이 알려 준 토큰 수를 날짜별로 쌓는다. 실패한 요청은 안 세고 돈도 안 나간다.
     await recordTokens(env.DB, day, usageOf(reply.text));
     // 성공했을 때만 깎는다. 구글이 거절한 요청까지 세면 사용자는 아무것도 못 받고
     // 하루치만 잃는다 — 앱이 예전에 지키던 규칙과 같다.
@@ -140,23 +158,56 @@ async function correct(request, env, url, fetchImpl, now) {
 }
 
 /**
+ * 어느 모델로 보낼 것인가. OpenAI 키가 있으면 그쪽이다.
+ *
+ * 비밀값 하나로 갈리게 둔 이유: 되돌릴 때도 키 하나만 지우면 된다. 앱은 어느 쪽이든
+ * 같은 모양으로 주고받으므로 APK 를 다시 깔 일이 없다.
+ */
+function openAiModel(env) {
+  if (!env.OPENAI_API_KEY) return null;
+  return (env.OPENAI_MODEL ?? '').trim() || DEFAULT_OPENAI_MODEL;
+}
+
+/**
+ * OpenAI 에 보내고 구글 모양으로 되돌려준다. **앱이 보낸 모델 이름은 쓰지 않는다** —
+ * 이미 깔린 APK 들은 구글 이름을 보내오고, 무엇으로 고칠지는 서버가 정한다.
+ */
+async function askOpenAi(fetchImpl, env, model, body) {
+  let request;
+  try {
+    request = toOpenAiRequest(body, model);
+  } catch {
+    return { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) };
+  }
+  let raw = await relayTo(fetchImpl, env, OPENAI_URL, 'POST', request);
+  if (rejectsReasoning(raw.status, raw.text)) {
+    raw = await relayTo(fetchImpl, env, OPENAI_URL, 'POST', withoutReasoning(request));
+  }
+  return toGeminiReply(raw.status, raw.text);
+}
+
+/**
  * 구글로 그대로 넘긴다. 클라이언트 헤더는 하나도 넘기지 않는다 — 설치 ID 나 구매
- * 토큰이 구글로 새어 나갈 이유가 없고, 우리 키만 붙이면 된다.
+ * 토큰이 바깥으로 새어 나갈 이유가 없고, 우리 키만 붙이면 된다.
  */
 async function proxy(fetchImpl, env, url, method, body) {
   return asResponse(await relay(fetchImpl, env, url, 'GET' === method ? 'GET' : method, body));
 }
 
-/** 구글에 보내고 상태와 본문 문자열만 받는다. 본문을 읽어야 토큰 수를 셀 수 있다. */
+/** 구글에 보낸다. 경로는 구글과 똑같이 두고 호스트만 붙인다. */
 async function relay(fetchImpl, env, url, method, body) {
-  const target = UPSTREAM + url.pathname + url.search;
+  return relayTo(fetchImpl, env, UPSTREAM + url.pathname + url.search, method, body);
+}
+
+/** 바깥에 보내고 상태와 본문 문자열만 받는다. 본문을 읽어야 토큰 수를 셀 수 있다. */
+async function relayTo(fetchImpl, env, target, method, body) {
   let res;
   if (env.RELAY) {
     const stub = env.RELAY.get(env.RELAY.idFromName(RELAY_NAME), { locationHint: RELAY_LOCATION });
     res = await stub.fetch(target, { method, body });
   } else {
     // 중계 객체가 없는 환경(테스트)에서는 여기서 바로 보낸다.
-    res = await fetchImpl(target, { method, headers: googleHeaders(env), body });
+    res = await fetchImpl(target, { method, headers: upstreamHeaders(env, target), body });
   }
   return { status: res.status, text: await res.text() };
 }
@@ -168,7 +219,7 @@ function asResponse(reply) {
   });
 }
 
-/** 구글 응답의 usageMetadata. 없거나 깨졌으면 0 으로. */
+/** 응답의 usageMetadata. 없거나 깨졌으면 0 으로. */
 function usageOf(text) {
   try {
     const meta = JSON.parse(text)?.usageMetadata ?? {};
@@ -200,16 +251,20 @@ async function tokenStats(db) {
   return results ?? [];
 }
 
-function googleHeaders(env) {
-  return {
-    'content-type': 'application/json; charset=utf-8',
-    // 사람이 붙여넣은 비밀값이라 끝에 줄바꿈이 딸려 온 적이 있다. 헤더에 줄바꿈이
-    // 들어가면 fetch 가 예외를 던져 500 이 된다.
-    'x-goog-api-key': env.GEMINI_API_KEY.trim(),
-  };
+/** 어디로 가느냐에 따라 붙이는 키가 다르다. 키는 이 함수 밖으로 나가지 않는다. */
+function upstreamHeaders(env, target) {
+  const headers = { 'content-type': 'application/json; charset=utf-8' };
+  // 사람이 붙여넣은 비밀값이라 끝에 줄바꿈이 딸려 온 적이 있다. 헤더에 줄바꿈이
+  // 들어가면 fetch 가 예외를 던져 500 이 된다.
+  if (target.startsWith(OPENAI_URL)) {
+    headers.authorization = `Bearer ${(env.OPENAI_API_KEY ?? '').trim()}`;
+  } else {
+    headers['x-goog-api-key'] = (env.GEMINI_API_KEY ?? '').trim();
+  }
+  return headers;
 }
 
-/** 구글 응답의 상태와 본문만 넘긴다. 구글 쪽 헤더는 우리 것과 섞이지 않게 버린다. */
+/** 바깥 응답의 상태와 본문만 넘긴다. 저쪽 헤더는 우리 것과 섞이지 않게 버린다. */
 async function passthrough(res) {
   return new Response(await res.text(), {
     status: res.status,
@@ -318,6 +373,9 @@ function fail(status, code) {
 /** 개인정보 처리방침. 앱이 실제로 하는 것만 적는다 — 과장도, 누락도 없이. */
 function privacyPage(env) {
   const contact = env.CONTACT_EMAIL ? `<p>문의: ${escapeHtml(env.CONTACT_EMAIL)}</p>` : '';
+  // 어느 회사로 보내는지는 방침의 핵심이라 실제 설정을 그대로 따라가게 둔다.
+  const provider = openAiModel(env) ? 'OpenAI API' : 'Google Gemini API';
+  const providerName = openAiModel(env) ? 'OpenAI' : 'Google';
   const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>맞춤법 키보드 개인정보 처리방침</title>
@@ -328,7 +386,7 @@ function privacyPage(env) {
 <h2>1. 타이핑한 글</h2>
 <p>실시간 맞춤법·띄어쓰기 교정은 <strong>전부 기기 안에서</strong> 처리됩니다. 타이핑한 글은 어디로도 전송되거나 저장되지 않습니다. 비밀번호·이메일·URL 입력란에서는 교정이 자동으로 꺼집니다.</p>
 <h2>2. AI 전체 교정</h2>
-<p>키보드 위 ✦ 버튼을 <strong>직접 누를 때만</strong>, 그 입력란의 글이 앱 서버를 거쳐 Google Gemini API 로 전송되어 교정된 결과가 돌아옵니다. 서버는 글을 저장하지 않으며, 교정 요청 횟수만 셉니다. Google 의 처리에 대해서는 Google 의 개인정보 처리방침이 적용됩니다.</p>
+<p>키보드 위 ✦ 버튼을 <strong>직접 누를 때만</strong>, 그 입력란의 글이 앱 서버를 거쳐 ${provider} 로 전송되어 교정된 결과가 돌아옵니다. 서버는 글을 저장하지 않으며, 교정 요청 횟수만 셉니다. ${providerName} 의 처리에 대해서는 ${providerName} 의 개인정보 처리방침이 적용됩니다.</p>
 <h2>3. 서버가 보관하는 것</h2>
 <ul>
 <li><strong>설치 식별자</strong>: 앱을 설치할 때 만들어지는 무작위 값입니다. 무료 사용 횟수를 세는 데만 쓰이며, 사용자 계정이나 기기 정보와 연결되지 않습니다.</li>

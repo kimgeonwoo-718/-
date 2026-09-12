@@ -489,7 +489,17 @@ class GeminiCorrector(
          * 2.x 계열은 구글이 "새 사용자에게는 제공하지 않는다" 며 404 로 거절한다
          * (2026-09 실측). 그 오류문이 지목한 이름이 이것이다.
          */
-        const val DEFAULT_MODEL = "gemini-3.5-flash-lite"
+        /**
+         * 기본 모델.
+         *
+         * 중계 서버가 OpenAI 로 나가므로 이름도 그쪽이다. 서버는 앱이 보낸 이름을
+         * 쓰지 않고 제가 정한 모델로 보내지만, 진단 화면에 거짓 이름이 뜨면 안 된다.
+         *
+         * gemini-3.5-flash-lite 에서 옮겼다. 출력 100만 토큰에 $2.50 대 $0.40 —
+         * 교정은 원문을 그대로 다시 뱉는 일이라 출력이 요금의 8할이고, 이 한 줄이
+         * 요금을 6분의 1로 만든다. 맞춤법은 판단이 아니라 패턴이라 nano 로 충분하다.
+         */
+        const val DEFAULT_MODEL = "gpt-5-nano"
 
         /** 진단에서 실제로 한 번 보내 보는 문장. 짧고, 틀린 데가 분명한 것. */
         const val DIAGNOSTIC_SAMPLE = "안녕하새요 오늘 날시가 조아요"
@@ -538,7 +548,9 @@ class GeminiCorrector(
 
         internal fun isTextModel(name: String): Boolean {
             val lower = name.lowercase()
-            return lower.startsWith("gemini") && NOT_FOR_TEXT.none { lower.contains(it) }
+            // 중계 서버가 구글에서 OpenAI 로 옮겨 갈 수 있으니 두 계열을 다 받는다.
+            val known = lower.startsWith("gemini") || lower.startsWith("gpt")
+            return known && NOT_FOR_TEXT.none { lower.contains(it) }
         }
 
         /**
@@ -567,7 +579,8 @@ class GeminiCorrector(
             val lower = name.lowercase()
             val version = ((VERSION.find(lower)?.value?.toDoubleOrNull() ?: 0.0) * 10).toInt()
             val tier = when {
-                lower.contains("lite") -> 3000
+                // nano 는 OpenAI 쪽에서 lite 에 해당한다 — 같은 이유로 제일 먼저 본다.
+                lower.contains("lite") || lower.contains("nano") -> 3000
                 lower.contains("flash") -> 2000
                 lower.contains("pro") -> 0
                 else -> 1000

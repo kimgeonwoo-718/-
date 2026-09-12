@@ -99,9 +99,21 @@ jobs:
         working-directory: server
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PLAY_SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT }}
         run: |
           set -euo pipefail
+          # OPENAI_API_KEY 가 있으면 서버는 그쪽으로 간다. 되돌리려면 이 비밀값만 지우면
+          # 되고, 그러면 다시 구글로 간다. 앱은 어느 쪽이든 같은 모양으로 주고받는다.
+          if [ -n "${OPENAI_API_KEY:-}" ]; then
+            printf '%s' "$OPENAI_API_KEY" | npx --yes wrangler@3 secret put OPENAI_API_KEY
+            echo "OPENAI_API_KEY: 넣음 — 교정은 gpt-5-nano 로 나간다"
+          else
+            # 여기서 지우지는 않는다. wrangler 의 삭제는 되묻기라 CI 에서 조용히 실패할 수
+            # 있고, 그러면 "지웠다" 고 찍힌 채 그대로 남는다. 되돌릴 때는 아래를 직접 친다.
+            echo "OPENAI_API_KEY: 비어 있음 — 이미 넣어 둔 값이 있으면 그대로 남아 있다."
+            echo "  되돌리려면: npx wrangler secret delete OPENAI_API_KEY"
+          fi
           if [ -n "${GEMINI_API_KEY:-}" ]; then
             printf '%s' "$GEMINI_API_KEY" | npx --yes wrangler@3 secret put GEMINI_API_KEY
             echo "GEMINI_API_KEY: 넣음"
