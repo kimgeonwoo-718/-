@@ -20,6 +20,18 @@ import { cacheGet, cacheSet } from './cache.js';
 
 const UPSTREAM = 'https://generativelanguage.googleapis.com';
 
+/**
+ * 구글로 나가는 요청을 보내는 자리.
+ *
+ * Worker 는 사용자와 가까운 데이터센터에서 돈다. 한국 통신사에서 온 요청은 서울이 아니라
+ * 홍콩 센터에 붙는 일이 잦은데, 구글은 홍콩 IP 에 "User location is not supported" 로
+ * 거절한다 (실기기 진단으로 확인, 2026-09). 미국 CI 에서는 같은 요청이 멀쩡히 됐다.
+ * 그래서 구글 호출만 미국에 붙박이인 Durable Object 안에서 한다 — 위치 힌트는 객체를
+ * 처음 만들 때 한 번 먹고, 그 뒤로는 그 자리에 머문다.
+ */
+const RELAY_NAME = 'google-relay';
+const RELAY_LOCATION = 'enam';
+
 /** 교정 창이 앞뒤 2000 자에 지시문 1KB 라 16KB 남짓이다. 그 몇 배면 충분하다. */
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -32,6 +44,26 @@ export default {
   fetch: (request, env) => handle(request, env),
   scheduled: (_event, env) => sweep(env),
 };
+
+/**
+ * 구글 호출을 실제로 하는 Durable Object. 하는 일은 키를 붙여 그대로 넘기는 것뿐이다.
+ * 키는 여기서 붙인다 — Worker 와 이 객체 사이에도 키가 오갈 이유가 없다.
+ */
+export class GoogleRelay {
+  constructor(_state, env) {
+    this.env = env;
+  }
+
+  async fetch(request) {
+    const body = request.method === 'GET' ? null : await request.text();
+    const res = await fetch(request.url, {
+      method: request.method,
+      headers: googleHeaders(this.env),
+      body,
+    });
+    return passthrough(res);
+  }
+}
 
 /** 테스트에서 fetch 와 시계를 갈아 끼울 수 있게 진입점을 따로 둔다. */
 export async function handle(request, env, deps = {}) {
@@ -101,16 +133,27 @@ async function correct(request, env, url, fetchImpl, now) {
  * 토큰이 구글로 새어 나갈 이유가 없고, 우리 키만 붙이면 된다.
  */
 async function proxy(fetchImpl, env, url, method, body) {
-  const res = await fetchImpl(UPSTREAM + url.pathname + url.search, {
-    method,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      // 사람이 붙여넣은 비밀값이라 끝에 줄바꿈이 딸려 온 적이 있다. 헤더에 줄바꿈이
-      // 들어가면 fetch 가 예외를 던져 500 이 된다.
-      'x-goog-api-key': env.GEMINI_API_KEY.trim(),
-    },
-    body,
-  });
+  const target = UPSTREAM + url.pathname + url.search;
+  if (env.RELAY) {
+    const stub = env.RELAY.get(env.RELAY.idFromName(RELAY_NAME), { locationHint: RELAY_LOCATION });
+    return passthrough(await stub.fetch(target, { method, body }));
+  }
+  // 중계 객체가 없는 환경(테스트)에서는 여기서 바로 보낸다.
+  const res = await fetchImpl(target, { method, headers: googleHeaders(env), body });
+  return passthrough(res);
+}
+
+function googleHeaders(env) {
+  return {
+    'content-type': 'application/json; charset=utf-8',
+    // 사람이 붙여넣은 비밀값이라 끝에 줄바꿈이 딸려 온 적이 있다. 헤더에 줄바꿈이
+    // 들어가면 fetch 가 예외를 던져 500 이 된다.
+    'x-goog-api-key': env.GEMINI_API_KEY.trim(),
+  };
+}
+
+/** 구글 응답의 상태와 본문만 넘긴다. 구글 쪽 헤더는 우리 것과 섞이지 않게 버린다. */
+async function passthrough(res) {
   return new Response(await res.text(), {
     status: res.status,
     headers: { 'content-type': 'application/json; charset=utf-8' },

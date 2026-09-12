@@ -9,6 +9,16 @@ binding = "DB"
 database_name = "spell-keyboard"
 database_id = "DATABASE_ID_PLACEHOLDER"
 
+# 구글 호출은 미국에 붙박이인 Durable Object 에서 한다 (src/index.js 의 GoogleRelay 참고).
+# 무료 등급은 SQLite 저장소 클래스만 허용한다 — 저장은 안 쓰지만 선언은 그렇게 해야 한다.
+[[durable_objects.bindings]]
+name = "RELAY"
+class_name = "GoogleRelay"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GoogleRelay"]
+
 [vars]
 PLAY_PACKAGE = "com.spellkeyboard.ko"
 FREE_DAILY_LIMIT = "5"

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { handle } from '../src/index.js';
+import { handle, GoogleRelay } from '../src/index.js';
 import { fakeDb } from './fakeDb.js';
 import { testKeyPair } from './play.test.js';
 
@@ -202,4 +202,57 @@ test('모델 목록은 한도 없이 넘긴다', async () => {
 test('모르는 경로는 404', async () => {
   const res = await handle(new Request('https://spell.test/v1beta/other'), env(), { fetch: upstream().fetchImpl });
   assert.equal(res.status, 404);
+});
+
+// --- 미국 붙박이 중계 객체 ------------------------------------------------------
+
+/** Durable Object 바인딩 흉내. 어디로 무엇을 보내 달라고 했는지 붙잡아 둔다. */
+function fakeRelay(response) {
+  const calls = [];
+  return {
+    calls,
+    idFromName: (name) => `id:${name}`,
+    get: (id, options) => ({
+      fetch: async (url, init) => {
+        calls.push({ id, options, url, init });
+        return response();
+      },
+    }),
+  };
+}
+
+test('중계 객체가 있으면 구글 호출은 그 안에서 나간다 — 미국 위치 힌트로', async () => {
+  const relay = fakeRelay(() => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '고침' }] } }] }), { status: 200 }));
+  const direct = upstream();
+  const res = await handle(generate(), env({ RELAY: relay }), { fetch: direct.fetchImpl, now: () => NOON_KST });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('x-quota-remaining'), '4');
+  assert.equal(relay.calls.length, 1);
+  assert.equal(relay.calls[0].url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-x:generateContent');
+  assert.equal(relay.calls[0].init.method, 'POST');
+  assert.equal(relay.calls[0].init.body, '{"contents":[]}');
+  assert.equal(relay.calls[0].options.locationHint, 'enam');
+  assert.ok(!direct.calls.some((c) => c.url.includes('generativelanguage')), '직접 보내면 안 된다');
+});
+
+test('중계 객체는 키를 붙여 구글로 그대로 넘긴다', async () => {
+  const seen = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    seen.push({ url, init });
+    return new Response('{"models":[]}', { status: 200, headers: { 'x-google-internal': 'drop-me' } });
+  };
+  try {
+    const relay = new GoogleRelay({}, { GEMINI_API_KEY: 'server-key\n' });
+    const res = await relay.fetch(new Request('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200'));
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), '{"models":[]}');
+    assert.equal(res.headers.get('x-google-internal'), null);
+    assert.equal(seen[0].url, 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=200');
+    assert.equal(seen[0].init.headers['x-goog-api-key'], 'server-key', '줄바꿈은 떼고 붙인다');
+    assert.equal(seen[0].init.body, null);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
