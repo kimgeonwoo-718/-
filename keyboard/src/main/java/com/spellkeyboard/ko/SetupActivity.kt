@@ -52,6 +52,12 @@ class SetupActivity : AppCompatActivity() {
         AppCompatDelegate.setDefaultNightMode(nightModeOf(Prefs.themeMode(this)))
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_setup)
+        // 밝게/어둡게를 바꾸면 액티비티가 통째로 다시 만들어진다. 스크롤 위치를 직접
+        // 살려 놓지 않으면 그때마다 맨 위로 튄다 — 실기기에서 그렇게 보였다.
+        // 레이아웃이 끝난 뒤에 옮겨야 한다. 그 전에는 내용 높이가 0 이라 무시된다.
+        savedInstanceState?.getInt(KEY_SCROLL, 0)?.takeIf { it > 0 }?.let { y ->
+            findViewById<View>(R.id.setup_scroll).post { findViewById<View>(R.id.setup_scroll).scrollTo(0, y) }
+        }
 
         bindSetup()
         bindCorrection()
@@ -64,6 +70,11 @@ class SetupActivity : AppCompatActivity() {
         // 돌아오면 숫자가 줄어 있어야 한다.
         showSetupProgress()
         showQuota()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(KEY_SCROLL, findViewById<View>(R.id.setup_scroll).scrollY)
     }
 
     override fun onDestroy() {
@@ -221,5 +232,9 @@ class SetupActivity : AppCompatActivity() {
     private fun nightModeOf(mode: ThemeMode): Int = when (mode) {
         ThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
         ThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
+    }
+
+    companion object {
+        private const val KEY_SCROLL = "scroll_y"
     }
 }

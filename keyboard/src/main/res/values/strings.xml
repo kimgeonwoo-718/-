@@ -5,32 +5,17 @@
     <string name="subtype_korean">한국어</string>
     <string name="subtype_english">English</string>
 
-    <string name="status_idle">타이핑하면 어절이 끝날 때마다 교정합니다</string>
-    <string name="status_corrected">%1$s → %2$s · 백스페이스로 되돌리기</string>
-    <string name="status_disabled">이 입력란에서는 교정하지 않습니다</string>
-    <string name="status_checked">검사함: %1$s · 고칠 것 없음</string>
-    <string name="status_unreadable">커서 앞 글자를 읽지 못했습니다</string>
-    <string name="status_reverted">되돌렸습니다</string>
     <string name="clipboard_title">클립보드</string>
     <string name="emoji_title">이모티콘</string>
     <string name="clipboard_empty">복사한 글이 여기 쌓입니다. 다른 앱에서 글을 복사한 뒤 키보드를 열면 담깁니다.</string>
-    <string name="ai_running">AI 가 문장 전체를 교정하는 중…</string>
-    <string name="ai_done">AI 교정 완료</string>
-    <string name="ai_took_suffix"> · %1$.1f초</string>
     <string name="ai_unchanged">AI 가 보기에 고칠 것이 없습니다</string>
     <string name="ai_failed">AI 교정 실패: %1$s</string>
-    <string name="ai_remaining_suffix"> · 오늘 %1$d회 남음</string>
-    <string name="ai_remaining_chars_suffix"> · 오늘 %1$s자 남음</string>
     <string name="ai_busy">이미 교정하는 중입니다</string>
     <string name="ai_no_connection">입력란과 연결되지 않았습니다</string>
     <string name="ai_no_key">이 빌드에는 AI 서버 주소가 없어 AI 교정을 쓸 수 없습니다.</string>
     <string name="ai_timeout">응답이 없어 그만뒀습니다. 네트워크를 확인해 주세요.</string>
     <string name="ai_empty">교정할 글이 없습니다</string>
     <string name="toolbar_correction">교정</string>
-    <string name="status_correction_on">실시간 교정을 켰습니다</string>
-    <string name="status_correction_off">실시간 교정을 껐습니다 · 위의 \'교정\' 버튼으로 다시 켭니다</string>
-    <string name="status_correction_disabled">실시간 교정 꺼짐 · 위의 \'교정\' 버튼으로 켭니다</string>
-    <string name="status_cursor_mode">◀ 좌우로 밀어 커서 이동 ▶</string>
 
     <!-- 설정 화면 -->
     <string name="home_subtitle">쓰는 대로 바로 고쳐 주는 키보드</string>
@@ -47,8 +32,8 @@
     <string name="section_correction">교정</string>
     <string name="setting_auto_correct">실시간 자동 교정</string>
     <string name="setting_auto_correct_sub">어절이 끝날 때마다 기기 안에서 바로 고칩니다. 복잡하거나 어려운 문장은 교정이 안 될 수도 있어요. 자판 위 \'교정\' 버튼으로도 끄고 켤 수 있어요.</string>
-    <string name="setting_ai_title">AI 전체 교정</string>
-    <string name="setting_ai_sub">자판 위 ✦ 버튼을 누르면 문장 전체를 다듬어요 · 정확도 100%</string>
+    <string name="setting_ai_title">AI 전체 교정 · 정확도 100%</string>
+    <string name="setting_ai_sub">자판 위 ✦ 버튼을 누르면 문장 전체를 다듬어요</string>
     <string name="setting_quota_free">오늘 %1$d회 남음 (무료 하루 %2$d회)</string>
     <string name="setting_quota_unlimited">프리미엄 · 이용 중</string>
     <string name="setting_quota_premium">프리미엄 · 오늘 %1$s자 남음</string>
@@ -68,7 +53,7 @@
     <string name="paywall_col_premium">프리미엄</string>
     <string name="paywall_row_realtime">실시간 맞춤법·띄어쓰기 교정</string>
     <string name="paywall_row_keyboard">천지인 · 배경 사진 · 다크 모드</string>
-    <string name="paywall_row_ai">AI 전체 교정</string>
+    <string name="paywall_row_ai">AI 전체 교정 (정확도 100%)</string>
     <string name="paywall_free_ai">하루 5회</string>
     <string name="paywall_premium_ai">하루 10만 자</string>
     <string name="paywall_row_100">카톡 한 줄 (100자) 기준</string>

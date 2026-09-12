@@ -108,7 +108,6 @@ class KeyboardView @JvmOverloads constructor(
     private var layoutType: LayoutType = Prefs.layoutType(context)
     private var keyAlpha = alphaFor(Prefs.keyTransparency(context))
 
-    private val statusView: TextView
     private val emojiButton: TextView
     private val aiButton: TextView
     private val clipboardButton: TextView
@@ -156,15 +155,6 @@ class KeyboardView @JvmOverloads constructor(
         orientation = VERTICAL
         setPadding(0, dp(4), 0, 0)
 
-        statusView = TextView(context).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(2), dp(8), dp(2))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            // 서버 오류 메시지가 잘리면 원인을 알 수 없다. 두 줄까지 보여준다.
-            maxLines = 2
-            ellipsize = TextUtils.TruncateAt.END
-            text = context.getString(R.string.status_idle)
-        }
         // 컬러 이모지는 삼성 키보드의 단색 선 아이콘과 톤이 어긋난다. 글꼴에 든 기호를 쓴다.
         emojiButton = toolbarButton("☺\uFE0E") { showEmoji() }
         aiButton = toolbarButton("✦") { listener?.onAiCorrect() }
@@ -183,7 +173,9 @@ class KeyboardView @JvmOverloads constructor(
             addView(clipboardButton, toolbarParams())
             addView(correctionButton, toolbarParams())
             addView(settingsButton, toolbarParams())
-            addView(statusView, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+            // 오른쪽은 비워 둔다. 예전엔 여기 상태 문구가 있었는데, 자판 위 설명글은
+            // 소음이라 뺐다. 실패는 토스트로, AI 가 도는 동안은 ✦ 버튼이 흐려지는 것으로 안다.
+            addView(View(context), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
         }
         addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
 
@@ -217,9 +209,9 @@ class KeyboardView @JvmOverloads constructor(
         applyAppearance(force = true)
     }
 
-    /** 상단 줄 문구를 바꾼다. 무엇을 검사했고 무엇을 고쳤는지 보여주는 자리다. */
-    fun showStatus(text: String) {
-        statusView.text = text
+    /** AI 가 도는 동안 ✦ 를 흐리게. 자판 위에 글을 띄우지 않고 알리는 유일한 수단이다. */
+    fun setAiBusy(busy: Boolean) {
+        aiButton.alpha = if (busy) 0.35f else 1f
     }
 
     /** '교정' 버튼의 켜짐 표시. 켜져 있으면 강조색, 꺼져 있으면 흐리게. */
@@ -261,11 +253,6 @@ class KeyboardView @JvmOverloads constructor(
 
     /** 자판 밖의 것들(도구 줄, 클립보드 머리)에 팔레트를 입힌다. 키는 [render] 가 한다. */
     private fun restyle() {
-        statusView.setTextColor(theme.status)
-        // 사진 위에서는 글자가 묻힌다. 반투명 바탕을 깔아 읽히게 한다.
-        // 상단 문구는 키보다 조금 더 진하게 남겨 둔다. 여기까지 투명해지면 글자가 안 읽힌다.
-        statusView.background =
-            if (photo != null) roundRect(withAlpha(theme.background, (keyAlpha + 0.2f).coerceAtMost(0.85f))) else null
         listOf(emojiButton, aiButton, clipboardButton, settingsButton).forEach { styleToolbarButton(it) }
         styleCorrectionButton()
         clipboardTitle.setTextColor(theme.text)

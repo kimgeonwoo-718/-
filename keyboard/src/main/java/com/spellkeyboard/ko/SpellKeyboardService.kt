@@ -15,7 +15,6 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import com.spellkeyboard.core.ai.GeminiCorrector
 import com.spellkeyboard.core.clipboard.ClipboardHistory
-import com.spellkeyboard.core.editor.CorrectionEvent
 import com.spellkeyboard.core.editor.Editor
 import com.spellkeyboard.core.editor.TypingSession
 import com.spellkeyboard.core.hangul.CheonjiinAutomata
@@ -121,7 +120,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onCreate() {
         super.onCreate()
-        session.onEvent = ::showEvent
         loadSpacingDictionary()
     }
 
@@ -177,15 +175,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 설정에서 테마나 배경을 바꾸고 돌아왔을 수 있다. 바뀐 게 없으면 싸게 끝난다.
         keyboard?.applyAppearance()
         keyboard?.setAutoCorrectOn(Prefs.autoCorrectEnabled(this))
-        keyboard?.showStatus(
-            when {
-                session.correctionEnabled -> getString(R.string.status_idle)
-                // 사용자가 꺼 둔 것과 입력란이 막은 것은 다른 말로 알려야 한다. 같은 문구를
-                // 쓰면 "왜 이 칸에서는 안 되지" 하고 엉뚱한 데를 의심한다.
-                !Prefs.autoCorrectEnabled(this) -> getString(R.string.status_correction_disabled)
-                else -> getString(R.string.status_disabled)
-            }
-        )
         // 비밀번호 입력란에서는 AI 교정도 내놓지 않는다. 그 글이 서버로 나가면 안 된다.
         // 다만 자동 교정 스위치와는 묶지 않는다 — 그건 실시간 교정만 끄는 스위치다.
         val aiOn = Prefs.aiAvailable() && fieldCorrectable
@@ -428,17 +417,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onCursorModeChanged(active: Boolean) {
-        keyboard?.showStatus(
-            if (active) {
-                getString(R.string.status_cursor_mode)
-            } else {
-                when {
-                    session.correctionEnabled -> getString(R.string.status_idle)
-                    !Prefs.autoCorrectEnabled(this) -> getString(R.string.status_correction_disabled)
-                    else -> getString(R.string.status_disabled)
-                }
-            }
-        )
+        // 자판 위에 문구를 띄우지 않는다. 스페이스를 잡고 있는 손가락이 이미 알고 있다.
     }
 
     override fun onToggleAutoCorrect() {
@@ -446,9 +425,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         Prefs.setAutoCorrectEnabled(this, enabled)
         session.correctionEnabled = enabled && fieldCorrectable
         keyboard?.setAutoCorrectOn(enabled)
-        keyboard?.showStatus(
-            getString(if (enabled) R.string.status_correction_on else R.string.status_correction_off)
-        )
     }
 
     /**
@@ -493,16 +469,16 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 아래 세 가지는 예전에 조용히 return 했다. 그러면 눌러도 **아무 일도 안 일어나고**,
         // 사용자에게는 "AI 가 작동 안 함" 으로만 보인다. 원인을 가릴 수가 없다.
         if (aiBusy) {
-            keyboard?.showStatus(getString(R.string.ai_busy))
+            notify(getString(R.string.ai_busy))
             return
         }
         val connection = currentInputConnection
         if (connection == null) {
-            keyboard?.showStatus(getString(R.string.ai_no_connection))
+            notify(getString(R.string.ai_no_connection))
             return
         }
         if (!Prefs.aiAvailable()) {
-            keyboard?.showStatus(getString(R.string.ai_no_key))
+            notify(getString(R.string.ai_no_key))
             return
         }
 
@@ -513,7 +489,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         val after = connection.getTextAfterCursor(AI_AFTER_CHARS, 0)?.toString().orEmpty()
         val original = before + after
         if (original.isBlank()) {
-            keyboard?.showStatus(getString(R.string.ai_empty))
+            notify(getString(R.string.ai_empty))
             return
         }
 
@@ -521,35 +497,33 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 판단하지 않는다 — 넘겼으면 서버가 402 로 답하고, 그 문구를 그대로 보여준다.
 
         aiBusy = true
-        keyboard?.showStatus(getString(R.string.ai_running))
+        keyboard?.setAiBusy(true)
         val requestId = aiRequestId.incrementAndGet()
 
         mainHandler.postDelayed({
             if (aiBusy && aiRequestId.get() == requestId) {
                 aiBusy = false
-                keyboard?.showStatus(getString(R.string.ai_timeout))
+                keyboard?.setAiBusy(false)
+                notify(getString(R.string.ai_timeout))
             }
         }, AI_WATCHDOG_MS)
 
         Thread {
-            val startedAt = android.os.SystemClock.elapsedRealtime()
             val engine = runCatching { corrector() }
             val result = engine.mapCatching { it.correct(original).getOrThrow() }
-            val tookMs = android.os.SystemClock.elapsedRealtime() - startedAt
             // 서버가 헤더로 알려 준 남은 횟수. 한도 초과(402)에도 실려 오니 실패해도 받는다.
             val quota = engine.getOrNull()?.lastQuota
             mainHandler.post {
                 // 이미 시간 초과로 포기했거나 그 사이 새 요청이 시작됐으면 버린다.
                 if (aiRequestId.get() != requestId) return@post
                 aiBusy = false
+                keyboard?.setAiBusy(false)
                 quota?.let { Prefs.rememberQuota(this, it) }
                 result
-                    .onSuccess { applyAiResult(before, after, it, tookMs) }
+                    .onSuccess { applyAiResult(before, after, it) }
                     .onFailure {
                         // 영어 원문을 그대로 실으면 두 줄에서 잘려 정작 원인이 안 보인다.
-                        keyboard?.showStatus(
-                            getString(R.string.ai_failed, GeminiCorrector.explain(it.message))
-                        )
+                        notify(getString(R.string.ai_failed, GeminiCorrector.explain(it.message)))
                     }
             }
         }.apply {
@@ -558,9 +532,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
-    private fun applyAiResult(before: String, after: String, corrected: String, tookMs: Long) {
+    private fun applyAiResult(before: String, after: String, corrected: String) {
         if (corrected == before + after) {
-            keyboard?.showStatus(getString(R.string.ai_unchanged) + tookSuffix(tookMs) + remainingSuffix())
+            // 버튼을 눌렀는데 아무 일도 안 일어나면 고장으로 보인다. 이것만은 알린다.
+            notify(getString(R.string.ai_unchanged))
             return
         }
         val connection = currentInputConnection ?: return
@@ -570,32 +545,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         connection.endBatchEdit()
         // 글을 통째로 갈아 끼웠으니 조합 상태와 사본을 버린다.
         session.reset()
-        keyboard?.showStatus(getString(R.string.ai_done) + tookSuffix(tookMs) + remainingSuffix())
-    }
-
-    /**
-     * " · 2.4초" 처럼 뒤에 붙일 문구.
-     *
-     * 느리다는 느낌만으로는 어디를 손볼지 알 수 없다 — 네트워크가 먼 것인지, 모델이
-     * 오래 생각하는 것인지, 글이 길어 되뱉을 것이 많은 것인지. 실제 숫자가 있어야
-     * 고친 뒤에 나아졌는지도 잴 수 있다.
-     */
-    private fun tookSuffix(tookMs: Long): String =
-        getString(R.string.ai_took_suffix, tookMs / 1000.0)
-
-    /**
-     * " · 오늘 3회 남음" 처럼 뒤에 붙일 문구.
-     *
-     * 무제한이면 빈 문자열이다 — 구독자에게 횟수를 들이밀 이유가 없다.
-     */
-    private fun remainingSuffix(): String {
-        val quota = Prefs.lastQuota(this) ?: return ""
-        val remaining = quota.remaining ?: return ""
-        return if (quota.countsChars) {
-            getString(R.string.ai_remaining_chars_suffix, String.format(java.util.Locale.KOREA, "%,d", remaining))
-        } else {
-            getString(R.string.ai_remaining_suffix, remaining)
-        }
+        // 글이 바뀐 것이 곧 결과다. 따로 알리지 않는다.
     }
 
     /**
@@ -641,6 +591,14 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
+    /**
+     * 사용자에게 한 줄 알린다. 자판 위에는 글을 띄우지 않기로 했으므로, 눌렀는데 안 된
+     * 이유처럼 꼭 알아야 할 것만 토스트로 잠깐 보여준다.
+     */
+    private fun notify(text: String) {
+        mainHandler.post { android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show() }
+    }
+
     private fun switchMode(editor: Editor, target: KeyboardMode) {
         session.commitPending(editor)
         val current = keyboard?.currentMode() ?: KeyboardMode.KOREAN
@@ -657,33 +615,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         return currentInputConnection?.let(::ConnectionEditor)
     }
 
-    // --- 상태 표시 -----------------------------------------------------------
-
-    /**
-     * 교정 결과를 상단 줄에 보여준다.
-     *
-     * 고친 경우뿐 아니라 **고치지 않은 경우에도** 무엇을 검사했는지 보여준다.
-     * 아무 표시가 없으면 "교정이 안 된다" 와 "고칠 것이 없었다" 를 구분할 수 없다.
-     */
-    private fun showEvent(event: CorrectionEvent) {
-        val text = when (event) {
-            is CorrectionEvent.Applied ->
-                getString(R.string.status_corrected, event.from.trim(), event.to.trim())
-
-            is CorrectionEvent.Unchanged -> {
-                val examined = event.examined.trim()
-                if (examined.isEmpty()) {
-                    getString(R.string.status_unreadable)
-                } else {
-                    getString(R.string.status_checked, examined)
-                }
-            }
-
-            CorrectionEvent.Reverted -> getString(R.string.status_reverted)
-            CorrectionEvent.Disabled -> getString(R.string.status_disabled)
-        }
-        keyboard?.showStatus(text)
-    }
 
     /**
      * 교정하면 안 되는 입력란인지 판별한다.
