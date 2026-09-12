@@ -23,6 +23,7 @@ import {
   toOpenAiRequest,
   toGeminiReply,
   modelList,
+  userTextOf,
   withoutReasoning,
   rejectsReasoning,
 } from './openai.js';
@@ -188,7 +189,8 @@ async function askOpenAi(fetchImpl, env, model, body) {
   if (rejectsReasoning(raw.status, raw.text)) {
     raw = await relayTo(fetchImpl, env, OPENAI_URL, 'POST', withoutReasoning(request));
   }
-  return toGeminiReply(raw.status, raw.text);
+  // 원문을 같이 넘긴다. 교정이 아닌 답(요약, 대답, 지시문 따라가기)을 길이로 걸러낸다.
+  return toGeminiReply(raw.status, raw.text, userTextOf(body));
 }
 
 /**

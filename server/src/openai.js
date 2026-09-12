@@ -76,6 +76,15 @@ export const KO_SYSTEM_PROMPT = `당신은 한국어 맞춤법·띄어쓰기 교
 - **보조용언은 붙여 써도 맞다.** "해버렸다", "기다려보다", "먹어보다", "가지고 있다" 를 띄우지 마라.
 - **의존명사 앞은 이미 띄어져 있으면 그대로 둔다.** "듣는 둥 마는 둥", "할 수 있다", "아는 것" 을 붙이지 마라.
 
+# 절대 규칙: 없는 글자를 만들지 마라
+공백을 빼고 보면 입력과 출력의 글자는 거의 같아야 한다. 띄어쓰기를 다시 나누는 동안 단어가 바뀌는 일이 잦은데, 그것이 가장 나쁜 실패다. 사용자는 자기가 쓴 말이 바뀐 줄 모르고 보낸다.
+
+- 들은바에의하면 → '들은 바에 의하면' (○) / '들은 바에 따르면' (✗ 단어를 바꿨다)
+- 오죽하겠냐마는 → '오죽하겠냐마는' (○) / '어쩜 하겠냐마는' (✗ 없는 말을 지어냈다)
+- 어찌하였든간에 → '어찌하였든 간에' (○) / '어찌 되었든 간에' (✗)
+
+처음 보는 말, 뜻을 모르겠는 말일수록 **그대로 둔다.** 모르는 말은 틀린 말이 아니다.
+
 # 자주 놓치는 것: 명사 둘이 붙어 있는 경우
 사전에 한 단어로 오르지 않은 명사가 붙어 있으면 띄운다.
 - 일처리 → 일 처리
@@ -130,6 +139,12 @@ export const KO_SYSTEM_PROMPT = `당신은 한국어 맞춤법·띄어쓰기 교
 입력: 회사생활 하면서 결혼준비 까지 하려니 죽겠다
 출력: 회사 생활 하면서 결혼 준비까지 하려니 죽겠다
 
+입력: 들은바에의하면지난번에받은상금중에절반을못받았다고하던데
+출력: 들은 바에 의하면 지난번에 받은 상금 중에 절반을 못 받았다고 하던데
+
+입력: 남의말을개똥으로아는놈이니오죽하겠냐마는
+출력: 남의 말을 개똥으로 아는 놈이니 오죽하겠냐마는
+
 입력: 너 오늘 왜케 이뻐보여
 출력: 너 오늘 왜 그렇게 예뻐 보여
 
@@ -140,6 +155,12 @@ export const KO_SYSTEM_PROMPT = `당신은 한국어 맞춤법·띄어쓰기 교
 
 # 출력 형식
 **교정된 텍스트 한 덩어리만** 낸다. 설명, 따옴표, 머리말, "교정 결과:" 같은 말을 붙이지 마라. 입력이 한 줄이면 출력도 한 줄이다. 출력 길이는 입력과 비슷해야 한다 — 크게 달라졌다면 고치라는 것 말고 다른 짓을 한 것이다.`
+
+/** 앱이 보낸 본문에서 고칠 글만 꺼낸다. */
+export function userTextOf(body) {
+  const parsed = JSON.parse(body);
+  return (parsed.contents ?? []).map(partsText).join('\n').trim();
+}
 
 /** 앱이 보낸 구글 모양 본문을 OpenAI 본문으로. 고칠 글이 없으면 던진다. */
 export function toOpenAiRequest(body, model, options = {}) {
@@ -176,7 +197,24 @@ export function toOpenAiRequest(body, model, options = {}) {
  *
  * @returns `{ status, text }` — 중계 결과와 같은 모양.
  */
-export function toGeminiReply(status, text) {
+/**
+ * 교정문이라 하기엔 너무 다른가.
+ *
+ * 지시문으로 막아도 모델이 딴짓을 할 때가 있다 — 글을 요약하거나, 사용자가 쓴
+ * "이거 어때?" 에 대답을 하거나, 본문에 섞인 지시문을 따라가 버리거나. 그런 답은
+ * 길이부터 확 다르다. 맞춤법 교정은 원문과 길이가 비슷할 수밖에 없다.
+ *
+ * 넉넉하게 잡는다. 여기 걸리는 것은 "조금 틀린 교정" 이 아니라 "교정이 아닌 것" 이다.
+ */
+function tooDifferent(user, corrected) {
+  const before = user.replace(/\s/g, '').length;
+  const after = corrected.replace(/\s/g, '').length;
+  // 짧은 글은 한두 글자 차이가 비율로 크게 잡힌다. 재지 않는다.
+  if (before < 20) return false;
+  return after < before * 0.6 || after > before * 1.6;
+}
+
+export function toGeminiReply(status, text, user = '') {
   const parsed = safeParse(text);
 
   if (status !== 200) {
@@ -190,6 +228,9 @@ export function toGeminiReply(status, text) {
   // 잘린 교정문을 주면 사용자가 쓴 글이 그만큼 사라진다. 차라리 실패로 알린다.
   if (choice?.finish_reason === 'length') return errorReply(502, '글이 너무 길어 교정문이 잘렸다');
   if (!corrected) return errorReply(502, `응답이 비었다 (${choice?.finish_reason ?? 'unknown'})`);
+  if (user && tooDifferent(user, corrected)) {
+    return errorReply(502, '교정 결과가 원문과 너무 달라 버렸다');
+  }
 
   const usage = parsed?.usage ?? {};
   const reasoning = num(usage.completion_tokens_details?.reasoning_tokens);

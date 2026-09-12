@@ -226,3 +226,39 @@ test('숙고와 무관한 400 은 두 번 보내도 그대로 전한다', async 
   assert.equal(sent, 1);
   assert.equal((await res.json()).error.message, 'invalid_api_key');
 });
+
+test('교정이 아닌 답은 길이로 걸러낸다', () => {
+  const user = '내가 그 사람한테 몇 번이나 말했잖아 너 혼자서만 잘 산다고 해서 전혀 행복해지는 게 아니라고';
+
+  const ok = toGeminiReply(200, JSON.stringify({
+    choices: [{ message: { content: user }, finish_reason: 'stop' }],
+  }), user);
+  assert.equal(ok.status, 200);
+
+  // 본문에 섞인 지시문을 따라가 버린 경우. 우리 글 대신 딴 글이 온다.
+  const hijacked = toGeminiReply(200, JSON.stringify({
+    choices: [{ message: { content: '네, 알겠습니다!' }, finish_reason: 'stop' }],
+  }), user);
+  assert.equal(hijacked.status, 502);
+
+  // 요약이 아니라 늘려 쓴 경우도 교정이 아니다.
+  const padded = toGeminiReply(200, JSON.stringify({
+    choices: [{ message: { content: user + user }, finish_reason: 'stop' }],
+  }), user);
+  assert.equal(padded.status, 502);
+});
+
+test('짧은 글은 길이로 재지 않는다', () => {
+  const reply = toGeminiReply(200, JSON.stringify({
+    choices: [{ message: { content: '네' }, finish_reason: 'stop' }],
+  }), '네네네');
+  assert.equal(reply.status, 200);
+});
+
+test('지시문은 백틱과 치환식을 담지 않는다', () => {
+  // 프롬프트가 백틱 문자열이라, 안쪽에 백틱이나 ${} 가 들어가면 문자열이 끊기거나
+  // 엉뚱한 값이 끼어든다. 실제로 한 번 깨뜨렸다.
+  assert.equal(KO_SYSTEM_PROMPT.includes('`'), false);
+  assert.equal(KO_SYSTEM_PROMPT.includes('${'), false);
+  assert.match(KO_SYSTEM_PROMPT, /오죽하겠냐마는/);
+});
