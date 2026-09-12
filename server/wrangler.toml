@@ -21,7 +21,11 @@ new_sqlite_classes = ["GoogleRelay"]
 
 [vars]
 PLAY_PACKAGE = "com.spellkeyboard.ko"
-FREE_DAILY_LIMIT = "5"
+# 무료 하루 한도. **지금은 시험용으로 열어 뒀다** — 출시 전에 5 로 되돌릴 것.
+# 아래 IP 한도가 진짜 천장이라, 이 값을 올려도 한 IP 가 쓸 수 있는 총량은 그대로다.
+FREE_DAILY_LIMIT = "200"
+# 설치 ID 를 갈아 끼우며 무료를 무한히 쓰는 것을 IP 로 막는다. 서버 주소는 APK 에
+# 들어 있어 누구나 알 수 있으므로, 실제 요금 천장은 이 숫자다. 함부로 올리지 말 것.
 IP_DAILY_LIMIT = "300"
 # 교정에 쓰는 모델. gpt-5-nano 는 띄어쓰기를 다시 나누다 단어를 지어냈다
 # ('오죽하겠냐마는' → '어쩜 하겠냐마는'). 지시문으로 눌러 봤지만 모델이 작아서 생기는
