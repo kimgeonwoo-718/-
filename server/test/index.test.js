@@ -248,7 +248,7 @@ function fakeRelay(response) {
   };
 }
 
-test('중계 객체가 있으면 구글 호출은 그 안에서 나간다 — 미국 위치 힌트로', async () => {
+test('중계 객체가 있으면 구글 호출은 그 안에서 나간다 — 미국 서부 위치 힌트로', async () => {
   const relay = fakeRelay(() => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '고침' }] } }] }), { status: 200 }));
   const direct = upstream();
   const res = await handle(generate(), env({ RELAY: relay }), { fetch: direct.fetchImpl, now: () => NOON_KST });
@@ -259,7 +259,11 @@ test('중계 객체가 있으면 구글 호출은 그 안에서 나간다 — �
   assert.equal(relay.calls[0].url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-x:generateContent');
   assert.equal(relay.calls[0].init.method, 'POST');
   assert.equal(relay.calls[0].init.body, '{"contents":[]}');
-  assert.equal(relay.calls[0].options.locationHint, 'enam');
+  // 한국에서 가까운 미국이라야 한다. 홍콩은 구글·OpenAI 가 거절하므로 미국은 유지한다.
+  assert.equal(relay.calls[0].options.locationHint, 'wnam');
+  // 위치 힌트는 **객체를 처음 만들 때만** 먹는다. 이름이 그대로면 미국 동부에 이미
+  // 만들어진 객체를 계속 쓰게 되니, 자리를 옮길 때는 이름도 같이 바뀌어야 한다.
+  assert.notEqual(relay.calls[0].id, 'id:google-relay', '옛 이름을 그대로 쓰면 자리가 안 옮겨진다');
   assert.ok(!direct.calls.some((c) => c.url.includes('generativelanguage')), '직접 보내면 안 된다');
 });
 

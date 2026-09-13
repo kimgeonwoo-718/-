@@ -41,8 +41,18 @@ const UPSTREAM = 'https://generativelanguage.googleapis.com';
  * 미국에 붙박이인 Durable Object 안에서 한다 — 위치 힌트는 객체를 처음 만들 때 한 번
  * 먹고, 그 뒤로는 그 자리에 머문다.
  */
-const RELAY_NAME = 'google-relay';
-const RELAY_LOCATION = 'enam';
+//
+// 어느 미국이냐는 대기 시간에 그대로 붙는다. 우리 사용자는 한국에 있고, 요청은
+// 폰 → 서울 엣지 → 이 객체 → 모델 → 되돌아오기로 태평양을 두 번 건넌다.
+// 미국 동부(enam)는 서울에서 가장 먼 축이라 서부(wnam)로 옮긴다 — 구글도 OpenAI 도
+// 지원하는 지역이라 위의 홍콩 문제는 그대로 피한다.
+//
+// **이름도 같이 바꿔야 한다.** 위치 힌트는 객체를 처음 만들 때만 먹는다. 이름이 같으면
+// 이미 미국 동부에 만들어진 그 객체를 계속 쓰고, 이 값만 고치면 아무 일도 안 일어난다.
+// 이름이 바뀌면 새 객체가 새 자리에 생긴다. 이 객체는 저장하는 것이 없어서(키를 붙여
+// 넘기기만 한다) 버리고 새로 만들어도 잃을 상태가 없다.
+const RELAY_NAME = 'relay-wnam';
+const RELAY_LOCATION = 'wnam';
 
 /** 교정 창이 앞뒤 2000 자에 지시문 1KB 라 16KB 남짓이다. 그 몇 배면 충분하다. */
 const MAX_BODY_BYTES = 64 * 1024;
