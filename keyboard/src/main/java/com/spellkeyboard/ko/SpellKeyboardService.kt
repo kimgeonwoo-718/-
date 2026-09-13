@@ -23,6 +23,8 @@ import com.spellkeyboard.core.hangul.HangulAutomata
 import com.spellkeyboard.core.editor.TranslateBuffer
 import com.spellkeyboard.core.editor.TranslationOutput
 import com.spellkeyboard.core.lm.ContextCorrector
+import com.spellkeyboard.core.translate.SentenceSplitter
+import com.spellkeyboard.core.translate.TranslationMemory
 import com.spellkeyboard.core.lm.LanguageModel
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
@@ -104,6 +106,17 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     /** 번역 요청 번호. 늦게 도착한 옛 결과를 버리는 데 쓴다. */
     private var translateSerial = 0
+
+    /**
+     * 번역기에 넘기기 전에 문장으로 자른다. **여러 문장을 한 번에 넘기면 번역기가 가운데를
+     * 통째로 삼킨다** — 실기기에서 네 문장이 두 문장으로 줄고 물음표만 엉뚱한 데 붙었다.
+     * 형태소 사전은 늦게 올라오므로 그때그때 물어본다(없으면 문장 부호로만 자른다).
+     */
+    private val sentenceSplitter =
+        SentenceSplitter { session.engine.spacer?.endsWithFinalEnding(it) == true }
+
+    /** 문장별 번역 결과. 끝에만 글자가 붙으므로 앞 문장은 다시 번역할 일이 없다. */
+    private val translationMemory = TranslationMemory()
 
     /** 마지막으로 번역한 원문. 지금 내용과 같으면 입력란의 번역문이 최신이다. */
     private var translatedSource = ""
@@ -514,6 +527,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onCycleTranslateTarget() {
         val next = Prefs.translateTarget(this).next()
         Prefs.setTranslateTarget(this, next)
+        translationMemory.clear()
         if (!translating) return
         keyboard?.setTranslateMode(true, next.label(this))
         translatedSource = ""
@@ -597,21 +611,44 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         val target = Prefs.translateTarget(this)
         val translator = translator ?: return
         if (!translator.isReady(target)) return
+
+        // 문장마다 따로 번역해서 이어 붙인다. 이미 번역한 문장은 기억해 둔 것을 쓴다 —
+        // 빠르기도 하고, 앞쪽 번역문이 이유 없이 흔들리지도 않는다.
+        val sentences = sentenceSplitter.split(source)
         val serial = ++translateSerial
-        translator.translate(
-            source, target,
-            onResult = { result ->
-                if (!translating || serial != translateSerial) return@translate
-                currentInputConnection?.let { translateOutput.replace(ConnectionEditor(it), result) }
-                translatedSource = source
-                if (pendingEnter) finishEnter()
-            },
-            onFailed = {
-                if (!translating || serial != translateSerial) return@translate
-                notify(getString(R.string.translate_failed))
-                if (pendingEnter) finishEnter()
-            }
-        )
+        val missing = translationMemory.missing(sentences)
+        if (missing.isEmpty()) {
+            renderTranslation(sentences, source, serial)
+            return
+        }
+        var remaining = missing.size
+        for (sentence in missing) {
+            translator.translate(
+                sentence, target,
+                onResult = { result ->
+                    // 늦게 온 결과라도 기억은 해 둔다. 다음 요청이 그걸 쓴다.
+                    translationMemory.remember(sentence, result)
+                    if (--remaining == 0) renderTranslation(sentences, source, serial)
+                },
+                onFailed = {
+                    // 못 옮긴 문장은 원문을 그대로 둔다. 그 자리가 비면 글이 사라진 것처럼 보인다.
+                    translationMemory.remember(sentence, sentence)
+                    if (--remaining == 0) {
+                        notify(getString(R.string.translate_failed))
+                        renderTranslation(sentences, source, serial)
+                    }
+                }
+            )
+        }
+    }
+
+    /** 문장별 번역을 이어 붙여 앱 입력란에 넣는다. 그사이 새 요청이 나갔으면 버린다. */
+    private fun renderTranslation(sentences: List<String>, source: String, serial: Int) {
+        if (!translating || serial != translateSerial) return
+        val connection = currentInputConnection ?: return
+        translateOutput.replace(ConnectionEditor(connection), translationMemory.assemble(sentences))
+        translatedSource = source
+        if (pendingEnter) finishEnter()
     }
 
     /**

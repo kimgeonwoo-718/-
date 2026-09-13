@@ -27,6 +27,16 @@ class LmDiagnosticsTest {
             println("=== $window")
             println(corrector.explain(window, LanguageModel.BOS))
         }
+        println("=== 번역 입력줄에 친 문장 (실기기 화면)")
+        for (chat in listOf(
+            "안녕하세요", "저는 김건우입니다", "저는 김건우 입니다", "오늘 기분이 어떠세요",
+            "저는 좋아요", "어떻게", "어떻게 지내세요", "어떻게 해야 하지", "어떻게 생각해",
+            "안녕하세요 저는 김건우입니다", "오늘 기분이 어떠세요 저는 좋아요"
+        )) {
+            val out = corrector.correct(chat, LanguageModel.BOS)
+            println("  " + (if (out == null) "○ $chat" else "△ $chat → $out"))
+        }
+
         println("=== 채팅 문장 (그대로 두거나 자연스럽게 고쳐야 한다)")
         for (chat in listOf(
             "오늘 뭐해", "밥 먹었어", "어디야", "지금 가고있어", "내일 봐요", "잘자", "고마워요", "사랑해",

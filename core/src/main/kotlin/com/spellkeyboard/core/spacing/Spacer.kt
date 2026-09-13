@@ -175,6 +175,27 @@ class Spacer(private val dictionary: SpacingDictionary) {
     fun isVerbTag(tag: String): Boolean = tag in VERBAL
 
     /**
+     * [word] 에서 문장이 끝나는가.
+     *
+     * 한국어 채팅은 마침표를 거의 안 쓰는데, 번역기에 여러 문장을 한 번에 넘기면 뭉개진다.
+     * 그래서 부호 없이도 문장 끝을 찾아야 한다.
+     *
+     * mecab-ko-dic 은 종결어미를 대부분 **연결어미와 같은 EC 로** 태깅한다 ('좋아요' 도
+     * '좋아서' 도 EC 다). 그래서 태그만으로는 못 가린다. 태그가 EF 면 그대로 믿고,
+     * EC 면 어미의 표층형을 본다 — [FINAL_TAILS] 는 연결형에 거의 안 나타나는 종결 꼬리다.
+     * 어절이 조사나 명사로 끝나면('기분이', '오늘') 문장 중간이므로 자르지 않는다.
+     *
+     * 못 잡는 것도 있다. 반말 종결('먹었어', '그래')은 연결형('좋아 보여')과 꼬리가 같아
+     * 일부러 뺐다 — 문장 둘이 붙는 손해가, 한 문장을 잘못 자르는 손해보다 작다.
+     */
+    fun endsWithFinalEnding(word: String): Boolean {
+        val tail = edgeTags(word)?.second ?: return false
+        if (tail == "EF") return true
+        if (tail != "EC") return false
+        return FINAL_TAILS.any { word.endsWith(it) }
+    }
+
+    /**
      * 한 어절로 분석한 [word] 의 첫 형태소 품사와 끝 형태소 품사. 어절을 자른 두 조각이
      * 명사|명사 로 맞닿는지('연습|문제') 볼 때 쓴다. 분석이 안 되거나 믿기 어려우면 null.
      */
@@ -438,6 +459,12 @@ class Spacer(private val dictionary: SpacingDictionary) {
 
         /** [boundMorphemeStartsAt] 이 분석을 믿는 형태소당 비용 상한. */
         private const val BOUND_TRUST_COST_PER_MORPH = 2000
+
+        /**
+         * EC 로 태깅된 어미 중 문장을 끝내는 꼬리. 연결형('-아서', '-는데', '-고', '-면',
+         * '-지만')과 겹치지 않는 것만 넣는다.
+         */
+        private val FINAL_TAILS = listOf("요", "다", "까", "죠", "네", "군", "구나", "자")
 
         private const val MIN_SYLLABLES = 3
         private const val MAX_SYLLABLES = 24
