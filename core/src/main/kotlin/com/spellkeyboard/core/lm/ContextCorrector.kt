@@ -458,8 +458,15 @@ class ContextCorrector(
                 // 자르기 비싸고, 억지스러울수록 싸다. 확실한 증거가 있으면 넘어설 수 있는
                 // 벽이라 '시간이걸린다'(비용 2357, 정답이 19점 더 좋다)는 풀리고
                 // '연습문제'(비용 167)는 그대로 남는다.
-                if (wellFormedPenalty(core) >= WELL_FORMED_BAN) return null
-                cost -= wellFormedPenalty(core)
+                // 언어모델이 **아는** 어절이면 한 낱말이라는 증거가 둘이다 — 형태소 분석이
+                // 되고, 사람들이 실제로 그렇게 쓴다. 세게 말린다.
+                //
+                // 모르는 어절이면 증거가 형태소 분석 하나뿐인데 그건 약하다. mecab 은
+                // '아버지가방에' 도 아버지+가방+에 로 멀쩡히 읽는다. 형태소 비용으로는
+                // '국민청원'(1720)과 '아버지가방에'(1733)를 가를 수 없다 — 거의 같다.
+                // 가르는 것은 **말뭉치에 있었느냐**다. 모르는 말은 덜 말린다.
+                val seen = lm.lnCount(core) != null
+                cost -= wellFormedPenalty(core) * (if (seen) 1f else UNSEEN_WELL_FORMED_FACTOR)
                 // 매인 형태소 앞('자녀|들이')은 자르지 않는다. 절제 실험에서 이 금지는
                 // 재현율을 **하나도** 깎지 않으면서 오교정만 줄였다(0.40 → 0.37%). 순이득이다.
                 if (boundAt(core, offset)) return null
@@ -479,6 +486,8 @@ class ContextCorrector(
                 // 이보다 분명한 경계 신호는 없다 ('컴퓨터의|충돌', '그|권리는', '할|책들은').
                 // 이 신호가 있으면 명사|명사 조심도 필요 없다 — 조심해야 할 합성어는
                 // '치과|의사' 처럼 조사 없이 붙는 것들이지 조사 뒤가 아니다.
+                // 떼어 낸 조각이 조사·어미로 시작하면 어절이 될 수 없다.
+                if (BOUND_STARTS.any { text.startsWith(it) }) cost -= BOUND_START_COST
                 if (endsWithBoundaryMarker(prevKey)) cost += BOUNDARY_MARKER_BONUS
                 else if (nounJunction(prevKey, text)) cost -= NOUN_JUNCTION_COST
                 if (endsWithAEo(prevKey) && spacer?.tagAt(core, offset)?.let { spacer?.isVerbTag(it) } == true) return null
@@ -774,7 +783,7 @@ class ContextCorrector(
         const val UNKNOWN_SCALE = 3000f
         const val UNKNOWN_COST_MAX = 3f
         /** 무리 없이 분석되는 모르는 말은 살짝만 깎는다. */
-        const val WELL_FORMED_PER_SYLLABLE = 0.5f
+        const val WELL_FORMED_PER_SYLLABLE = 2.5f
         const val WELL_FORMED_COST_MAX = 2f
         /** 한 어절로 분석이 안 되는 덩어리: 두 음절을 넘는 음절마다 이만큼. 어절 하나 값이다. */
         const val UNANALYZABLE_PER_SYLLABLE = 4.5f
@@ -802,6 +811,30 @@ class ContextCorrector(
          */
         const val NOUN_JUNCTION_COST = 4f
 
+
+        /**
+         * 조사·어미로 시작하는 조각은 어절이 될 수 없다.
+         *
+         * 형태소 분석기에 물어보는 [startsBound] 가 이미 있는데 이 표가 따로 필요한 이유는,
+         * 분석기가 '부터'·'지도' 를 명사로도 읽어서 **흐릿할 때가 있기 때문**이다. 그래서
+         * '데이터로|부터의', '연루되었을|지도' 같은 것이 빠져나갔다.
+         *
+         * 금지가 아니라 값이다. '지도'(map)처럼 진짜 낱말과 겹치는 것이 있어서, 증거가
+         * 확실하면 넘어갈 수 있어야 한다.
+         */
+        private val BOUND_STARTS = listOf(
+            // 조사
+            "부터", "까지", "조차", "마저", "처럼", "치고", "커녕", "만큼", "밖에",
+            "에서", "에게", "한테", "께서", "로서", "로써", "이라고", "라고", "이라도", "라도",
+            "든지", "라든지", "이나마", "나마", "대로", "보다는", "이야말로", "야말로",
+            // 어미
+            "다는", "라는", "지만", "니까", "는데", "는지", "면서", "으며", "지도",
+            "습니다", "입니다", "였다", "았다", "었다", "겠다", "더라", "더니"
+        )
+
+        /** 조사·어미로 시작하는 조각을 떼어 내는 값. */
+        const val BOUND_START_COST = 10f
+
         /** 조사·관형사·관형형 어미 뒤라서 자르기 좋은 자리일 때 얹어 주는 값. */
         const val BOUNDARY_MARKER_BONUS = 3f
 
@@ -815,8 +848,12 @@ class ContextCorrector(
         /** 이 위로 억지스러우면 말리지 않는다. 붙여 쓴 구들의 최솟값이 1477 쯤이다. */
         const val WELL_FORMED_FREE_COST = 4000
 
-        /** 벌점이 이만큼이면 아예 금지로 친다. 넘을 수 없는 값을 굳이 계산하지 않는다. */
-        const val WELL_FORMED_BAN = 1e9f
+        /**
+         * 말뭉치에 없던 어절을 "한 낱말" 로 보아 지켜 주는 정도. 1 이면 아는 어절과 같다.
+         *
+         * 모르는 말은 한 낱말이라는 증거가 형태소 분석 하나뿐이라 약하다. 그래서 덜 지킨다.
+         */
+        const val UNSEEN_WELL_FORMED_FACTOR = 0.6f
 
         const val MAX_TOKEN_SYLLABLES = 14
         const val MAX_FREE_SYLLABLES = 8
