@@ -165,9 +165,14 @@ jobs:
             "$url/v1beta/models?pageSize=200" || true
           jq -r '.models[]?.name' models.json 2>/dev/null | head -n 40 || true
           [ -s models.json ] && ! jq -e '.models' models.json >/dev/null 2>&1 && head -c 600 models.json && echo
-          echo "----- 교정 한 번 (설치 ID 는 CI 전용) -----"
-          # 걸린 시간도 같이 잰다. 미국 러너에서 재는 것이라 모델이 쓴 시간에 가깝다 —
-          # 실기기 시간에서 이걸 빼면 한국-미국 왕복이 얼마인지 나온다.
+          echo "----- 교정 한 번 (설치 ID 는 CI 전용 = 무료 사용자) -----"
+          # AI 를 구독자 전용으로 닫은 뒤로 이 요청은 **402 subscribers_only 가 정상**이다.
+          # 그래서 이 단계가 증명하는 것은 "서버가 살아 있고 무료를 제대로 막는다" 까지다.
+          # LLM 까지 실제로 닿는지는 여기서 더 못 본다 — 공개 저장소에 구독자 설치 ID 를
+          # 박아 두면 그걸 쓰는 사람 누구나 공짜로 AI 를 쓰게 되기 때문이다.
+          # 모델이 진짜 답하는지는 구독자 기기에서 한 번 눌러 보는 것으로 확인한다.
+          #
+          # 200 이 찍힌다면 오히려 이상한 것이다 — 무료가 뚫렸다는 뜻이니 바로 봐야 한다.
           curl -sS --max-time 30 -o gen.json -D gen.head -w 'HTTP %{http_code} · 전체 %{time_total}초\n' -X POST \
             -H 'Content-Type: application/json' -H 'X-Install-Id: ci-smoke-test-0000' \
             --data '{"contents":[{"parts":[{"text":"안녕하새요 라고만 답해"}]}]}' \
