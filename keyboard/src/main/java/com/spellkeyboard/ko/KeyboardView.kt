@@ -159,13 +159,13 @@ class KeyboardView @JvmOverloads constructor(
 
     init {
         orientation = VERTICAL
-        setPadding(0, dp(4), 0, 0)
+        setPadding(0, dp(2), 0, 0)
 
         // 컬러 이모지는 삼성 키보드의 단색 선 아이콘과 톤이 어긋난다. 글꼴에 든 기호를 쓴다.
         emojiButton = toolbarButton("☺\uFE0E") { showEmoji() }
         // AI 는 그림 대신 글자 "AI". 삼성의 ✨ 자리에 들어가는 우리 기능이라 이름을 그대로 쓴다.
         aiButton = toolbarButton("AI") { listener?.onAiCorrect() }.apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
         clipboardButton = toolbarButton("▤") { showClipboard() }
@@ -173,7 +173,7 @@ class KeyboardView @JvmOverloads constructor(
         correctionButton = toolbarButton(context.getString(R.string.toolbar_correction)) {
             listener?.onToggleAutoCorrect()
         }.apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
         settingsButton = toolbarButton("⚙\uFE0E") { listener?.onOpenSettings() }
@@ -256,7 +256,7 @@ class KeyboardView @JvmOverloads constructor(
             )
         }
         val left = (width - view.measuredWidth) / 2
-        val top = (dp(TOOLBAR_HEIGHT_DP) - view.measuredHeight) / 2 + dp(4)
+        val top = (dp(TOOLBAR_HEIGHT_DP) - view.measuredHeight) / 2 + dp(2)
         view.layout(left, top, left + view.measuredWidth, top + view.measuredHeight)
         view.alpha = 0f
         overlay.add(view)
@@ -954,8 +954,8 @@ class KeyboardView @JvmOverloads constructor(
         TextView(context).apply {
             text = label
             gravity = Gravity.CENTER
-            // 삼성은 아이콘이 동그라미를 거의 채운다. 34dp 동그라미에 22sp 면 그 비율이다.
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+            // 아이콘이 동그라미를 거의 채우도록. 28dp 동그라미에 18sp 면 그 비율이다.
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
             includeFontPadding = false
             contentDescription = label
             attachKeyTouch(this, onPress = onPress)
@@ -1283,11 +1283,11 @@ class KeyboardView @JvmOverloads constructor(
 
     private companion object {
         /**
-         * 도구 줄. 삼성 화면과 나란히 재 보니 동그라미가 화면 폭의 8%(≈33dp), 줄이 48dp 다.
-         * 처음엔 44dp/56dp 로 잡았는데 실기기에서 눈에 띄게 컸다.
+         * 도구 줄. 삼성 실측은 동그라미 ≈33dp, 줄 48dp 였는데 실기기 화면에서 그마저 커
+         * 보여, 사용자가 그어 준 선(위쪽 약 16dp)만큼 더 줄였다. 줄 34dp 에 동그라미 28dp.
          */
-        const val TOOLBAR_HEIGHT_DP = 48
-        const val TOOLBAR_BUTTON_DP = 34
+        const val TOOLBAR_HEIGHT_DP = 34
+        const val TOOLBAR_BUTTON_DP = 28
         const val FLASH_MS = 1600L
         // 삼성 키보드 실측에 맞춘 값. 키는 조금 높고, 틈은 조금 넓다.
         const val KEY_HEIGHT_DP = 48
