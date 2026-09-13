@@ -36,6 +36,16 @@ class CorrectionEngineTest {
     }
 
     @Test
+    fun `부사 안 은 되다 와 띄운다`() {
+        assertEquals("그러면 안 돼요", fix("그러면 안되요"))
+        assertEquals("그러면 안 돼요", fix("그러면 안돼요"))
+        assertEquals("안 돼", fix("안돼"))
+        assertEquals("안 되겠다", fix("안되겠다"))
+        assertEquals("안 돼서 그래", fix("안되서 그래"))
+        assertUntouched("편안되게")
+    }
+
+    @Test
     fun `왠 과 웬 을 가린다`() {
         assertEquals("웬만하면", fix("왠만하면"))
         assertEquals("웬일이야", fix("왠일이야"))

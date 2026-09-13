@@ -23,3 +23,6 @@ local.properties
 # Worker 로컬 산출물
 server/node_modules/
 server/.wrangler/
+
+# 파이썬 도구 캐시
+__pycache__/

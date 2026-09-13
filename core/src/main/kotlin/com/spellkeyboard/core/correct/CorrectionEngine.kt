@@ -1,5 +1,7 @@
 package com.spellkeyboard.core.correct
 
+import com.spellkeyboard.core.lm.ContextCorrector
+import com.spellkeyboard.core.lm.LanguageModel
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.Speller
 
@@ -57,6 +59,20 @@ class CorrectionEngine(
         }
 
     /**
+     * 문맥 교정기. 언어모델이 올라오면 끼운다.
+     *
+     * 이게 있으면 [spacer] 와 [speller] 는 직접 쓰지 않는다 — 문맥 교정기가 창 전체를
+     * 한 번에 풀면서 띄어쓰기·맞춤법·어절 합치기를 같이 결정한다. 어절 하나씩 보던
+     * 두 부품은 언어모델 파일이 없거나 못 열었을 때의 대비책으로 남는다.
+     */
+    @Volatile
+    var context: ContextCorrector? = null
+        set(value) {
+            field = value
+            analysed.clear()
+        }
+
+    /**
      * 한 번 분석한 어절의 결과.
      *
      * **스페이스를 칠 때마다 커서 앞 몇 어절을 통째로 다시 본다.** 그런데 그중 새로
@@ -76,14 +92,24 @@ class CorrectionEngine(
     private fun analyse(word: String, compute: (String) -> String): String =
         analysed.getOrPut(word) { compute(word) }
 
-    /** 문자열 전체를 교정한다. */
-    fun correct(text: String): CorrectionResult {
+    /**
+     * 문자열 전체를 교정한다.
+     *
+     * @param contextBefore [text] 바로 앞 어절. 문맥 교정기가 첫 어절의 앞뒤를 볼 때 쓴다.
+     *   [LanguageModel.BOS] 면 문장 첫머리, null 이면 모름.
+     */
+    fun correct(text: String, contextBefore: String? = null): CorrectionResult {
         if (!hasHangul(text)) return CorrectionResult(text, text, emptyList())
 
         val sink = mutableListOf<Correction>()
         var current = applyWordRules(text, sink)
-        current = applySpacer(current, sink)
-        current = applySpeller(current, sink)
+        val context = this.context
+        if (context != null) {
+            current = applyContext(context, current, contextBefore, sink)
+        } else {
+            current = applySpacer(current, sink)
+            current = applySpeller(current, sink)
+        }
         current = applyTextRules(current, sink)
         // 띄어쓰기 교정으로 새 어절이 드러날 수 있어 어절 규칙을 한 번 더 돌린다.
         current = applyWordRules(current, sink)
@@ -102,7 +128,7 @@ class CorrectionEngine(
 
         val start = windowStart(textBeforeCursor, maxWords)
         val window = textBeforeCursor.substring(start)
-        val result = correct(window)
+        val result = correct(window, contextBefore(textBeforeCursor, start))
         if (!result.changed) return null
 
         return TailCorrection(
@@ -131,6 +157,31 @@ class CorrectionEngine(
             if (fixed != word) sink += Correction(word, fixed, "맞춤법")
             fixed
         }
+
+    /**
+     * 창 전체를 문맥 교정기에 넘긴다. 창과 앞 어절이 같으면 답도 같으므로 기억해 둔다.
+     * 무엇이 바뀌었는지는 어절 단위로 짝지어 기록한다 — 개수가 다르면 통째로 하나.
+     */
+    private fun applyContext(
+        context: ContextCorrector,
+        text: String,
+        contextBefore: String?,
+        sink: MutableList<Correction>
+    ): String {
+        val fixed = analyse(CONTEXT_KEY + (contextBefore ?: "") + "\u0000" + text) {
+            context.correct(text, contextBefore) ?: text
+        }
+        if (fixed != text) {
+            val before = text.trim().split(WHITESPACE)
+            val after = fixed.trim().split(WHITESPACE)
+            if (before.size == after.size) {
+                for (k in before.indices) if (before[k] != after[k]) sink += Correction(before[k], after[k], "문맥")
+            } else {
+                sink += Correction(text.trim(), fixed.trim(), "문맥")
+            }
+        }
+        return fixed
+    }
 
     /** 붙여 쓴 덩어리를 어절로 나눈다. 사전이 아직 안 올라왔으면 아무것도 하지 않는다. */
     private fun applySpacer(text: String, sink: MutableList<Correction>): String {
@@ -171,6 +222,9 @@ class CorrectionEngine(
         private const val SPACE_KEY = "\u0000s"
         private const val SPELL_KEY = "\u0000p"
         private const val RULE_KEY = "\u0000r"
+        private const val CONTEXT_KEY = "\u0000c"
+
+        private val WHITESPACE = Regex("\\s+")
 
         const val DEFAULT_WINDOW_WORDS = 3
 
@@ -178,6 +232,28 @@ class CorrectionEngine(
 
         private fun hasHangul(text: String): Boolean =
             text.any { it.code in 0xAC00..0xD7A3 || it.code in 0x3131..0x3163 }
+
+        /**
+         * 창 바로 앞 어절. 창 앞에 아무것도 없으면 문장 첫머리([LanguageModel.BOS]),
+         * 앞 어절이 문장 부호로 끝나도 첫머리다. 앞 어절이 한글이 아니면 모름(null).
+         *
+         * 커서 앞 텍스트는 [FULL_LOOKBEHIND] 만큼만 읽어 오므로, 그 길이를 꽉 채운 채
+         * 창 앞이 비었다면 실제로는 앞에 더 있을 수 있다. 그때는 모름으로 둔다.
+         */
+        internal fun contextBefore(textBeforeCursor: String, windowStart: Int): String? {
+            val prefix = textBeforeCursor.substring(0, windowStart).trimEnd()
+            if (prefix.isEmpty()) {
+                return if (textBeforeCursor.length < FULL_LOOKBEHIND) LanguageModel.BOS else null
+            }
+            val token = prefix.substring(prefix.indexOfLast { it.isWhitespace() } + 1)
+            if (token.last() in SENTENCE_ENDERS) return LanguageModel.BOS
+            return if (token.all { it in HANGUL_SYLLABLES }) token else null
+        }
+
+        /** `TypingSession.LOOKBEHIND_CHARS` 와 같다. 순환 참조를 피해 여기 다시 적는다. */
+        private const val FULL_LOOKBEHIND = 64
+        private val SENTENCE_ENDERS = setOf('.', '!', '?', '…')
+        private val HANGUL_SYLLABLES = '가'..'힣'
 
         /** 뒤에서부터 [maxWords] 개의 어절을 포함하는 창의 시작 위치를 찾는다. */
         internal fun windowStart(text: String, maxWords: Int): Int {

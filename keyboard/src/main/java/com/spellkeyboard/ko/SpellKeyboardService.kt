@@ -20,6 +20,8 @@ import com.spellkeyboard.core.editor.TypingSession
 import com.spellkeyboard.core.hangul.CheonjiinAutomata
 import com.spellkeyboard.core.hangul.Hangul
 import com.spellkeyboard.core.hangul.HangulAutomata
+import com.spellkeyboard.core.lm.ContextCorrector
+import com.spellkeyboard.core.lm.LanguageModel
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
 import com.spellkeyboard.core.spacing.Speller
@@ -138,11 +140,16 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private fun loadSpacingDictionary() {
         val target = File(filesDir, DICTIONARY_DIR)
         Thread {
-            runCatching { Spacer(SpacingDictionary.open(target)) }
+            val spacer = runCatching { Spacer(SpacingDictionary.open(target)) }
                 .onSuccess {
                     session.engine.spacer = it
                     session.engine.speller = Speller(it)
                 }
+                .getOrNull()
+            // 언어모델은 형태소 사전 뒤에 연다. 이게 올라오면 어절 하나씩 보던 교정 대신
+            // 창 전체를 앞뒤 문맥으로 푸는 교정이 된다. 못 열면 위의 둘로 계속 간다.
+            runCatching { LanguageModel.open(target) }
+                .onSuccess { session.engine.context = ContextCorrector(it, spacer) }
         }.apply {
             isDaemon = true
             priority = Thread.MIN_PRIORITY
