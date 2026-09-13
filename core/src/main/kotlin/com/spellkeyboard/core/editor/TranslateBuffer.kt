@@ -28,6 +28,7 @@ class TranslateBuffer : Editor {
     fun clear() {
         buffer.setLength(0)
         composingStart = -1
+        batchDepth = 0
     }
 
     override fun beginBatch() {
@@ -67,6 +68,9 @@ class TranslateBuffer : Editor {
         buffer.substring((buffer.length - maxChars).coerceAtLeast(0))
 
     private fun replaceComposing(text: String) {
+        // 조합 시작점이 내용보다 뒤에 있을 수는 없다. 밖에서 내용을 지웠는데 조합 상태만
+        // 남아 있으면 앞 글자를 먹으므로, 어긋난 값은 여기서 버린다.
+        if (composingStart > buffer.length) composingStart = -1
         if (composingStart >= 0) buffer.setLength(composingStart)
         buffer.append(text)
     }

@@ -39,6 +39,37 @@ class TranslateBufferTest {
     }
 
     @Test
+    fun `조합이 밖에서 끊겨도 앞 글자를 먹지 않는다`() {
+        // 실기기 버그: 번역문을 앱에 써 넣으면 커서 알림이 오고, 그걸 "사용자가 커서를
+        // 옮겼다" 로 읽어 조합을 끊었다. 그 뒤 자모를 누르면 옛 조합 자리가 앞 글자를 덮었다 —
+        // '어' 를 쓰고 'ㄸ' 를 누르면 '어' 가 사라졌다.
+        val buffer = TranslateBuffer()
+        val session = TypingSession()
+        session.pressJamo(buffer, 'ㅇ')
+        session.pressJamo(buffer, 'ㅓ')
+        assertEquals("어", buffer.text)
+
+        buffer.finishComposing()
+        session.reset()
+        session.pressJamo(buffer, 'ㄸ')
+        assertEquals("어ㄸ", buffer.text)
+    }
+
+    @Test
+    fun `입력줄을 비울 때는 조립기도 함께 비운다`() {
+        // 둘 중 하나만 비우면 어긋난다 — 조립기에 '어' 가 남은 채로 'ㄱ' 을 누르면 '억' 이 된다.
+        // 서비스의 enterTranslate/exitTranslate 는 늘 둘을 함께 비운다.
+        val buffer = TranslateBuffer()
+        val session = TypingSession()
+        session.pressJamo(buffer, 'ㅇ')
+        session.pressJamo(buffer, 'ㅓ')
+        buffer.clear()
+        session.reset()
+        session.pressJamo(buffer, 'ㄱ')
+        assertEquals("ㄱ", buffer.text)
+    }
+
+    @Test
     fun `번역문을 갈아 끼운다`() {
         val editor = FakeEditor()
         editor.commitText("Hi ")

@@ -250,6 +250,14 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         super.onUpdateSelection(
             oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd
         )
+        // **번역 모드에서는 이 알림이 전부 우리 것이다.**
+        //
+        // 사용자는 앱 입력란이 아니라 번역 입력줄에 쓰고 있고, 앱 입력란이 바뀌는 것은
+        // 우리가 번역문을 갈아 끼울 때뿐이다. 그런데 번역은 타이핑이 멎고 250ms 뒤에 도는
+        // 반면 아래의 자기 편집 창은 200ms 라, 번역할 때마다 창 밖이라 판정돼 조합이 끊겼다.
+        // 실기기에서 '어' 를 쓰고 'ㄸ' 를 누르면 '어' 가 지워지는 것으로 나타났다.
+        if (translating) return
+
         if (!session.isComposing()) return
 
         // **우리가 방금 고친 직후의 알림은 우리 것이다.**
@@ -560,6 +568,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         pendingEnter = false
         mainHandler.removeCallbacks(translateNow)
         translateSerial++
+        // 조합을 먼저 끝낸다. 안 그러면 다음에 입력줄을 열었을 때 옛 조합 자리가 남아
+        // 첫 글자가 앞 글자를 덮어쓴다.
+        translateBuffer.finishComposing()
         translateBuffer.clear()
         translateOutput.detach()
         translatedSource = ""
@@ -646,6 +657,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private fun renderTranslation(sentences: List<String>, source: String, serial: Int) {
         if (!translating || serial != translateSerial) return
         val connection = currentInputConnection ?: return
+        // 이 편집으로 올 커서 알림도 우리 것이다.
+        lastEditAt = android.os.SystemClock.uptimeMillis()
         translateOutput.replace(ConnectionEditor(connection), translationMemory.assemble(sentences))
         translatedSource = source
         if (pendingEnter) finishEnter()
