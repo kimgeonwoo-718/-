@@ -12,6 +12,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Handler
@@ -26,6 +27,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 
 /**
@@ -179,7 +181,11 @@ class KeyboardView @JvmOverloads constructor(
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
-        clipboardButton = toolbarButton("▤") { showClipboard() }
+        // 클립보드는 글꼴 기호로 삼성과 같은 모양이 안 나온다 — '▤' 는 줄 친 네모라 표에
+        // 가깝다. 벡터로 그린 아이콘을 배경에 얹는다(styleClipboardButton).
+        clipboardButton = toolbarButton("") { showClipboard() }.apply {
+            contentDescription = context.getString(R.string.clipboard_title)
+        }
         // 실시간 교정 켬/끔. 켜져 있으면 강조색 동그라미라 글자 없이도 상태가 보인다.
         correctionButton = toolbarButton(context.getString(R.string.toolbar_correction)) {
             listener?.onToggleAutoCorrect()
@@ -381,7 +387,8 @@ class KeyboardView @JvmOverloads constructor(
 
     /** 자판 밖의 것들(도구 줄, 클립보드 머리)에 팔레트를 입힌다. 키는 [render] 가 한다. */
     private fun restyle() {
-        listOf(emojiButton, aiButton, clipboardButton, settingsButton).forEach { styleToolbarButton(it) }
+        listOf(emojiButton, aiButton, settingsButton).forEach { styleToolbarButton(it) }
+        styleClipboardButton()
         styleCorrectionButton()
         styleTranslateButton()
         clipboardTitle.setTextColor(theme.text)
@@ -391,6 +398,22 @@ class KeyboardView @JvmOverloads constructor(
     private fun styleToolbarButton(view: TextView) {
         view.setTextColor(theme.text)
         view.background = circle(keyFill(theme.toolbarButton))
+    }
+
+    /**
+     * 클립보드 동그라미. 글자가 아니라 그림이라 배경을 두 겹으로 쌓는다 — 아래가 동그라미,
+     * 위가 아이콘. 아이콘은 사방에 같은 여백을 두고 넣어서 가운데에 놓이게 한다.
+     */
+    private fun styleClipboardButton() {
+        val face = circle(keyFill(theme.toolbarButton))
+        val icon = ContextCompat.getDrawable(context, R.drawable.ic_clipboard)?.mutate()
+        if (icon == null) {
+            clipboardButton.background = face
+            return
+        }
+        icon.setTint(theme.text)
+        val inset = (dp(TOOLBAR_BUTTON_DP) - dp(TOOLBAR_ICON_DP)) / 2
+        clipboardButton.background = LayerDrawable(arrayOf(face, InsetDrawable(icon, inset)))
     }
 
     private fun styleCorrectionButton() {
@@ -1364,6 +1387,9 @@ class KeyboardView @JvmOverloads constructor(
         const val TOOLBAR_HEIGHT_DP = 34
         const val TRANSLATE_HEIGHT_DP = 40
         const val TOOLBAR_BUTTON_DP = 28
+
+        /** 그림 아이콘이 동그라미 안에서 차지하는 크기. 옆의 글꼴 기호들과 눈높이를 맞춘 값이다. */
+        const val TOOLBAR_ICON_DP = 16
         const val FLASH_MS = 1600L
         // 삼성 키보드 실측에 맞춘 값. 키는 조금 높고, 틈은 조금 넓다.
         const val KEY_HEIGHT_DP = 48
