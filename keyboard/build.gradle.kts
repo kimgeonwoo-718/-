@@ -42,6 +42,16 @@ android {
         versionName = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "0.1"
 
         buildConfigField("String", "AI_SERVER_URL", "\"$aiServerUrl\"")
+
+        // 번역기(ML Kit)가 CPU 종류마다 네이티브 라이브러리를 하나씩 들고 온다. 네 벌이
+        // 다 들어가면 그것만 62MB 다. x86 과 x86_64 는 **에뮬레이터 전용**이라 실제 폰에서는
+        // 한 바이트도 쓰이지 않는데 34MB 를 차지한다. 빼면 APK 가 그만큼 줄어든다.
+        //
+        // armeabi-v7a(32비트 ARM)는 남긴다. 오래된 보급형 폰이 아직 이걸 쓴다.
+        // 에뮬레이터로 시험할 일이 생기면 여기에 "x86_64" 를 잠깐 도로 넣으면 된다.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     buildFeatures {
