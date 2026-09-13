@@ -1,9 +1,9 @@
 package com.spellkeyboard.core.correct
 
+import com.spellkeyboard.core.TestCache
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
 import com.spellkeyboard.core.spacing.Speller
-import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -28,7 +28,7 @@ class SelfTestSamplesTest {
     companion object {
         /** 키보드가 차리는 것과 같은 구성. 다르게 차리면 진단이 의미가 없다. */
         private val engine: CorrectionEngine by lazy {
-            val dir = Files.createTempDirectory("selftest-dict").toFile()
+            val dir = TestCache.dir
             dir.deleteOnExit()
             val spacer = Spacer(SpacingDictionary.open(dir))
             CorrectionEngine().apply {

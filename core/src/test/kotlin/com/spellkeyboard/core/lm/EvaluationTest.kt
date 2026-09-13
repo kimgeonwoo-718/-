@@ -1,12 +1,12 @@
 package com.spellkeyboard.core.lm
 
+import com.spellkeyboard.core.TestCache
 import com.spellkeyboard.core.correct.CorrectionEngine
 import com.spellkeyboard.core.hangul.Hangul
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
 import com.spellkeyboard.core.spacing.Speller
 import java.io.File
-import java.nio.file.Files
 import kotlin.random.Random
 import kotlin.test.Test
 
@@ -45,7 +45,7 @@ class EvaluationTest {
         val sample = sentences.shuffled(Random(7)).take(limit)
         println("평가 문장 ${sample.size}개 (전체 ${sentences.size}개)")
 
-        val dir = Files.createTempDirectory("eval").toFile().also { it.deleteOnExit() }
+        val dir = TestCache.dir
         val spacer = Spacer(SpacingDictionary.open(dir))
         val engine = CorrectionEngine().apply {
             this.spacer = spacer

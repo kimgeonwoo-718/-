@@ -1,9 +1,9 @@
 package com.spellkeyboard.core.correct
 
+import com.spellkeyboard.core.TestCache
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
 import com.spellkeyboard.core.spacing.Speller
-import java.nio.file.Files
 import kotlin.test.Test
 
 /** 스페이스를 누르는 순간 도는 교정이 타이핑을 막을 만큼 느린지 잰다. */
@@ -11,7 +11,7 @@ class EngineSpeedTest {
 
     @Test
     fun `스페이스 한 번에 걸리는 시간`() {
-        val dir = Files.createTempDirectory("speed").toFile().also { it.deleteOnExit() }
+        val dir = TestCache.dir
         val spacer = Spacer(SpacingDictionary.open(dir))
         val speller = Speller(spacer)
 

@@ -1,6 +1,6 @@
 package com.spellkeyboard.core.spacing
 
-import java.nio.file.Files
+import com.spellkeyboard.core.TestCache
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -35,7 +35,7 @@ class SpellerTest {
 
     companion object {
         private val speller: Speller by lazy {
-            val dir = Files.createTempDirectory("spell-dict").toFile()
+            val dir = TestCache.dir
             dir.deleteOnExit()
             Speller(Spacer(SpacingDictionary.open(dir)))
         }

@@ -1,10 +1,10 @@
 package com.spellkeyboard.core.lm
 
+import com.spellkeyboard.core.TestCache
 import com.spellkeyboard.core.correct.CorrectionEngine
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
 import com.spellkeyboard.core.spacing.Speller
-import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 class RealWorldTest {
     @Test
     fun `자주 틀리는 것들을 고치는지 본다`() {
-        val dir = Files.createTempDirectory("real").toFile().also { it.deleteOnExit() }
+        val dir = TestCache.dir
         val spacer = Spacer(SpacingDictionary.open(dir))
         val engine = CorrectionEngine().apply {
             this.spacer = spacer

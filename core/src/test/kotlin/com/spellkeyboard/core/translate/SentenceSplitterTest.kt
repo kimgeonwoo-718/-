@@ -1,8 +1,8 @@
 package com.spellkeyboard.core.translate
 
+import com.spellkeyboard.core.TestCache
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
-import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -94,7 +94,7 @@ class SentenceSplitterTest {
 
     companion object {
         private val spacer: Spacer by lazy {
-            val dir = Files.createTempDirectory("split").toFile().also { it.deleteOnExit() }
+            val dir = TestCache.dir
             Spacer(SpacingDictionary.open(dir))
         }
         private val morphological: SentenceSplitter by lazy {

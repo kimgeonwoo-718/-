@@ -1,8 +1,8 @@
 package com.spellkeyboard.core.lm
 
+import com.spellkeyboard.core.TestCache
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
-import java.nio.file.Files
 import kotlin.test.Test
 
 /** 조정용 표. 주장은 없고 값만 찍는다. 문턱을 만질 때 `-i` 로 돌려 본다. */
@@ -10,7 +10,7 @@ class LmDiagnosticsTest {
 
     @Test
     fun `어절별 언어모델 점수와 형태소 비용`() {
-        val dir = Files.createTempDirectory("lm-diag").toFile().also { it.deleteOnExit() }
+        val dir = TestCache.dir
         val spacer = Spacer(SpacingDictionary.open(dir))
         val lm = LanguageModel.open(dir)
         val words = listOf(

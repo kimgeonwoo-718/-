@@ -40,7 +40,14 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
         // 자리를 가리켜서 글자가 겹친다. 원문은 그대로 두고 공백만 끼워 넣는다.
         val breakAt = BooleanArray(text.length + 1)
         for (token in tokens) {
-            if (token.position > 0 && token.tag in WORD_STARTS) breakAt[token.position] = true
+            if (token.position <= 0 || token.tag !in WORD_STARTS) continue
+            // 보조용언 '-어지다' 는 앞말에 붙여 쓴다('행복해지는', '이어지는'). Kiwi 는 이걸
+            // 따로 떼어 놓는데, 그대로 두면 '행복해 지는' 이 된다.
+            //
+            // '하' 는 넣지 않았다. 같은 보조용언이라도 '해야 하는' 은 띄어 쓴다 —
+            // 넣었더니 말뭉치 숫자가 되레 내려갔다(통째 67.6% → 65.1%).
+            if (token.tag == Kiwi.POSTag.vx && token.form == GLUED_AUXILIARY) continue
+            breakAt[token.position] = true
         }
 
         val out = StringBuilder(text.length + 16)
@@ -71,17 +78,22 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
         /** 다 꺼냈다는 표시. 중간에 끊긴 것을 온전한 것으로 착각하지 않게 맨 마지막에 쓴다. */
         private const val DONE_MARK = ".complete"
 
+        /** 앞말에 붙여 쓰는 보조용언. '-어지다' 하나뿐이다. */
+        private const val GLUED_AUXILIARY = "지"
+
         /**
          * 어절을 시작할 수 있는 품사. 조사·어미·접미사는 앞말에 붙으므로 뺀다.
          *
          * 이 목록이 곧 띄어쓰기 규칙이다. 넓히면 재현율이 오르고 정밀도가 떨어진다 —
-         * 지금 값으로 경계 F1 96.1% 다.
+         * 지금 값으로 공백 없는 글에서 경계 F1 96.4%, 문장 통째 68.7% 다.
          */
         private val WORD_STARTS: Set<Byte> = setOf(
             Kiwi.POSTag.nng, Kiwi.POSTag.nnp, Kiwi.POSTag.nnb, Kiwi.POSTag.nr, Kiwi.POSTag.np,
             Kiwi.POSTag.vv, Kiwi.POSTag.va, Kiwi.POSTag.vx,
             Kiwi.POSTag.mag, Kiwi.POSTag.maj, Kiwi.POSTag.mm, Kiwi.POSTag.ic,
             Kiwi.POSTag.xpn, Kiwi.POSTag.xr,
+            // 부정지정사 '아니다'. 이게 빠져 있어서 '게아니라고'·'거아니냐' 가 안 띄워졌다.
+            Kiwi.POSTag.vcn,
             Kiwi.POSTag.sl, Kiwi.POSTag.sh, Kiwi.POSTag.sn
         )
 

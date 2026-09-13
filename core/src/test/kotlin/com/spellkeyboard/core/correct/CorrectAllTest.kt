@@ -1,10 +1,10 @@
 package com.spellkeyboard.core.correct
 
+import com.spellkeyboard.core.TestCache
 import com.spellkeyboard.core.lm.ContextCorrector
 import com.spellkeyboard.core.lm.LanguageModel
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
-import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -58,7 +58,7 @@ class CorrectAllTest {
 
     @Test
     fun `긴 글도 실제로 고친다 — 조각내기가 없으면 통째로 건너뛴다`() {
-        val dir = Files.createTempDirectory("correctall").toFile().also { it.deleteOnExit() }
+        val dir = TestCache.dir
         val spacer = Spacer(SpacingDictionary.open(dir))
         val engine = CorrectionEngine().apply {
             this.spacer = spacer
@@ -81,7 +81,7 @@ class CorrectAllTest {
 
     @Test
     fun `2000자 글도 사람이 기다릴 만한 시간에 끝난다`() {
-        val dir = Files.createTempDirectory("speed").toFile().also { it.deleteOnExit() }
+        val dir = TestCache.dir
         val spacer = Spacer(SpacingDictionary.open(dir))
         val engine = CorrectionEngine().apply {
             this.spacer = spacer

@@ -1,10 +1,10 @@
 package com.spellkeyboard.core.lm
 
+import com.spellkeyboard.core.TestCache
 import com.spellkeyboard.core.correct.CorrectionEngine
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
 import java.io.File
-import java.nio.file.Files
 import kotlin.random.Random
 import kotlin.test.Test
 
@@ -33,7 +33,7 @@ class BareTextTest {
         }
         val sample = sentences.shuffled(Random(7)).take(3000)
 
-        val dir = Files.createTempDirectory("bare").toFile().also { it.deleteOnExit() }
+        val dir = TestCache.dir
         val spacer = Spacer(SpacingDictionary.open(dir))
         val engine = CorrectionEngine().apply {
             this.spacer = spacer

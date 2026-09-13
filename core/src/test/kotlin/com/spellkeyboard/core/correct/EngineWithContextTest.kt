@@ -1,11 +1,11 @@
 package com.spellkeyboard.core.correct
 
+import com.spellkeyboard.core.TestCache
 import com.spellkeyboard.core.lm.ContextCorrector
 import com.spellkeyboard.core.lm.LanguageModel
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
 import com.spellkeyboard.core.spacing.Speller
-import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -60,7 +60,7 @@ class EngineWithContextTest {
 
     companion object {
         private val engine: CorrectionEngine by lazy {
-            val dir = Files.createTempDirectory("engine-ctx").toFile().also { it.deleteOnExit() }
+            val dir = TestCache.dir
             val spacer = Spacer(SpacingDictionary.open(dir))
             CorrectionEngine().apply {
                 this.spacer = spacer

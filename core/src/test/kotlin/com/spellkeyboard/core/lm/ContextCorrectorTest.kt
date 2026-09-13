@@ -1,8 +1,8 @@
 package com.spellkeyboard.core.lm
 
+import com.spellkeyboard.core.TestCache
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
-import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -121,7 +121,7 @@ class ContextCorrectorTest {
 
     companion object {
         private val corrector: ContextCorrector by lazy {
-            val dir = Files.createTempDirectory("spell-lm").toFile()
+            val dir = TestCache.dir
             dir.deleteOnExit()
             ContextCorrector(LanguageModel.open(dir), Spacer(SpacingDictionary.open(dir)))
         }

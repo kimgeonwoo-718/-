@@ -1,6 +1,6 @@
 package com.spellkeyboard.core.spacing
 
-import java.nio.file.Files
+import com.spellkeyboard.core.TestCache
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -71,7 +71,7 @@ class SpacerTest {
     companion object {
         // 사전을 푸는 데 시간이 걸려 테스트 클래스마다 한 번만 연다.
         private val spacer: Spacer by lazy {
-            val dir = Files.createTempDirectory("spell-dict").toFile()
+            val dir = TestCache.dir
             dir.deleteOnExit()
             Spacer(SpacingDictionary.open(dir))
         }

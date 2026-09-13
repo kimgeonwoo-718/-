@@ -1,9 +1,9 @@
 package com.spellkeyboard.core.lm
 
+import com.spellkeyboard.core.TestCache
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.file.Files
 import kotlin.math.ln
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -61,7 +61,7 @@ class LanguageModelTest {
 
     @Test
     fun `앱에 실린 모델이 열리고 흔한 말을 안다`() {
-        val dir = Files.createTempDirectory("lm").toFile().also { it.deleteOnExit() }
+        val dir = TestCache.dir
         val lm = LanguageModel.open(dir)
         assertNotNull(lm.lnCount("있는데요"))
         assertNotNull(lm.lnCount("하세요"))

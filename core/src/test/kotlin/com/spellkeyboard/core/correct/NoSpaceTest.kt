@@ -1,10 +1,10 @@
 package com.spellkeyboard.core.correct
 
+import com.spellkeyboard.core.TestCache
 import com.spellkeyboard.core.lm.ContextCorrector
 import com.spellkeyboard.core.lm.LanguageModel
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.SpacingDictionary
-import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -25,7 +25,7 @@ import kotlin.test.assertTrue
 class NoSpaceTest {
 
     private fun engine(): CorrectionEngine {
-        val dir = Files.createTempDirectory("nospace").toFile().also { it.deleteOnExit() }
+        val dir = TestCache.dir
         val spacer = Spacer(SpacingDictionary.open(dir))
         return CorrectionEngine().apply {
             this.spacer = spacer
