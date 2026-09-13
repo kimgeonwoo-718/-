@@ -1,12 +1,14 @@
 name: Reset AI usage
 
-# 오늘치 무료 AI 교정 한도를 되돌린다. 테스트하다 5회를 다 썼을 때 Actions 탭에서
-# "Run workflow" 한 번이면 된다. 설치 ID·IP 사용량 행을 오늘 날짜(한국 시간)로 지운다.
-# 서버 코드는 건드리지 않는다.
+# 오늘치 AI 사용량을 되돌린다. 시험하다 하루 한도(10만 자)를 다 썼을 때, 한국 시간
+# 자정을 기다리는 대신 Actions 탭에서 "Run workflow" 한 번이면 된다.
+# 오늘 날짜(한국 시간)의 사용량 행만 지운다 — 서버 코드도 비밀값도 건드리지 않는다.
 on:
   workflow_dispatch:
-  # workflow_dispatch 만 있는 파일은 기본 브랜치에 없으면 GitHub 이 목록에 안 올린다.
-  # 이 파일이 바뀌는 푸시에 한 번 "보이게" 만들기 위한 트리거다. 그 실행은 아래 if 로 건너뛴다.
+  # workflow_dispatch 만 있는 파일은 **기본 브랜치에 없으면** GitHub 이 목록에도, 버튼도
+  # 안 띄운다. 이 파일이 바뀌는 푸시에 한 번 "보이게" 만들기 위한 트리거고, 그 실행은
+  # 아래 if 로 건너뛴다. (이 저장소는 한동안 기본 브랜치가 다른 프로젝트라 이 파일이
+  # 그쪽에 얹혀 있었다. 프로젝트를 갈라내면서 제자리로 가져왔다.)
   push:
     branches:
       - main
@@ -37,4 +39,4 @@ jobs:
           sed -i "s/DATABASE_ID_PLACEHOLDER/$id/" wrangler.toml
           today=$(TZ=Asia/Seoul date +%F)
           npx --yes wrangler@3 d1 execute spell-keyboard --remote --command "DELETE FROM usage WHERE day = '$today'"
-          echo "::notice title=AI 사용량 초기화::오늘($today) 사용량을 지웠다. 무료 5회가 다시 찬다."
+          echo "::notice title=AI 사용량 초기화::오늘($today) 사용량을 지웠다. 하루 10만 자가 다시 찬다."
