@@ -148,6 +148,16 @@
                 style="@style/Caption"
                 android:layout_marginTop="6dp"
                 android:text="@string/ai_notice" />
+
+            <!--
+              설치 ID. 길게 눌러 복사한다. 서버에 문의하거나 시험용 구독자 목록에 넣을 때
+              필요하다. 평소에는 아무 의미 없는 줄이라 맨 아래 흐린 글씨로 둔다.
+            -->
+            <TextView
+                android:id="@+id/install_id"
+                style="@style/Caption"
+                android:layout_marginTop="10dp"
+                android:textIsSelectable="true" />
         </LinearLayout>
 
         <!-- 키보드 -->

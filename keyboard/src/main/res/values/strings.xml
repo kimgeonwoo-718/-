@@ -97,6 +97,10 @@
     <string name="setting_key_transparency">키 투명도</string>
     <string name="setting_key_transparency_sub">배경 사진을 썼을 때 키를 얼마나 비치게 할지 정해요. 오른쪽으로 갈수록 사진이 잘 보여요.</string>
     <string name="setting_key_transparency_value">%1$d%%</string>
+    <!-- 설치 ID. 서버가 이 기기를 부르는 이름이라 문의·시험용 구독자 등록에 쓴다. -->
+    <string name="setting_install_id">설치 ID · %1$s (길게 눌러 복사)</string>
+    <string name="setting_install_id_label">설치 ID</string>
+    <string name="setting_install_id_copied">설치 ID 를 복사했다</string>
     <string name="ai_notice">AI 전체 교정을 누를 때만 그 입력란의 글이 서버를 거쳐 OpenAI 로 가요. 타이핑 중 실시간 교정은 기기 안에서만 처리돼요.</string>
 
     <string name="privacy_notice">타이핑한 내용은 기기 밖으로 나가지 않아요. 실시간 교정은 전부 기기 안에서 처리하고, 비밀번호·이메일·URL 입력란에서는 자동으로 꺼져요.</string>

@@ -101,6 +101,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PLAY_SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT }}
+          TEST_INSTALL_IDS: ${{ secrets.TEST_INSTALL_IDS }}
         run: |
           set -euo pipefail
           # OPENAI_API_KEY 가 있으면 서버는 그쪽으로 간다. 되돌리려면 이 비밀값만 지우면
@@ -125,6 +126,16 @@ jobs:
             echo "PLAY_SERVICE_ACCOUNT: 넣음"
           else
             echo "PLAY_SERVICE_ACCOUNT: 없음 — 결제 확인 없이 전부 무료로 동작"
+          fi
+          # 개발용. 여기 적힌 설치 ID 는 Play 결제 없이 구독자로 친다 — Play Console
+          # 등록 전에 유료 기능(AI 번역)을 실기기에서 확인하려고 둔다.
+          # 출시하면 GitHub 비밀값을 지우고 npx wrangler secret delete TEST_INSTALL_IDS 를 친다.
+          if [ -n "${TEST_INSTALL_IDS:-}" ]; then
+            printf '%s' "$TEST_INSTALL_IDS" | npx --yes wrangler@3 secret put TEST_INSTALL_IDS
+            echo "TEST_INSTALL_IDS: 넣음 — 이 설치 ID 들은 구독자로 동작한다"
+          else
+            echo "TEST_INSTALL_IDS: 없음 — 결제한 사람만 구독자다 (출시 때 맞는 상태)"
+            echo "  이미 넣어 둔 값을 지우려면: npx wrangler secret delete TEST_INSTALL_IDS"
           fi
 
       - name: 주소 확인

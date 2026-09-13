@@ -841,3 +841,31 @@ java -cp "$CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -d /tmp/out \
 않는다. 실제로 그때 로그에 `No value passed for parameter` 가 0 건이었다. 그래서 글자로
 보는 검사를 따로 둔다 — 기본값 없는 람다 인자가 마지막이 아닌 함수를 찾아내는 것.
 `keyboard/` 를 고칠 때는 이 함정을 눈으로 한 번 더 확인해라.
+
+## 결제 없이 유료 기능을 시험하는 길 (2026-09-13)
+
+AI 번역은 구독자 전용인데, 구독 판단은 Play 구매 토큰을 구글에 물어보는 것뿐이었다
+(`isSubscriber`). Play Console 등록 전에는 개발자 자신도 켤 방법이 없었다.
+
+`TEST_INSTALL_IDS` **비밀값**에 설치 ID 를 쉼표로 적어 두면 그 기기만 구독자로 친다
+(`isTestSubscriber`, `server/src/index.js`).
+
+- 값은 코드에도 `wrangler.toml` 에도 없다. GitHub 비밀값 → 배포 일감이
+  `wrangler secret put` 으로 넣는다. 저장소가 공개라 이 경로 말고는 두지 않는다.
+- 설치 ID 는 앱이 처음 켜질 때 만든 UUID 다. 남이 맞힐 수 없고, 새더라도 잃는 것은
+  그 기기 하나의 무료 한도뿐이다.
+- 설정 화면 맨 아래에 설치 ID 를 보여 준다(`install_id`, 길게 눌러 복사).
+
+### 출시 전에 지울 것
+
+1. GitHub 비밀값 `TEST_INSTALL_IDS` 삭제
+2. `cd server && npx wrangler secret delete TEST_INSTALL_IDS`
+
+`FREE_DAILY_LIMIT` 을 5 로 되돌리는 것과 같은 자리에서 같이 한다.
+
+### 알아 둘 것 — 요금제는 AI 를 한 번 써야 알게 된다
+
+앱은 서버가 헤더(`x-plan`)로 알려 준 값을 기억해서 구독 여부를 본다(`noteQuota`).
+설치 직후에는 그 값이 없어서 **AI 교정을 한 번 눌러야** 구독자로 인식하고, 그 뒤부터
+번역 보내기가 서버 번역을 탄다. 이것은 버그가 아니라 "판단은 서버가 한다" 는 설계의
+결과다 — 폰이 스스로 구독자라고 우기지 못하게 하려고 이렇게 뒀다.

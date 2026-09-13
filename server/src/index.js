@@ -127,7 +127,8 @@ async function correct(request, env, url, fetchImpl, now) {
   const nowMs = now();
   const day = kstDay(nowMs);
   const purchaseToken = request.headers.get('x-purchase-token') ?? '';
-  const subscriber = await isSubscriber(env, purchaseToken, fetchImpl, nowMs);
+  const subscriber =
+    isTestSubscriber(env, installId) || (await isSubscriber(env, purchaseToken, fetchImpl, nowMs));
   const plan = subscriber ? 'subscriber' : 'free';
 
   let usage = null;
@@ -329,6 +330,27 @@ function withQuota(response, usage, limit, plan, unit = 'calls') {
  * 장애, 인증 오류) 그 순간만 무료로 보고 **캐시하지 않는다** — 돈 낸 사람을 한 시간
  * 동안 잘못 막는 것보다, 다음 요청에서 다시 물어보는 편이 낫다.
  */
+/**
+ * Play 를 거치지 않고 구독자로 쳐 주는 설치 ID 들.
+ *
+ * 개발하는 사람이 자기 폰에서 유료 기능(AI 번역)을 확인하려면 진짜 구독이 있어야 하는데,
+ * Play Console 등록 전에는 그게 없다. 그래서 **비밀값**으로 설치 ID 를 몇 개 적어 두면
+ * 그 기기만 구독자로 본다. 쉼표로 나눠 적는다.
+ *
+ * 저장소가 공개라 이 목록은 코드에도 wrangler.toml 에도 두지 않는다 —
+ * `wrangler secret put TEST_INSTALL_IDS` 로만 들어간다. 설치 ID 는 앱이 만든 UUID 라
+ * 남이 맞힐 수 없고, 값이 새더라도 잃는 것은 그 기기 하나의 무료 한도뿐이다.
+ * 출시 뒤에는 비워 두는 것이 맞다: `wrangler secret delete TEST_INSTALL_IDS`.
+ */
+function isTestSubscriber(env, installId) {
+  const listed = env.TEST_INSTALL_IDS;
+  if (!listed || !installId) return false;
+  return String(listed)
+    .split(',')
+    .map((one) => one.trim())
+    .some((one) => one.length > 0 && one === installId);
+}
+
 async function isSubscriber(env, purchaseToken, fetchImpl, nowMs) {
   if (!purchaseToken || !env.PLAY_SERVICE_ACCOUNT || !env.PLAY_PACKAGE) return false;
 

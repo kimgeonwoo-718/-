@@ -335,3 +335,29 @@ test('개인정보 처리방침 페이지는 키 없이도 뜬다', async () => 
   assert.ok(!body.includes('문의:'), '연락처가 설정돼 있지 않으면 빈 줄을 만들지 않는다');
 });
 
+
+test('시험용 설치 ID 는 결제 없이 구독자로 친다', async () => {
+  const e = env({ TEST_INSTALL_IDS: 'other-id, ' + INSTALL });
+  const res = await handle(generate(), e, { fetch: upstream().fetchImpl, now: () => NOON_KST });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('x-plan'), 'subscriber');
+  assert.equal(res.headers.get('x-quota-unit'), 'chars');
+});
+
+test('시험용 목록에 없는 설치 ID 는 그대로 무료다', async () => {
+  const e = env({ TEST_INSTALL_IDS: 'someone-else' });
+  const res = await handle(generate(), e, { fetch: upstream().fetchImpl, now: () => NOON_KST });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('x-plan'), 'free');
+  assert.equal(res.headers.get('x-quota-unit'), 'calls');
+});
+
+test('시험용 목록이 비어 있으면 아무도 구독자가 아니다', async () => {
+  for (const listed of ['', '   ', ',,', undefined]) {
+    const res = await handle(generate(), env({ TEST_INSTALL_IDS: listed }), {
+      fetch: upstream().fetchImpl,
+      now: () => NOON_KST,
+    });
+    assert.equal(res.headers.get('x-plan'), 'free', 'TEST_INSTALL_IDS=' + JSON.stringify(listed));
+  }
+});

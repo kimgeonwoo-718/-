@@ -1,5 +1,7 @@
 package com.spellkeyboard.ko
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -139,6 +141,27 @@ class SetupActivity : AppCompatActivity() {
         // 결제창을 바로 띄우지 않는다. 무엇을 얼마에 사는지 먼저 보여주는 화면을 거친다.
         findViewById<View>(R.id.subscribe_button).setOnClickListener {
             startActivity(android.content.Intent(this, PaywallActivity::class.java))
+        }
+
+        showInstallId()
+    }
+
+    /**
+     * 설치 ID 를 보여 준다. 길게 누르면 복사된다.
+     *
+     * 이 기기가 서버에 자기를 밝히는 이름이다. 문의할 때 이걸 알려 주면 어느 기기인지
+     * 짚을 수 있고, 출시 전에는 이 값을 서버의 시험용 구독자 목록에 넣어 유료 기능을
+     * 실기기에서 확인한다. 개인 정보가 아니라 앱이 처음 켜질 때 만든 무작위 값이다.
+     */
+    private fun showInstallId() {
+        val view = findViewById<TextView>(R.id.install_id) ?: return
+        val id = Prefs.installId(this)
+        view.text = getString(R.string.setting_install_id, id)
+        view.setOnLongClickListener {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.setting_install_id_label), id))
+            Toast.makeText(this, R.string.setting_install_id_copied, Toast.LENGTH_SHORT).show()
+            true
         }
     }
 
