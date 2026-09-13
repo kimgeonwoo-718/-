@@ -54,6 +54,10 @@ class KeyboardView @JvmOverloads constructor(
         fun onAction(action: KeyAction)
 
         /** 문장 전체를 중계 서버(AI)로 교정한다. */
+        /** 자판 위 '전체' 를 짧게 눌렀을 때. 기기 안에서 글 전체를 고친다. */
+        fun onCorrectAll()
+
+        /** '전체' 를 길게 눌렀을 때. 서버 AI 로 고친다(프리미엄). */
         fun onAiCorrect()
 
         /** 클립보드 목록을 열었다. 지금 복사돼 있는 것을 담을 기회다. */
@@ -179,8 +183,16 @@ class KeyboardView @JvmOverloads constructor(
 
         // 컬러 이모지는 삼성 키보드의 단색 선 아이콘과 톤이 어긋난다. 글꼴에 든 기호를 쓴다.
         emojiButton = toolbarButton("☺\uFE0E") { showEmoji() }
-        // AI 는 그림 대신 글자 "AI". 삼성의 ✨ 자리에 들어가는 우리 기능이라 이름을 그대로 쓴다.
-        aiButton = toolbarButton("AI") { listener?.onAiCorrect() }.apply {
+        // 짧게 누르면 **기기 안에서** 글 전체를 고친다 — 공짜고, 빠르고, 인터넷이 없어도 된다.
+        // 길게 누르면 서버 AI(프리미엄). 자주 쓰는 쪽이 짧은 누르기다.
+        //
+        // 글자가 "AI" 가 아니라 "전체" 인 이유: 짧게 누르는 쪽이 AI 가 아니기 때문이다.
+        // 옆의 '교정' 은 실시간 교정 켬/끔이라 이름이 겹치지 않게 '전체' 로 둔다.
+        aiButton = toolbarButton(
+            context.getString(R.string.toolbar_correct_all),
+            onPress = { listener?.onCorrectAll() },
+            onLongPress = { listener?.onAiCorrect() }
+        ).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
@@ -473,8 +485,14 @@ class KeyboardView @JvmOverloads constructor(
     private fun withAlpha(color: Int, alpha: Float): Int =
         Color.argb((alpha * 255).toInt(), Color.red(color), Color.green(color), Color.blue(color))
 
-    /** API 키가 설정돼 있을 때만 AI 교정 버튼을 띄운다. */
-    fun setAiAvailable(available: Boolean) {
+    /**
+     * '전체' 단추를 보일지.
+     *
+     * 예전에는 **서버가 있을 때만** 보였다(`setAiAvailable`). 이제는 짧게 누르는 쪽이
+     * 기기 안 전체교정이라 서버와 무관하다. 대신 **고쳐도 되는 입력란인지**는 그대로
+     * 따진다 — 비밀번호 칸에서는 교정하지 않는다.
+     */
+    fun setCorrectAllAvailable(available: Boolean) {
         aiButton.isVisible = available
     }
 

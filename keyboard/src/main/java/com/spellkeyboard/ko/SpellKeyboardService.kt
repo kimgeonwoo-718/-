@@ -224,11 +224,12 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         syncAutomata()
         // 설정에서 테마나 배경을 바꾸고 돌아왔을 수 있다. 바뀐 게 없으면 싸게 끝난다.
         keyboard?.applyAppearance()
-        // 비밀번호 입력란에서는 AI 교정도 내놓지 않는다. 그 글이 서버로 나가면 안 된다.
+        // 비밀번호 입력란에서는 교정을 아예 내놓지 않는다. 기기 안에서 도는 일이라도
+        // 비밀번호를 고쳐 주는 것은 도움이 아니라 사고다.
         // 다만 자동 교정 스위치와는 묶지 않는다 — 그건 실시간 교정만 끄는 스위치다.
-        val aiOn = Prefs.aiAvailable() && fieldCorrectable
-        keyboard?.setAiAvailable(aiOn)
-        if (aiOn) warmUpAi()
+        keyboard?.setCorrectAllAvailable(fieldCorrectable)
+        // 서버 예열은 서버가 있을 때만. 길게 누르는 쪽(프리미엄 AI)이 쓸 것이다.
+        if (Prefs.aiAvailable() && fieldCorrectable) warmUpAi()
     }
 
     override fun onFinishInput() {
@@ -857,6 +858,65 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
+    /**
+     * 글 전체를 **기기 안에서** 고친다. 서버도, 한도도, 통신도 없다.
+     *
+     * 자판 위 '전체' 를 짧게 누르면 이것이다. 요금제와 상관없이 누구나, 몇 번이든 쓴다.
+     * 2,600자에 8ms 라 사실상 기다림이 없지만, 아주 긴 글에서 화면이 멎지 않게
+     * 다른 스레드에서 돌린다.
+     */
+    override fun onCorrectAll() {
+        if (translating) {
+            notify(getString(R.string.translate_blocks_ai))
+            return
+        }
+        if (aiBusy || polishing) {
+            notify(getString(R.string.ai_busy))
+            return
+        }
+        val connection = currentInputConnection
+        if (connection == null) {
+            notify(getString(R.string.ai_no_connection))
+            return
+        }
+
+        // 서버로 보낼 때와 달리 글자 수를 아낄 이유가 없다. 입력란에 있는 만큼 다 읽는다.
+        val editor = ConnectionEditor(connection)
+        val before = session.readBeforeCursor(editor, FULL_BEFORE_CHARS)
+        val after = connection.getTextAfterCursor(FULL_AFTER_CHARS, 0)?.toString().orEmpty()
+        val original = before + after
+        if (original.isBlank()) {
+            notify(getString(R.string.ai_empty))
+            return
+        }
+
+        aiBusy = true
+        keyboard?.setAiBusy(true)
+        val requestId = aiRequestId.incrementAndGet()
+
+        Thread {
+            val result = runCatching { session.engine.correctAll(original) }
+            mainHandler.post {
+                if (aiRequestId.get() != requestId) return@post
+                aiBusy = false
+                keyboard?.setAiBusy(false)
+                result
+                    .onSuccess { fixed ->
+                        if (!fixed.changed) {
+                            notify(getString(R.string.ai_unchanged))
+                        } else {
+                            applyAiResult(before, after, fixed.text)
+                            notify(resources.getQuantityString(R.plurals.correct_all_done, fixed.corrections.size, fixed.corrections.size))
+                        }
+                    }
+                    .onFailure { notify(getString(R.string.correct_all_failed)) }
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
+    }
+
     override fun onAiCorrect() {
         if (translating) {
             notify(getString(R.string.translate_blocks_ai))
@@ -1062,6 +1122,13 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
          * 카톡 한 줄짜리는 최소 과금 50 자라 400 번이다. 되돌리려는 것이 그 시절 감이니
          * 창 크기도 그때 것이 맞다.
          */
+        /**
+         * 기기 안 전체교정이 읽는 길이. 서버로 보낼 때와 달리 **글자가 곧 요금이 아니라서**
+         * 아낄 이유가 없다. 입력란에 있는 만큼 다 읽는다.
+         */
+        const val FULL_BEFORE_CHARS = 20000
+        const val FULL_AFTER_CHARS = 20000
+
         const val AI_BEFORE_CHARS = 1500
         const val AI_AFTER_CHARS = 500
 

@@ -11,6 +11,9 @@
     <string name="ai_unchanged">AI 가 보기에 고칠 것이 없습니다</string>
     <string name="ai_failed">AI 교정 실패: %1$s</string>
     <string name="toolbar_correction">교정</string>
+    <!-- 자판 위 '전체' 단추. 짧게 누르면 기기 안 전체교정, 길게 누르면 서버 AI. -->
+    <string name="toolbar_correct_all">전체</string>
+    <string name="correct_all_failed">교정하지 못했어요</string>
     <string name="toolbar_translate">번역</string>
     <string name="lang_english">영어</string>
     <string name="lang_japanese">일본어</string>
@@ -104,4 +107,7 @@
     <string name="ai_notice">AI 전체 교정을 누를 때만 그 입력란의 글이 서버를 거쳐 OpenAI 로 가요. 타이핑 중 실시간 교정은 기기 안에서만 처리돼요.</string>
 
     <string name="privacy_notice">타이핑한 내용은 기기 밖으로 나가지 않아요. 실시간 교정은 전부 기기 안에서 처리하고, 비밀번호·이메일·URL 입력란에서는 자동으로 꺼져요.</string>
+    <plurals name="correct_all_done">
+        <item quantity="other">%d곳을 고쳤어요</item>
+    </plurals>
 </resources>
