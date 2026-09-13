@@ -197,7 +197,13 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             // Kiwi 는 맨 끝에 올린다. 105MB 를 꺼내고 읽느라 수 초가 걸려서, 앞의 둘이
             // 먼저 준비돼야 그 동안에도 교정이 된다. 32비트 폰에서는 안 올라오고,
             // 그때는 형태소 사전이 그대로 이 일을 한다.
-            kiwi = KiwiSpacer.open(this).also { session.engine.longSpacer = it }
+            //
+            // **부르는 것 자체를 감싼다.** KiwiSpacer 안에도 runCatching 이 있지만, 그건
+            // 이미 클래스가 올라온 뒤의 이야기다. 네이티브 라이브러리가 없는 기기에서는
+            // `KiwiSpacer` 를 **처음 건드리는 순간** NoClassDefFoundError 가 나서
+            // 그 안으로 들어가지도 못한다. arm64 가 아닌 폰이 정확히 그 경우다.
+            runCatching { KiwiSpacer.open(this) }
+                .onSuccess { kiwi = it; session.engine.longSpacer = it }
         }.apply {
             isDaemon = true
             priority = Thread.MIN_PRIORITY
@@ -252,7 +258,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 네이티브 쪽이 잡고 있는 것을 놓아 준다. 키보드가 죽어도 모델이 남으면
         // 다음에 올릴 때 메모리가 모자란다.
         session.engine.longSpacer = null
-        kiwi?.close()
+        runCatching { kiwi?.close() }
         kiwi = null
         super.onDestroy()
     }
