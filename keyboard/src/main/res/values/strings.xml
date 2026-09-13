@@ -11,6 +11,15 @@
     <string name="ai_unchanged">AI 가 보기에 고칠 것이 없습니다</string>
     <string name="ai_failed">AI 교정 실패: %1$s</string>
     <string name="toolbar_correction">교정</string>
+    <string name="toolbar_translate">번역</string>
+    <string name="lang_english">영어</string>
+    <string name="lang_japanese">일본어</string>
+    <string name="lang_chinese">중국어</string>
+    <string name="translate_hint">한국어를 쓰면 %1$s로 번역돼 들어갑니다</string>
+    <string name="translate_downloading">%1$s 언어팩 내려받는 중… (처음 한 번, 약 30MB)</string>
+    <string name="translate_download_failed">%1$s 언어팩을 받지 못했습니다. 인터넷을 확인해 주세요</string>
+    <string name="translate_failed">번역하지 못했습니다</string>
+    <string name="translate_blocks_ai">번역 중에는 AI 교정을 쓸 수 없어요</string>
     <string name="ai_busy">이미 교정하는 중입니다</string>
     <string name="ai_no_connection">입력란과 연결되지 않았습니다</string>
     <string name="ai_no_key">이 빌드에는 AI 서버 주소가 없어 AI 교정을 쓸 수 없습니다.</string>

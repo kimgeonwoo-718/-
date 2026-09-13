@@ -101,4 +101,8 @@ dependencies {
     // Google Play 구독. 결제창을 띄우고 구매 토큰을 받는 것까지만 한다 —
     // "구독자인가" 는 서버가 그 토큰을 Play 에 물어 판단한다.
     implementation("com.android.billingclient:billing-ktx:7.1.1")
+
+    // 온디바이스 번역 (구글 ML Kit). 언어팩은 처음 쓸 때 기기가 내려받고, 번역 자체는
+    // 기기 안에서만 돈다 — 서버도 AI 한도도 쓰지 않는다.
+    implementation("com.google.mlkit:translate:17.0.3")
 }

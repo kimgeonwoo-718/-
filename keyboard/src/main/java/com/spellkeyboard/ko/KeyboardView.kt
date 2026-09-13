@@ -68,6 +68,12 @@ class KeyboardView @JvmOverloads constructor(
         /** 자판 위 '교정' 동그라미. 실시간 교정을 끄고 켠다. */
         fun onToggleAutoCorrect()
 
+        /** 번역 입력줄 열기/닫기. */
+        fun onToggleTranslate()
+
+        /** 번역 입력줄의 언어 칩을 눌러 다음 언어로. */
+        fun onCycleTranslateTarget()
+
         /** 자판 위 '교정' 버튼. 실시간 온디바이스 교정을 끄고 켠다. */
 
         /** 스페이스를 꾹 누른 채 밀어서 커서를 [delta] 글자만큼 옮긴다. 음수면 왼쪽. */
@@ -114,6 +120,11 @@ class KeyboardView @JvmOverloads constructor(
     private val clipboardButton: TextView
     private val correctionButton: TextView
     private var autoCorrectOn = true
+    private val translateButton: TextView
+    private var translateOn = false
+    private val translatePanel: LinearLayout
+    private val translateSource: TextView
+    private val translateTarget: TextView
     private val settingsButton: TextView
     private val clipboardTitle: TextView
     private val rowContainer: LinearLayout
@@ -176,6 +187,13 @@ class KeyboardView @JvmOverloads constructor(
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
+        // 번역 입력줄 열기/닫기. 열려 있으면 '교정' 처럼 강조색.
+        translateButton = toolbarButton(context.getString(R.string.toolbar_translate)) {
+            listener?.onToggleTranslate()
+        }.apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
         settingsButton = toolbarButton("⚙\uFE0E") { listener?.onOpenSettings() }
 
         // 삼성처럼 동그라미들을 줄 전체에 고르게 펼친다. 사이와 양끝의 빈칸이 같은 무게라
@@ -184,13 +202,40 @@ class KeyboardView @JvmOverloads constructor(
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(6), 0, dp(6), 0)
-            listOf(emojiButton, aiButton, clipboardButton, correctionButton, settingsButton).forEach { button ->
+            listOf(emojiButton, aiButton, clipboardButton, correctionButton, translateButton, settingsButton).forEach { button ->
                 addView(View(context), LayoutParams(0, 1, 1f))
                 addView(button, toolbarParams())
             }
             addView(View(context), LayoutParams(0, 1, 1f))
         }
         addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOLBAR_HEIGHT_DP)))
+
+        // 번역 입력줄. 지보드처럼 자판 바로 위에 열리고, 여기 쓴 한국어가 앱에는 번역돼 들어간다.
+        translateSource = TextView(context).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.START
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), 0, dp(8), 0)
+        }
+        translateTarget = TextView(context).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(dp(10), 0, dp(10), 0)
+            attachKeyTouch(this, onPress = { listener?.onCycleTranslateTarget() })
+        }
+        translatePanel = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isVisible = false
+            setPadding(dp(4), dp(2), dp(4), dp(2))
+            addView(translateSource, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+            addView(translateTarget, LayoutParams(LayoutParams.WRAP_CONTENT, dp(TOOLBAR_BUTTON_DP)))
+            addView(View(context), LayoutParams(dp(6), 1))
+            addView(toolbarButton("✕") { listener?.onToggleTranslate() }, toolbarParams())
+        }
+        addView(translatePanel, LayoutParams(LayoutParams.MATCH_PARENT, dp(TRANSLATE_HEIGHT_DP)))
 
         rowContainer = KeyPad(context).apply {
             orientation = VERTICAL
@@ -231,6 +276,35 @@ class KeyboardView @JvmOverloads constructor(
     /** AI 가 도는 동안 AI 버튼을 흐리게. */
     fun setAiBusy(busy: Boolean) {
         aiButton.alpha = if (busy) 0.35f else 1f
+    }
+
+    /** 번역 입력줄을 열거나 닫는다. [targetLabel] 은 언어 칩에 쓰는 이름("영어"). */
+    fun setTranslateMode(on: Boolean, targetLabel: String) {
+        translateOn = on
+        translateTarget.text = "$targetLabel ▾"
+        translatePanel.isVisible = on
+        if (on) closePanels()
+        styleTranslateButton()
+    }
+
+    /** 입력줄에 지금까지 쓴 한국어. 비면 [hint] 가 흐리게 보인다. */
+    fun setTranslateSource(text: String, hint: String) {
+        translateSource.text = text
+        translateSource.hint = hint
+    }
+
+    private fun styleTranslateButton() {
+        if (translateOn) {
+            translateButton.setTextColor(theme.onAccent)
+            translateButton.background = circle(theme.accent)
+        } else {
+            styleToolbarButton(translateButton)
+        }
+        translateSource.setTextColor(theme.text)
+        translateSource.setHintTextColor(theme.hint)
+        translateTarget.setTextColor(theme.onAccent)
+        translateTarget.background = roundRect(theme.accent)
+        translatePanel.background = roundRect(keyFill(theme.panelItem))
     }
 
     /**
@@ -309,6 +383,7 @@ class KeyboardView @JvmOverloads constructor(
     private fun restyle() {
         listOf(emojiButton, aiButton, clipboardButton, settingsButton).forEach { styleToolbarButton(it) }
         styleCorrectionButton()
+        styleTranslateButton()
         clipboardTitle.setTextColor(theme.text)
         emojiTitle.setTextColor(theme.text)
     }
@@ -1287,6 +1362,7 @@ class KeyboardView @JvmOverloads constructor(
          * 보여, 사용자가 그어 준 선(위쪽 약 16dp)만큼 더 줄였다. 줄 34dp 에 동그라미 28dp.
          */
         const val TOOLBAR_HEIGHT_DP = 34
+        const val TRANSLATE_HEIGHT_DP = 40
         const val TOOLBAR_BUTTON_DP = 28
         const val FLASH_MS = 1600L
         // 삼성 키보드 실측에 맞춘 값. 키는 조금 높고, 틈은 조금 넓다.

@@ -12,6 +12,7 @@ object Prefs {
     private const val KEY_AUTO_CORRECT = "auto_correct"
     private const val KEY_THEME = "theme_mode"
     private const val KEY_LAYOUT = "layout_type"
+    private const val KEY_TRANSLATE_TARGET = "translate_target"
     private const val KEY_KEY_ALPHA = "key_alpha_percent"
     private const val KEY_CLIPBOARD = "clipboard"
     private const val KEY_INSTALL_ID = "install_id"
@@ -45,6 +46,15 @@ object Prefs {
 
     fun setLayoutType(context: Context, type: LayoutType) {
         prefs(context).edit().putString(KEY_LAYOUT, type.name).apply()
+    }
+
+    /** 번역 입력줄이 내놓는 언어. 마지막에 고른 것을 기억한다. */
+    fun translateTarget(context: Context): TargetLanguage =
+        runCatching { TargetLanguage.valueOf(prefs(context).getString(KEY_TRANSLATE_TARGET, "").orEmpty()) }
+            .getOrDefault(TargetLanguage.ENGLISH)
+
+    fun setTranslateTarget(context: Context, target: TargetLanguage) {
+        prefs(context).edit().putString(KEY_TRANSLATE_TARGET, target.name).apply()
     }
 
     /**

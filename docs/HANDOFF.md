@@ -604,3 +604,34 @@ NNBC(단위 의존명사)·XSN 을 체언으로 친다. `boundMorphemeStartsAt/e
 - 유니그램 문턱을 3 으로 내리면 '제가할게요' 같은 오타가 "아는 말" 이 돼 못 고친다. 5 로 둔 이유.
 - 말뭉치를 더 구하면 (특히 구어 바이그램) `count_ngrams.py` 의 `texts()` 에 읽기만 보태면 된다.
 - 1세대 부품(`Spacer.space` 직접 호출, `Speller`)은 언어모델을 못 열었을 때의 대비책으로 남아 있다.
+
+## 실시간 번역 입력줄 — 온디바이스 (2026-09-13)
+
+사용자가 고른 것: 서버 LLM 이 아니라 **기기 안에서** 도는 번역. 구글 ML Kit 번역
+(`com.google.mlkit:translate:17.0.3`)을 쓴다. 언어팩(언어당 약 30MB)은 처음 쓸 때 기기가
+내려받고, 그 뒤로는 네트워크·서버 비용·AI 한도 없이 돈다.
+
+### 모양 (지보드 방식)
+
+도구 줄의 '번역' 동그라미를 누르면 자판 위에 입력줄이 열린다. 거기 한국어를 치면 **앱 입력란에는
+번역문이** 들어가고, 글자를 더 치거나 지우면 번역문이 갈아 끼워진다. 오른쪽 언어 칩('영어 ▾')을
+누르면 영어→일본어→중국어로 돈다. 엔터는 번역문을 그대로 보내고(앱의 전송 동작), ✕ 는 번역문을
+남긴 채 입력줄만 닫는다.
+
+### 부품
+
+| 파일 | 역할 |
+|---|---|
+| `core/.../editor/TranslateBuffer.kt` | 입력줄의 `Editor`. 키 입력·한글 조합·자동 교정이 이 위에서 평소처럼 돈다. `TranslationOutput` 은 앱 입력란에 넣은 번역문 길이를 기억했다가 갈아 끼운다 |
+| `keyboard/.../OnDeviceTranslator.kt` | ML Kit 감싸개. `TargetLanguage`(영·일·중), 언어팩 확인/다운로드, 번역 |
+| `SpellKeyboardService` | `translating` 이면 `editor()` 가 `translateBuffer` 를 돌려준다 — 모든 키 경로가 그걸 거치므로 여기 한 군데로 갈린다. 내용이 바뀌면 250ms 뒤 번역, 요청 번호로 늦은 결과 폐기, 엔터는 최신 번역이 들어간 뒤에만 보냄 |
+| `KeyboardView` | '번역' 동그라미(켜지면 강조색), 입력줄 패널(`setTranslateMode/setTranslateSource`) |
+
+### 알아 둘 것
+
+- 자동 교정이 번역 전에 한국어를 고친다 — '안녕하새요' 를 치면 '안녕하세요' 로 고쳐진 뒤 번역된다.
+- 번역 모드에서 AI 교정 버튼은 막아 뒀다 (입력란에 든 건 번역문이라 고칠 대상이 아니다).
+- 입력란이 바뀌거나(`onStartInput`) 키보드가 내려가면(`onFinishInput`) 모드가 풀린다.
+- ML Kit 은 이 컨테이너에서 컴파일할 수 없다(구글 메이븐 차단). 검증은 CI 뿐이다. API 이름은
+  공식 문서대로 썼다: `Translation.getClient(TranslatorOptions)`, `downloadModelIfNeeded(DownloadConditions)`, `translate(text)`.
+- 원문 언어는 한국어로 고정. 영어 자판으로 영어를 치면 엉뚱한 결과가 나온다 — 지보드도 같다.
