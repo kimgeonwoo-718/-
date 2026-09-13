@@ -2,6 +2,7 @@ package com.spellkeyboard.core.correct
 
 import com.spellkeyboard.core.lm.ContextCorrector
 import com.spellkeyboard.core.lm.LanguageModel
+import com.spellkeyboard.core.spacing.LongSpacer
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.Speller
 
@@ -53,6 +54,20 @@ class CorrectionEngine(
     /** 사전 기반 맞춤법 교정기. 규칙 사전이 못 잡는 오타를 분석 비용으로 잡는다. */
     @Volatile
     var speller: Speller? = null
+        set(value) {
+            field = value
+            analysed.clear()
+        }
+
+    /**
+     * 공백을 아예 안 친 긴 덩어리를 푸는 더 나은 도구. 없으면 [spacer] 가 한다.
+     *
+     * 같은 말뭉치 3,000 문장을 공백 전부 지우고 재면 우리 형태소 사전은 경계 F1 87.6%,
+     * Kiwi 는 96.1% 다(문장 통째로는 44.2% vs 66.2%). 그 차이를 쓰려고 낸 자리다.
+     * 안드로이드·Kiwi 에 기대지 않으려고 코어에는 자리만 두고 앱이 끼운다.
+     */
+    @Volatile
+    var longSpacer: LongSpacer? = null
         set(value) {
             field = value
             analysed.clear()
@@ -246,7 +261,7 @@ class CorrectionEngine(
      * 디코더의 합치기(KIND_MERGE)가 도로 붙인다.
      */
     private fun applyLongSplit(text: String, sink: MutableList<Correction>): String {
-        val spacer = this.spacer ?: return text
+        val long = longSpacer ?: LongSpacer { (this.spacer ?: return@LongSpacer null).spaceLong(it) }
         return mapWords(text) { word ->
             if (word.length <= LONG_WORD_SYLLABLES) return@mapWords word
             // 형태소 사전은 **어절**을 받는다. 끝에 붙은 마침표 하나가 분석을 통째로
@@ -258,7 +273,7 @@ class CorrectionEngine(
             val core = word.substring(start, end)
             if (core.length <= LONG_WORD_SYLLABLES) return@mapWords word
 
-            val spaced = analyse(LONG_KEY + core) { spacer.spaceLong(core) ?: core }
+            val spaced = analyse(LONG_KEY + core) { long.space(core) ?: core }
             if (spaced == core) return@mapWords word
             val whole = word.substring(0, start) + spaced + word.substring(end)
             sink += Correction(word, whole, "띄어쓰기")

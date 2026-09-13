@@ -27,6 +27,64 @@ val aiServerUrl: String = run {
  * 빌드할 때마다 서명이 바뀐다. 그러면 덮어쓰기 설치가 안 되고, Play 에 올릴 수도 없다.
  * 비밀값으로 고정한다.
  */
+/**
+ * Kiwi 형태소 분석기.
+ *
+ * 공백을 아예 안 친 글을 푸는 데 우리 엔진보다 확실히 낫다(같은 말뭉치 3,000 문장에서
+ * 경계 F1 87.6% → 96.1%, 문장 통째 44.2% → 66.2%). 그 자리에만 쓴다 —
+ * 멀쩡한 문장에 들이대면 합성어를 쪼갠다.
+ *
+ * AAR(10MB)과 모델(84MB)은 **저장소에 넣지 않고 빌드할 때 받는다.** 둘 다 남의 산출물이고,
+ * 합쳐 94MB 를 git 에 넣으면 clone 이 그만큼 무거워진다.
+ */
+val kiwiVersion = "v0.23.2"
+val kiwiHome: File = layout.buildDirectory.dir("kiwi").get().asFile
+val kiwiAar: File = File(kiwiHome, "kiwi-android-$kiwiVersion.aar")
+val kiwiModelAssets: File = File(kiwiHome, "assets")
+
+/** 받다 만 파일을 쓰지 않게, 임시 이름으로 받고 다 받은 뒤에 옮긴다. */
+fun download(url: String, target: File) {
+    if (target.exists() && target.length() > 0) return
+    target.parentFile.mkdirs()
+    val partial = File(target.parentFile, target.name + ".part")
+    logger.lifecycle("Kiwi 내려받는 중: $url")
+    uri(url).toURL().openStream().use { input -> partial.outputStream().use { input.copyTo(it) } }
+    check(partial.length() > 0) { "받은 파일이 비었다: $url" }
+    partial.renameTo(target)
+}
+
+val fetchKiwi by tasks.registering {
+    description = "Kiwi AAR 과 모델을 받아 둔다"
+    outputs.dir(kiwiHome)
+    // 받은 것이 그대로 있으면 다시 받지 않는다.
+    outputs.upToDateWhen { kiwiAar.exists() && File(kiwiModelAssets, "kiwi/sj.morph").exists() }
+    doLast {
+        val base = "https://github.com/bab2min/Kiwi/releases/download/$kiwiVersion"
+        download("$base/kiwi-android-$kiwiVersion.aar", kiwiAar)
+
+        val modelDir = File(kiwiModelAssets, "kiwi")
+        if (!File(modelDir, "sj.morph").exists()) {
+            val tgz = File(kiwiHome, "model.tgz")
+            download("$base/kiwi_model_${kiwiVersion}_base.tgz", tgz)
+            modelDir.mkdirs()
+            // 꾸러미 안은 models/cong/base/* 다. 경로를 납작하게 펴서 넣는다 —
+            // 앱은 이 폴더 하나만 통째로 꺼내 쓴다.
+            //
+            // 바깥 tar 를 부르지 않는다. 그래들에 들어 있는 것으로 풀면 러너에 tar 가
+            // 있든 없든, 설정 캐시가 켜지든 말든 똑같이 돈다.
+            copy {
+                from(tarTree(resources.gzip(tgz))) {
+                    include("models/cong/base/*")
+                    eachFile { path = name }
+                }
+                into(modelDir)
+                includeEmptyDirs = false
+            }
+            check(File(modelDir, "cong.mdl").exists()) { "모델을 못 풀었다: $modelDir" }
+        }
+    }
+}
+
 val keystoreFile: File? = System.getenv("KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
 
 android {
@@ -57,6 +115,10 @@ android {
     buildFeatures {
         buildConfig = true
     }
+
+    // 받아 놓은 Kiwi 모델을 에셋으로 싣는다. 앱이 처음 쓸 때 파일로 꺼내 놓고
+    // 그 경로를 Kiwi 에 넘긴다 — 네이티브 쪽이 파일을 mmap 해야 해서 스트림으로는 안 된다.
+    sourceSets["main"].assets.srcDir(kiwiModelAssets)
 
     signingConfigs {
         if (keystoreFile != null) {
@@ -99,6 +161,10 @@ android {
 }
 
 dependencies {
+    // Kiwi. arm64-v8a 에만 네이티브 라이브러리가 있어서 32비트 폰에서는 안 올라온다 —
+    // 그때는 기존 형태소 사전으로 돌아간다(KiwiSpacer 참고).
+    implementation(files(kiwiAar))
+
     // 한글 오토마타와 교정 엔진. 안드로이드에 의존하지 않는 순수 Kotlin 모듈이다.
     implementation(project(":core"))
 
@@ -116,3 +182,6 @@ dependencies {
     // 기기 안에서만 돈다 — 서버도 AI 한도도 쓰지 않는다.
     implementation("com.google.mlkit:translate:17.0.3")
 }
+
+// 에셋을 모으기 전에 받아 둬야 한다. preBuild 에 걸면 모든 변형(variant)에 다 걸린다.
+tasks.named("preBuild") { dependsOn(fetchKiwi) }
