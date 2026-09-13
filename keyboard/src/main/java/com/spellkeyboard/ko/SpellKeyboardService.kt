@@ -23,6 +23,8 @@ import com.spellkeyboard.core.hangul.HangulAutomata
 import com.spellkeyboard.core.editor.TranslateBuffer
 import com.spellkeyboard.core.editor.TranslationOutput
 import com.spellkeyboard.core.lm.ContextCorrector
+import com.spellkeyboard.core.translate.ChatText
+import com.spellkeyboard.core.translate.Phrasebook
 import com.spellkeyboard.core.translate.SentenceSplitter
 import com.spellkeyboard.core.translate.TranslationMemory
 import com.spellkeyboard.core.lm.LanguageModel
@@ -627,18 +629,42 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 빠르기도 하고, 앞쪽 번역문이 이유 없이 흔들리지도 않는다.
         val sentences = sentenceSplitter.split(source)
         val serial = ++translateSerial
-        val missing = translationMemory.missing(sentences)
-        if (missing.isEmpty()) {
+        val code = target.phrasebook
+
+        // 모델을 부르기 전에 두 가지를 먼저 한다.
+        // 1) 채팅 한국어를 다듬는다 — 마침표를 붙이고 'ㅋㅋ' 와 늘여 쓴 글자를 떼어 낸다.
+        //    번역기는 문장다운 문장으로 배웠고, 그렇지 않은 입력에서 눈에 띄게 나빠진다.
+        // 2) 관용구 표를 본다 — 자주 쓰는 채팅 문장은 사람이 옮겨 둔 것이 모델보다 낫다.
+        //    '저는 좋아요' 를 모델은 "I like it" 으로 옮겼다.
+        val pending = ArrayList<String>()
+        for (sentence in translationMemory.missing(sentences)) {
+            val normalized = ChatText.normalize(sentence)
+            if (normalized.core.isEmpty()) {
+                // 'ㅋㅋ' 만 있는 문장. 옮길 말이 없으니 감탄만 남긴다.
+                val only = normalized.emphasis?.let { Phrasebook.emphasis(it, code) }.orEmpty()
+                translationMemory.remember(sentence, only)
+                continue
+            }
+            val fromBook = Phrasebook.lookup(normalized.core, code)
+            if (fromBook != null) {
+                translationMemory.remember(sentence, Phrasebook.decorate(fromBook, normalized, code))
+                continue
+            }
+            pending += sentence
+        }
+        if (pending.isEmpty()) {
             renderTranslation(sentences, source, serial)
             return
         }
-        var remaining = missing.size
-        for (sentence in missing) {
+
+        var remaining = pending.size
+        for (sentence in pending) {
+            val normalized = ChatText.normalize(sentence)
             translator.translate(
-                sentence, target,
+                normalized.core + normalized.ending, target,
                 onResult = { result ->
                     // 늦게 온 결과라도 기억은 해 둔다. 다음 요청이 그걸 쓴다.
-                    translationMemory.remember(sentence, result)
+                    translationMemory.remember(sentence, Phrasebook.decorate(result, normalized, code))
                     if (--remaining == 0) renderTranslation(sentences, source, serial)
                 },
                 onFailed = {

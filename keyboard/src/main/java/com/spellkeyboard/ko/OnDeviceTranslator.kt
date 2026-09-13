@@ -7,12 +7,22 @@ import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.Translator
 import com.google.mlkit.nl.translate.TranslatorOptions
+import com.spellkeyboard.core.translate.Phrasebook
 
-/** 번역 입력줄이 내놓는 언어. 원문은 늘 한국어다 — 한국어 키보드니까. */
-enum class TargetLanguage(val code: String, @StringRes val label: Int) {
-    ENGLISH(TranslateLanguage.ENGLISH, R.string.lang_english),
-    JAPANESE(TranslateLanguage.JAPANESE, R.string.lang_japanese),
-    CHINESE(TranslateLanguage.CHINESE, R.string.lang_chinese);
+/**
+ * 번역 입력줄이 내놓는 언어. 원문은 늘 한국어다 — 한국어 키보드니까.
+ *
+ * [phrasebook] 은 ML Kit 의 [code] 와 같은 값일 가능성이 높지만, 남의 라이브러리 상수에
+ * 기대면 값이 바뀔 때 관용구 표가 조용히 안 맞게 된다. 따로 적어 둔다.
+ */
+enum class TargetLanguage(
+    val code: String,
+    val phrasebook: String,
+    @StringRes val label: Int
+) {
+    ENGLISH(TranslateLanguage.ENGLISH, Phrasebook.ENGLISH, R.string.lang_english),
+    JAPANESE(TranslateLanguage.JAPANESE, Phrasebook.JAPANESE, R.string.lang_japanese),
+    CHINESE(TranslateLanguage.CHINESE, Phrasebook.CHINESE, R.string.lang_chinese);
 
     fun next(): TargetLanguage = entries[(ordinal + 1) % entries.size]
 

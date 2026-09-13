@@ -35,5 +35,5 @@ class TranslationMemory(private val capacity: Int = 64) {
      * 사용자는 글이 사라진 줄로 안다.
      */
     fun assemble(sentences: List<String>): String =
-        sentences.joinToString(" ") { known[it] ?: it }
+        sentences.map { known[it] ?: it }.filter { it.isNotBlank() }.joinToString(" ")
 }
