@@ -105,6 +105,7 @@ class CorrectionEngine(
         var current = applyWordRules(text, sink)
         val context = this.context
         if (context != null) {
+            current = applyLongSplit(current, sink)
             current = applyContext(context, current, contextBefore, sink)
         } else {
             current = applySpacer(current, sink)
@@ -233,6 +234,38 @@ class CorrectionEngine(
         return fixed
     }
 
+    /**
+     * 문맥 교정기가 **손도 못 대는** 긴 덩어리를 형태소 사전이 먼저 푼다.
+     *
+     * 디코더는 [ContextCorrector.MAX_TOKEN_SYLLABLES] 음절이 넘는 어절을 아예 쳐다보지
+     * 않는다(비터비 칸이 음절 제곱으로 늘어서 그렇다). 그런데 **띄어쓰기를 통째로 생략한
+     * 글은 30~50음절로 들어온다** — 그게 진짜 쓰임이다. 실기기에서 그런 글에 전체교정을
+     * 눌렀더니 공백이 하나도 안 들어갔다.
+     *
+     * 여기서 대강 풀어 주면 디코더가 그 결과를 받아 다듬는다. 사전이 과하게 나눈 자리는
+     * 디코더의 합치기(KIND_MERGE)가 도로 붙인다.
+     */
+    private fun applyLongSplit(text: String, sink: MutableList<Correction>): String {
+        val spacer = this.spacer ?: return text
+        return mapWords(text) { word ->
+            if (word.length <= LONG_WORD_SYLLABLES) return@mapWords word
+            // 형태소 사전은 **어절**을 받는다. 끝에 붙은 마침표 하나가 분석을 통째로
+            // 실패시켜서, 부호를 떼고 넘긴 뒤 도로 붙인다. 이걸 안 했더니 마지막 조각이
+            // 늘 안 풀렸다 — 문장 끝이라 부호가 거의 항상 붙어 있기 때문이다.
+            val start = word.indexOfFirst { it in HANGUL_SYLLABLES }
+            if (start < 0) return@mapWords word
+            val end = word.indexOfLast { it in HANGUL_SYLLABLES } + 1
+            val core = word.substring(start, end)
+            if (core.length <= LONG_WORD_SYLLABLES) return@mapWords word
+
+            val spaced = analyse(LONG_KEY + core) { spacer.spaceLong(core) ?: core }
+            if (spaced == core) return@mapWords word
+            val whole = word.substring(0, start) + spaced + word.substring(end)
+            sink += Correction(word, whole, "띄어쓰기")
+            whole
+        }
+    }
+
     /** 붙여 쓴 덩어리를 어절로 나눈다. 사전이 아직 안 올라왔으면 아무것도 하지 않는다. */
     private fun applySpacer(text: String, sink: MutableList<Correction>): String {
         val spacer = this.spacer ?: return text
@@ -273,6 +306,13 @@ class CorrectionEngine(
         private const val SPELL_KEY = "\u0000p"
         private const val RULE_KEY = "\u0000r"
         private const val CONTEXT_KEY = "\u0000c"
+        private const val LONG_KEY = "\u0000l"
+
+        /**
+         * 이보다 긴 어절은 문맥 교정기가 보지 못하므로 형태소 사전이 먼저 푼다.
+         * [ContextCorrector.MAX_TOKEN_SYLLABLES] 와 같아야 한다 — 그 값이 디코더의 한계다.
+         */
+        private const val LONG_WORD_SYLLABLES = ContextCorrector.MAX_TOKEN_SYLLABLES
 
         private val WHITESPACE = Regex("\\s+")
 

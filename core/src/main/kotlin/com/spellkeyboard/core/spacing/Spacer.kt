@@ -65,6 +65,58 @@ class Spacer(private val dictionary: SpacingDictionary) {
         return if (spaced == word) null else spaced
     }
 
+
+    /**
+     * 아주 긴 덩어리를 푼다. 공백을 **아예 안 친** 글을 위한 것이다.
+     *
+     * [space] 는 [MAX_SYLLABLES] 음절까지만 본다. 격자가 음절 수에 따라 커져서 그 위로는
+     * 실시간 입력을 막기 때문이다. 그런데 빨리 치느라 띄어쓰기를 통째로 생략한 글은
+     * 30~50음절로 들어온다 — 그게 진짜 쓰임인데 [space] 는 그런 글에 null 을 준다.
+     *
+     * 여기서는 창을 앞에서부터 밀며 푼다. 창 끝에 걸친 조각은 잘렸을 수 있으니
+     * **내보내지 않고 다음 창으로 넘긴다.**
+     *
+     * @return 띄운 결과. 한 군데도 못 띄우면 null.
+     */
+    fun spaceLong(word: String): String? {
+        if (word.length <= MAX_SYLLABLES) return space(word)
+
+        val out = ArrayList<String>()
+        var rest = word
+        while (rest.length > MAX_SYLLABLES) {
+            val pieces = firstSplit(rest.substring(0, MAX_SYLLABLES))
+            // 이 창을 어떻게도 못 나누면 더 밀어 봐야 같은 답이다. 남은 것을 그대로 둔다.
+            if (pieces == null) break
+            // 마지막 조각은 창 끝에서 잘렸을 수 있다. 되돌려 다음 창에 붙인다.
+            out += pieces.dropLast(1)
+            rest = pieces.last() + rest.substring(MAX_SYLLABLES)
+        }
+        out += space(rest)?.split(' ') ?: listOf(rest)
+
+        val spaced = out.joinToString(" ")
+        return if (spaced == word) null else spaced
+    }
+
+    /**
+     * 창 하나를 나눈다. 통째로는 안 나뉘어도 앞쪽만 잘라 보면 나뉘는 일이 있어서
+     * ('...했으니일' 처럼 끝이 어중간할 때) 창을 줄여 가며 시도한다.
+     *
+     * 반드시 **두 조각 이상**을 돌려준다 — 한 조각이면 창을 밀 수가 없어 제자리걸음이다.
+     */
+    private fun firstSplit(window: String): List<String>? {
+        var length = window.length
+        while (length >= MIN_SYLLABLES * 2) {
+            val pieces = space(window.substring(0, length))?.split(' ')
+            if (pieces != null && pieces.size >= 2) {
+                // 줄여서 푼 경우, 잘라 낸 꼬리를 마지막 조각에 도로 붙인다.
+                if (length == window.length) return pieces
+                return pieces.dropLast(1) + (pieces.last() + window.substring(length))
+            }
+            length--
+        }
+        return null
+    }
+
     /**
      * 이 어절이 형태소 분석기 눈에 얼마나 자연스러운지.
      *

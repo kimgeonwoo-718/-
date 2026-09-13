@@ -24,6 +24,7 @@ import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -1257,8 +1258,17 @@ class KeyboardView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * 손가락이 아직 이 뷰 위에 있는가.
+     *
+     * **여유(slop)를 둔다.** 예전에는 뷰 경계를 딱 맞게 봤는데, 그러면 길게 누르는 동안
+     * 손가락이 1픽셀만 흔들려도 밖으로 나간 것이 되어 취소된다. 도구 줄 동그라미는
+     * 28dp 라 더 그렇다 — 실기기에서 "꾹 눌러도 AI 가 안 된다" 로 나타났다.
+     * 사람 손가락은 가만히 있어도 떨린다. 안드로이드가 터치 슬롭을 두는 이유다.
+     */
     private fun insideView(view: View, event: MotionEvent): Boolean {
-        val bounds = Rect(0, 0, view.width, view.height)
+        val slop = ViewConfiguration.get(view.context).scaledTouchSlop * TOUCH_SLOP_FACTOR
+        val bounds = Rect(-slop, -slop, view.width + slop, view.height + slop)
         return bounds.contains(event.x.toInt(), event.y.toInt())
     }
 
@@ -1523,6 +1533,14 @@ class KeyboardView @JvmOverloads constructor(
          * 대신 키를 떼는 순간에 확정하므로, 미리보기가 뜬 걸 보고 손가락을 옆으로
          * 빼면 취소된다.
          */
+        /**
+         * 손가락 떨림을 얼마나 봐줄 것인가. 안드로이드 기본 슬롭의 배수다.
+         *
+         * 길게 누르는 동안은 손이 더 흔들린다 — 누르고 기다리는 동작이라 그렇다.
+         * 기본값 그대로면 도구 줄 동그라미에서 길게 누르기가 자주 취소된다.
+         */
+        const val TOUCH_SLOP_FACTOR = 3
+
         const val LONG_PRESS_MS = 300L
     }
 }
