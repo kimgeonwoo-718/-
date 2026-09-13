@@ -1058,10 +1058,17 @@ class KeyboardView @JvmOverloads constructor(
             contentDescription = label
         }
 
+    /**
+     * 도구 줄 동그라미.
+     *
+     * **[onPress] 가 마지막 인자여야 한다.** 부르는 쪽이 전부 후행 람다
+     * (`toolbarButton("☺") { ... }`)를 쓰는데, 뒤에 다른 인자를 붙이면 그 람다가
+     * 조용히 그쪽에 붙는다. 한 번 그렇게 깨뜨린 적이 있다.
+     */
     private fun toolbarButton(
         label: String,
-        onPress: () -> Unit,
-        onLongPress: (() -> Unit)? = null
+        onLongPress: (() -> Unit)? = null,
+        onPress: () -> Unit
     ): TextView =
         TextView(context).apply {
             text = label

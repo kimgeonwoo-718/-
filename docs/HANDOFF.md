@@ -806,3 +806,38 @@ APK 안 내용(93.7MB):
 - 구독 여부는 앱이 서버 헤더(`x-plan`)를 기억해 둔 값으로 본다. 폰의 값은 고칠 수 있지만
   **진짜 판단은 서버가 한다** — 구독자가 아닌데 보내면 서버가 막는다. 앱의 판단은 화면을
   어떻게 보여줄지 정하는 용도다.
+
+### 후행 람다 함정 — 빌드를 한 번 깨뜨렸다 (2026-09-13)
+
+`toolbarButton(label, onPress)` 에 길게 누르기를 붙이면서 `onLongPress` 를 **뒤에** 달았다.
+
+```kotlin
+// 이렇게 고쳤더니
+private fun toolbarButton(label: String, onPress: () -> Unit, onLongPress: (() -> Unit)? = null)
+// 기존 부르는 쪽이 전부 조용히 깨졌다
+emojiButton = toolbarButton("☺") { showEmoji() }   // 이 람다가 onLongPress 로 붙는다
+```
+
+아홉 군데에서 `No value passed for parameter 'onPress'`. **람다를 받는 인자는 마지막에
+두어라.** 지금은 `toolbarButton(label, onLongPress = null, onPress)` 순서다.
+
+#### 로컬 검사로는 못 잡는다
+
+이 저장소는 안드로이드 SDK 없이 도는 환경이라, `keyboard/` 는 그래들로 못 짓고 그래들에
+딸린 kotlinc 로 문법만 본다:
+
+```
+CP=$(ls /opt/gradle-8.14.3/lib/kotlin*.jar /opt/gradle-8.14.3/lib/annotations-*.jar \
+       /opt/gradle-8.14.3/lib/trove4j*.jar | tr '\n' ':')
+java -cp "$CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -d /tmp/out \
+     keyboard/src/main/java/com/spellkeyboard/ko/*.kt
+```
+
+`android.*` 가 없으니 에러가 1,700 개쯤 쏟아진다. 대부분 `unresolved reference` 와 그
+뒤끝(`overrides nothing`, `no 'get' operator`, `val cannot be reassigned`)이라 **신호가
+아니다**. 쓸모 있는 건 **괄호·중괄호가 안 맞는 종류**의 문법 오류뿐이다.
+
+인자 결합 오류는 여기서 **안 나온다**. 타입이 ERROR 라 컴파일러가 결합 단계까지 가지
+않는다. 실제로 그때 로그에 `No value passed for parameter` 가 0 건이었다. 그래서 글자로
+보는 검사를 따로 둔다 — 기본값 없는 람다 인자가 마지막이 아닌 함수를 찾아내는 것.
+`keyboard/` 를 고칠 때는 이 함정을 눈으로 한 번 더 확인해라.
