@@ -175,7 +175,7 @@ test('토큰과 구독자 한도는 그대로 센다', async () => {
   const up = openAi();
   const res = await handle(generate(), shared, { fetch: up.fetchImpl });
   // '안녕하세요 반갑읍니다' 는 11 자라 최소 과금 50 자로 친다.
-  assert.equal(res.headers.get('x-quota-remaining'), String(100000 - 50));
+  assert.equal(res.headers.get('x-quota-remaining'), String(20000 - 50));
 
   const days = await shared.DB.prepare('SELECT day, requests, prompt, output, thoughts FROM tokens ORDER BY day DESC LIMIT 31').all();
   assert.equal(days.results[0].prompt, 200);
@@ -188,7 +188,7 @@ test('OpenAI 가 거절하면 한도를 깎지 않는다', async () => {
   const up = openAi({ status: 429 });
   const res = await handle(generate(), shared, { fetch: up.fetchImpl });
   assert.equal(res.status, 429);
-  assert.equal(res.headers.get('x-quota-remaining'), '100000');
+  assert.equal(res.headers.get('x-quota-remaining'), '20000');
 });
 
 test('OpenAI 키가 없으면 예전처럼 구글로 간다', async () => {

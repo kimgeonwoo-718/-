@@ -255,7 +255,7 @@ export function toOpenAiRequest(body, model, options = {}) {
  *
  * 넉넉하게 잡는다. 여기 걸리는 것은 "조금 틀린 교정" 이 아니라 "교정이 아닌 것" 이다.
  */
-function tooDifferent(user, corrected) {
+export function tooDifferent(user, corrected) {
   const before = user.replace(/\s/g, '').length;
   const after = corrected.replace(/\s/g, '').length;
   // 짧은 글은 한두 글자 차이가 비율로 크게 잡힌다. 재지 않는다.

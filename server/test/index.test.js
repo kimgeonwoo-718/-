@@ -21,7 +21,7 @@ function env(overrides = {}) {
 }
 
 /** 구글 흉내. 어디로 무엇을 보냈는지 붙잡아 둔다. */
-function upstream({ status = 200, activeToken = null } = {}) {
+function upstream({ status = 200, activeToken = null, echo = false } = {}) {
   const calls = [];
   const fetchImpl = async (url, init) => {
     calls.push({ url, init });
@@ -38,8 +38,11 @@ function upstream({ status = 200, activeToken = null } = {}) {
     }
     if (url.includes(':generateContent')) {
       if (status !== 200) return new Response(JSON.stringify({ error: { message: 'boom' } }), { status });
+      // echo: 원문을 그대로 돌려준다. 서버에 길이 검사가 있어서(교정문이 원문의 60~160%),
+      // 긴 글을 보내는 시험은 답도 그만큼 길어야 본론까지 간다. '고침' 두 글자로는 막힌다.
+      const text = echo ? JSON.parse(init.body).contents[0].parts[0].text : '고침';
       return new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: '고침' }] } }],
+        candidates: [{ content: { parts: [{ text }] } }],
         usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 30, thoughtsTokenCount: 7 },
       }), { status: 200 });
     }
@@ -48,7 +51,10 @@ function upstream({ status = 200, activeToken = null } = {}) {
   return { fetchImpl, calls };
 }
 
-function generate(headers = {}, body = '{"contents":[]}') {
+/** 앱이 보내는 모양. 고칠 글이 들어 있어야 한다 — 빈 요청은 400 으로 막힌다. */
+const BODY = JSON.stringify({ contents: [{ parts: [{ text: '안녕하새요' }] }] });
+
+function generate(headers = {}, body = BODY) {
   return new Request(GENERATE, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'cf-connecting-ip': '1.2.3.4', 'x-install-id': INSTALL, ...headers },
@@ -80,7 +86,8 @@ test('요청을 구글로 넘기고 우리 키를 붙인다 — 클라이언트 
   assert.equal((await res.json()).candidates[0].content.parts[0].text, '고침');
 
   const call = up.calls.find((c) => c.url.includes(':generateContent'));
-  assert.equal(call.url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-x:generateContent');
+  // 주소의 gemini-x 는 앱이 보낸 이름이다. 서버가 정한 이름으로 나가야 한다.
+  assert.equal(call.url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
   assert.equal(call.init.headers['x-goog-api-key'], 'server-key');
   assert.equal(call.init.headers['x-install-id'], undefined);
   assert.equal(call.init.headers['x-purchase-token'], undefined);
@@ -101,13 +108,13 @@ test('구글이 거절한 요청은 세지 않는다', async () => {
   const e = env();
   const res = await handle(generate(), e, { fetch: upstream({ status: 503 }).fetchImpl, now: () => NOON_KST });
   assert.equal(res.status, 503, '상태를 그대로 전한다');
-  assert.equal(res.headers.get('x-quota-remaining'), '100000', '깎이지 않았다');
+  assert.equal(res.headers.get('x-quota-remaining'), '20000', '깎이지 않았다');
   assert.equal(e.DB.usage.size, 0);
 });
 
 test('자정을 넘기면 되살아난다', async () => {
   const e = env({ SUB_DAILY_CHARS: '120' });
-  const up = upstream();
+  const up = upstream({ echo: true });
   const body = JSON.stringify({ contents: [{ parts: [{ text: '가'.repeat(100) }] }] });
   const deps = { fetch: up.fetchImpl, now: () => NOON_KST };
 
@@ -136,7 +143,7 @@ test('구독자는 횟수 대신 글자 수로 센다 — 확인은 Play 에 한
     PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }),
     SUB_DAILY_CHARS: '1000',
   });
-  const up = upstream({ activeToken: 'paid-token' });
+  const up = upstream({ activeToken: 'paid-token', echo: true });
   const deps = { fetch: up.fetchImpl, now: () => NOON_KST };
 
   // 횟수가 아니라 글자 수로 세니 일곱 번도 한도 안이다.
@@ -167,7 +174,7 @@ test('구독자의 아주 짧은 요청도 최소 50 자로 친다 — 한 글�
     PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }),
     SUB_DAILY_CHARS: '1000',
   });
-  const deps = { fetch: upstream({ activeToken: 'paid-token' }).fetchImpl, now: () => NOON_KST };
+  const deps = { fetch: upstream({ activeToken: 'paid-token', echo: true }).fetchImpl, now: () => NOON_KST };
   const res = await handle(paidGenerate(1), e, deps);
   assert.equal(res.headers.get('x-quota-remaining'), '950');
 });
@@ -217,13 +224,34 @@ test('너무 긴 요청은 구글까지 가지 않는다', async () => {
   assert.equal(up.calls.length, 0);
 });
 
-test('모델 목록은 한도 없이 넘긴다', async () => {
+test('모델 목록은 밖에 묻지 않고 바로 답한다', async () => {
   const up = upstream();
   const req = new Request('https://spell.test/v1beta/models?pageSize=200');
   const res = await handle(req, env(), { fetch: up.fetchImpl });
   assert.equal(res.status, 200);
-  assert.equal((await res.json()).models[0].name, 'models/gemini-x');
-  assert.equal(up.calls[0].init.headers['x-goog-api-key'], 'server-key');
+  // 어느 쪽으로 보낼지는 서버가 정한다. 구글에 목록을 받아 올 이유가 없어졌다 —
+  // 앱이 맨 처음 하는 일이라 이 한 번이 그대로 첫 교정의 대기 시간이었다.
+  assert.equal((await res.json()).models[0].name, 'models/gemini-3.5-flash-lite');
+  assert.equal(up.calls.length, 0, '밖으로 나가지 않는다');
+});
+
+test('AI_PROVIDER 로 어느 쪽인지 정한다 — 키를 지우지 않아도 된다', async () => {
+  const both = { GEMINI_API_KEY: 'g', OPENAI_API_KEY: 'o' };
+  const list = async (overrides) =>
+    (await (await handle(new Request('https://spell.test/v1beta/models'), env(overrides))).json())
+      .models[0].name;
+
+  assert.equal(await list({ ...both, AI_PROVIDER: 'gemini' }), 'models/gemini-3.5-flash-lite');
+  assert.equal(await list({ ...both, AI_PROVIDER: 'openai' }), 'models/gpt-5-nano');
+  // 안 적으면 예전 규칙 그대로: OpenAI 키가 있으면 OpenAI.
+  assert.equal(await list(both), 'models/gpt-5-nano');
+  assert.equal(await list({ GEMINI_API_KEY: 'g' }), 'models/gemini-3.5-flash-lite');
+});
+
+test('쓰기로 한 쪽의 키가 없으면 503 — 다른 쪽 키가 있어도', async () => {
+  const res = await handle(generate(), env({ GEMINI_API_KEY: '', OPENAI_API_KEY: 'o', AI_PROVIDER: 'gemini' }));
+  assert.equal(res.status, 503);
+  assert.equal((await res.json()).error.message, 'server_not_configured');
 });
 
 test('모르는 경로는 404', async () => {
@@ -254,11 +282,11 @@ test('중계 객체가 있으면 구글 호출은 그 안에서 나간다 — �
   const res = await handle(generate(), env({ RELAY: relay }), { fetch: direct.fetchImpl, now: () => NOON_KST });
 
   assert.equal(res.status, 200);
-  assert.equal(res.headers.get('x-quota-remaining'), String(100000 - 50));
+  assert.equal(res.headers.get('x-quota-remaining'), String(20000 - 50));
   assert.equal(relay.calls.length, 1);
-  assert.equal(relay.calls[0].url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-x:generateContent');
+  assert.equal(relay.calls[0].url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
   assert.equal(relay.calls[0].init.method, 'POST');
-  assert.equal(relay.calls[0].init.body, '{"contents":[]}');
+  assert.equal(relay.calls[0].init.body, BODY, '교정은 앱 본문을 그대로 넘긴다');
   // 한국에서 가까운 미국이라야 한다. 홍콩은 구글·OpenAI 가 거절하므로 미국은 유지한다.
   assert.equal(relay.calls[0].options.locationHint, 'wnam');
   // 위치 힌트는 **객체를 처음 만들 때만** 먹는다. 이름이 그대로면 미국 동부에 이미
@@ -310,7 +338,7 @@ test('usageMetadata 가 없어도 죽지 않는다', async () => {
   const e = env();
   const fetchImpl = async (url) =>
     url.includes(':generateContent')
-      ? new Response('{"candidates":[]}', { status: 200 })
+      ? new Response('{"candidates":[{"content":{"parts":[{"text":"안녕하세요"}]}}]}', { status: 200 })
       : new Response('{"models":[]}', { status: 200 });
   const res = await handle(generate(), e, { fetch: fetchImpl, now: () => NOON_KST });
   assert.equal(res.status, 200);
@@ -351,4 +379,66 @@ test('시험용 목록이 비어 있으면 아무도 구독자가 아니다', as
     assert.equal(res.status, 402, 'TEST_INSTALL_IDS=' + JSON.stringify(listed));
     assert.equal(res.headers.get('x-plan'), 'free', 'TEST_INSTALL_IDS=' + JSON.stringify(listed));
   }
+});
+
+test('구글로 번역하면 우리 번역 지시문을 싣는다 — 교정은 앱 본문 그대로', async () => {
+  const seen = [];
+  const fetchImpl = async (url, init) => {
+    seen.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'Did you eat?' }] } }] }), { status: 200 });
+  };
+  const e = env({ AI_PROVIDER: 'gemini' });
+  const body = JSON.stringify({ contents: [{ parts: [{ text: '밥 먹었어?' }] }] });
+
+  const res = await handle(
+    new Request('https://spell.test/v1beta/models/gemini-x:generateContent?translate=en', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-install-id': INSTALL },
+      body,
+    }),
+    e,
+    { fetch: fetchImpl, now: () => NOON_KST }
+  );
+
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).candidates[0].content.parts[0].text, 'Did you eat?');
+  const sent = seen[0];
+  assert.match(sent.system_instruction.parts[0].text, /번역가/, '번역 지시문이 실려야 한다');
+  assert.equal(sent.contents[0].parts[0].text, '밥 먹었어?');
+  // 구글은 이 항목을 받는다. gpt-5 는 400 이라 못 줬고, 그래서 답이 매번 흔들렸다.
+  assert.equal(sent.generationConfig.temperature, 0);
+});
+
+test('번역은 길이가 달라도 안 버린다 — 구글 경로도 마찬가지다', async () => {
+  const korean = '오늘 날씨가 정말 좋아서 친구들이랑 한강에 나가 자전거를 탔어';
+  const english = 'The weather was so nice today that I went biking along the Han River with my friends, and it was honestly the best part of my whole week.';
+  const fetchImpl = async () =>
+    new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: english }] } }] }), { status: 200 });
+
+  const res = await handle(
+    new Request('https://spell.test/v1beta/models/gemini-x:generateContent?translate=en', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-install-id': INSTALL },
+      body: JSON.stringify({ contents: [{ parts: [{ text: korean }] }] }),
+    }),
+    env({ AI_PROVIDER: 'gemini' }),
+    { fetch: fetchImpl, now: () => NOON_KST }
+  );
+  assert.equal(res.status, 200, '길이 검사는 교정일 때만 건다');
+});
+
+test('구글 답이 원문과 너무 다르면 버린다 — 교정일 때', async () => {
+  const long = '가'.repeat(40);
+  const fetchImpl = async () =>
+    new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '요약함' }] } }] }), { status: 200 });
+  const res = await handle(generate({}, JSON.stringify({ contents: [{ parts: [{ text: long }] }] })),
+    env({ AI_PROVIDER: 'gemini' }), { fetch: fetchImpl, now: () => NOON_KST });
+  assert.equal(res.status, 502);
+});
+
+test('구글 답이 잘렸으면 주지 않는다 — 덮어쓰면 글이 사라진다', async () => {
+  const fetchImpl = async () =>
+    new Response(JSON.stringify({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '안녕하' }] } }] }), { status: 200 });
+  const res = await handle(generate(), env({ AI_PROVIDER: 'gemini' }), { fetch: fetchImpl, now: () => NOON_KST });
+  assert.equal(res.status, 502);
 });

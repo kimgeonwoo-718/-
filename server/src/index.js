@@ -18,6 +18,12 @@ import { kstDay, validInstallId, chargeFor, decideChars, DEFAULT_SUB_DAILY_CHARS
 import { fetchAccessToken, verifySubscription } from './play.js';
 import { cacheGet, cacheSet } from './cache.js';
 import {
+  geminiUrl,
+  toGeminiRequest,
+  fromGeminiReply,
+  DEFAULT_GEMINI_MODEL,
+} from './gemini.js';
+import {
   OPENAI_URL,
   DEFAULT_OPENAI_MODEL,
   toOpenAiRequest,
@@ -28,8 +34,6 @@ import {
   rejectsReasoning,
   TRANSLATE_TARGETS,
 } from './openai.js';
-
-const UPSTREAM = 'https://generativelanguage.googleapis.com';
 
 /**
  * 바깥으로 나가는 요청을 보내는 자리.
@@ -99,13 +103,16 @@ export async function handle(request, env, deps = {}) {
   if (url.pathname === '/health') return json(200, { ok: true });
   // Play 는 키보드 앱에 개인정보 처리방침 주소를 요구한다. 따로 호스팅할 데가 없어 여기서 낸다.
   if (request.method === 'GET' && url.pathname === '/privacy') return privacyPage(env);
-  if (!env.GEMINI_API_KEY && !env.OPENAI_API_KEY) return fail(503, 'server_not_configured');
+  // 지금 쓰기로 한 쪽의 키가 있어야 한다. 둘 중 아무거나 있으면 되는 게 아니다 —
+  // 구글로 돌려 놓고 구글 키가 없으면 교정마다 401 을 받으면서 이유는 안 보인다.
+  if (!env[provider(env) === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY']) {
+    return fail(503, 'server_not_configured');
+  }
 
-  // 모델 목록은 돈이 안 든다. 한도 없이 그대로 넘긴다. OpenAI 쪽은 우리가 모델을
-  // 정하므로 물어볼 것 없이 쓰는 이름 하나만 알려 준다.
+  // 모델 목록은 돈이 안 든다. 어느 쪽이든 **서버가 모델을 정하므로** 물어볼 것 없이
+  // 지금 쓰는 이름 하나만 알려 준다. 앱은 이 목록으로 "쓸 수 있는 이름" 을 판단한다.
   if (request.method === 'GET' && url.pathname === '/v1beta/models') {
-    const model = openAiModel(env);
-    return model ? json(200, modelList(model)) : proxy(fetchImpl, env, url, 'GET', null);
+    return json(200, modelList(provider(env) === 'openai' ? openAiModel(env) : geminiModel(env)));
   }
   // 날짜별 토큰 사용량. 개인 정보는 없고 합계뿐이라 열어 둔다 — 요금이 얼마나 나가는지
   // 구글 콘솔을 안 열고도 보려고. 숙고 토큰(thoughts)이 따로 찍히니 그게 새는지도 보인다.
@@ -164,11 +171,11 @@ async function correct(request, env, url, fetchImpl, now) {
   let usage = decideChars(await used(env.DB, charsKey, day), charge, limit);
   if (!usage.allowed) return withQuota(fail(402, 'sub_daily_limit'), usage, limit, plan, unit);
 
-  const model = openAiModel(env);
   const startedAt = Date.now();
-  const reply = model
-    ? await askOpenAi(fetchImpl, env, model, body, translateTo)
-    : await relay(fetchImpl, env, url, 'POST', body);
+  const reply =
+    provider(env) === 'openai'
+      ? await askOpenAi(fetchImpl, env, openAiModel(env), body, translateTo)
+      : await askGemini(fetchImpl, env, geminiModel(env), body, translateTo);
   reply.tookMs = Date.now() - startedAt;
 
   if (reply.status === 200) {
@@ -183,14 +190,46 @@ async function correct(request, env, url, fetchImpl, now) {
 }
 
 /**
- * 어느 모델로 보낼 것인가. OpenAI 키가 있으면 그쪽이다.
+ * 어느 쪽으로 보낼 것인가.
  *
- * 비밀값 하나로 갈리게 둔 이유: 되돌릴 때도 키 하나만 지우면 된다. 앱은 어느 쪽이든
- * 같은 모양으로 주고받으므로 APK 를 다시 깔 일이 없다.
+ * `AI_PROVIDER` 가 정하고, 안 적혀 있으면 예전처럼 "OpenAI 키가 있으면 OpenAI" 다.
+ *
+ * 예전에는 키 존재만으로 갈렸는데, 그러면 구글로 되돌리려고 **멀쩡한 키를 지워야**
+ * 했다. 배포 일감은 비밀값을 지우지 않으므로(되묻기라 CI 에서 조용히 실패한다) 사람이
+ * 손으로 wrangler 를 쳐야 하고, 되돌릴 때는 키를 다시 붙여넣어야 한다. 어느 모델을
+ * 쓰느냐는 설정이지 비밀이 아니다. wrangler.toml 한 줄로 갈리게 한다.
  */
+function provider(env) {
+  const asked = (env.AI_PROVIDER ?? '').trim().toLowerCase();
+  if (asked === 'gemini' || asked === 'google') return 'gemini';
+  if (asked === 'openai') return 'openai';
+  return env.OPENAI_API_KEY ? 'openai' : 'gemini';
+}
+
 function openAiModel(env) {
-  if (!env.OPENAI_API_KEY) return null;
   return (env.OPENAI_MODEL ?? '').trim() || DEFAULT_OPENAI_MODEL;
+}
+
+function geminiModel(env) {
+  return (env.GEMINI_MODEL ?? '').trim() || DEFAULT_GEMINI_MODEL;
+}
+
+/**
+ * 구글에 보낸다. 교정은 앱 본문 그대로, 번역은 우리 지시문으로 (gemini.js 참고).
+ * 어느 모델로 갈지는 **서버가 정한다** — 앱이 주소에 실어 보낸 이름은 쓰지 않는다.
+ * 이미 깔린 APK 들이 저마다 다른 이름을 들고 있기 때문이다.
+ */
+async function askGemini(fetchImpl, env, model, body, translateTo = null) {
+  let request;
+  let user;
+  try {
+    user = userTextOf(body);
+    request = toGeminiRequest(body, { translateTo });
+  } catch {
+    return { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) };
+  }
+  const raw = await relayTo(fetchImpl, env, geminiUrl(model), 'POST', request);
+  return fromGeminiReply(raw.status, raw.text, user, { translateTo });
 }
 
 /**
@@ -216,19 +255,6 @@ async function askOpenAi(fetchImpl, env, model, body, translateTo = null) {
   }
   // 원문을 같이 넘긴다. 교정이 아닌 답(요약, 대답, 지시문 따라가기)을 길이로 걸러낸다.
   return toGeminiReply(raw.status, raw.text, userTextOf(body), { translateTo });
-}
-
-/**
- * 구글로 그대로 넘긴다. 클라이언트 헤더는 하나도 넘기지 않는다 — 설치 ID 나 구매
- * 토큰이 바깥으로 새어 나갈 이유가 없고, 우리 키만 붙이면 된다.
- */
-async function proxy(fetchImpl, env, url, method, body) {
-  return asResponse(await relay(fetchImpl, env, url, 'GET' === method ? 'GET' : method, body));
-}
-
-/** 구글에 보낸다. 경로는 구글과 똑같이 두고 호스트만 붙인다. */
-async function relay(fetchImpl, env, url, method, body) {
-  return relayTo(fetchImpl, env, UPSTREAM + url.pathname + url.search, method, body);
 }
 
 /** 바깥에 보내고 상태와 본문 문자열만 받는다. 본문을 읽어야 토큰 수를 셀 수 있다. */

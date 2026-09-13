@@ -161,7 +161,7 @@ class PaywallActivity : AppCompatActivity() {
 
     companion object {
         /** 서버의 SUB_DAILY_CHARS 와 같아야 한다. 서버가 실제 한도이고 이건 안내다. */
-        const val DAILY_CHARS = 100_000
+        const val DAILY_CHARS = 20_000
 
         private const val CHECK = "✓"
         private const val DASH = "—"
