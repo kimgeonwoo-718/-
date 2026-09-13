@@ -76,6 +76,9 @@ class KeyboardView @JvmOverloads constructor(
         /** 번역 입력줄의 언어 칩을 눌러 다음 언어로. */
         fun onCycleTranslateTarget()
 
+        /** 번역 동그라미를 길게 눌렀다. 입력란에 이미 쓴 글을 통째로 옮긴다. */
+        fun onTranslateField()
+
         /** 자판 위 '교정' 버튼. 실시간 온디바이스 교정을 끄고 켠다. */
 
         /** 스페이스를 꾹 누른 채 밀어서 커서를 [delta] 글자만큼 옮긴다. 음수면 왼쪽. */
@@ -194,9 +197,11 @@ class KeyboardView @JvmOverloads constructor(
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
         // 번역 입력줄 열기/닫기. 열려 있으면 '교정' 처럼 강조색.
-        translateButton = toolbarButton(context.getString(R.string.toolbar_translate)) {
-            listener?.onToggleTranslate()
-        }.apply {
+        translateButton = toolbarButton(
+            context.getString(R.string.toolbar_translate),
+            onPress = { listener?.onToggleTranslate() },
+            onLongPress = { listener?.onTranslateField() }
+        ).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
@@ -282,6 +287,11 @@ class KeyboardView @JvmOverloads constructor(
     /** AI 가 도는 동안 AI 버튼을 흐리게. */
     fun setAiBusy(busy: Boolean) {
         aiButton.alpha = if (busy) 0.35f else 1f
+    }
+
+    /** 서버 번역이 도는 동안 번역 버튼을 흐리게. */
+    fun setTranslateBusy(busy: Boolean) {
+        translateButton.alpha = if (busy) 0.35f else 1f
     }
 
     /** 번역 입력줄을 열거나 닫는다. [targetLabel] 은 언어 칩에 쓰는 이름("영어"). */
@@ -1048,7 +1058,11 @@ class KeyboardView @JvmOverloads constructor(
             contentDescription = label
         }
 
-    private fun toolbarButton(label: String, onPress: () -> Unit): TextView =
+    private fun toolbarButton(
+        label: String,
+        onPress: () -> Unit,
+        onLongPress: (() -> Unit)? = null
+    ): TextView =
         TextView(context).apply {
             text = label
             gravity = Gravity.CENTER
@@ -1056,9 +1070,75 @@ class KeyboardView @JvmOverloads constructor(
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
             includeFontPadding = false
             contentDescription = label
-            attachKeyTouch(this, onPress = onPress)
+            if (onLongPress == null) {
+                attachKeyTouch(this, onPress = onPress)
+            } else {
+                attachTouch(this, toolbarTouch(this, onPress, onLongPress))
+            }
             styleToolbarButton(this)
         }
+
+    /**
+     * 길게 누르기가 달린 도구 줄 단추.
+     *
+     * 다른 단추들은 **누르는 순간** 실행한다 — 자판 키와 같아서 손끝이 빠르다. 여기서는
+     * 그럴 수 없다. 누르자마자 실행해 버리면 길게 누른 사람에게 두 가지가 다 일어난다
+     * (입력줄이 열리고, 곧이어 입력란이 통째로 번역된다). 그래서 짧게 누르면 손을 뗄 때,
+     * 길게 누르면 그 자리에서 한 가지만 실행한다.
+     */
+    private fun toolbarTouch(key: View, onPress: () -> Unit, onLongPress: () -> Unit): KeyTouch =
+        object : KeyTouch {
+            private var fired = false
+            private val longPress = Runnable {
+                fired = true
+                key.performHapticFeedback(
+                    HapticFeedbackConstants.LONG_PRESS,
+                    HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                )
+                onLongPress()
+            }
+
+            override fun down(x: Float, y: Float) {
+                flushHeldSpace()
+                fired = false
+                key.isPressed = true
+                key.performHapticFeedback(
+                    HapticFeedbackConstants.KEYBOARD_TAP,
+                    HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                )
+                repeatHandler.postDelayed(longPress, LONG_PRESS_MS)
+            }
+
+            override fun move(x: Float, y: Float, inside: Boolean) {
+                if (!inside) cancel()
+            }
+
+            override fun up() {
+                key.isPressed = false
+                repeatHandler.removeCallbacks(longPress)
+                if (!fired) onPress()
+                fired = false
+            }
+
+            override fun cancel() {
+                key.isPressed = false
+                repeatHandler.removeCallbacks(longPress)
+                fired = true
+            }
+        }
+
+    /** [attachKeyTouch] 와 같지만 손가락 처리를 밖에서 받는다. */
+    private fun attachTouch(view: View, touch: KeyTouch) {
+        view.setOnTouchListener { target, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> touch.down(event.x, event.y)
+                MotionEvent.ACTION_MOVE -> touch.move(event.x, event.y, insideView(target, event))
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> touch.up()
+                MotionEvent.ACTION_CANCEL -> touch.cancel()
+            }
+            true
+        }
+    }
 
     private fun toolbarParams() = LayoutParams(dp(TOOLBAR_BUTTON_DP), dp(TOOLBAR_BUTTON_DP))
 

@@ -12,12 +12,13 @@ import com.spellkeyboard.core.translate.Phrasebook
 /**
  * 번역 입력줄이 내놓는 언어. 원문은 늘 한국어다 — 한국어 키보드니까.
  *
- * [phrasebook] 은 ML Kit 의 [code] 와 같은 값일 가능성이 높지만, 남의 라이브러리 상수에
- * 기대면 값이 바뀔 때 관용구 표가 조용히 안 맞게 된다. 따로 적어 둔다.
+ * [code] 는 ML Kit 에 넘기는 값, [tag] 는 **우리 쪽** 값이다(관용구 표의 열쇠이자 중계
+ * 서버에 보내는 언어 이름). 지금은 둘이 같지만 남의 라이브러리 상수에 우리 규약을 묶어
+ * 두면, 그쪽 값이 바뀌는 날 관용구 표와 서버 번역이 조용히 안 맞게 된다. 따로 적어 둔다.
  */
 enum class TargetLanguage(
     val code: String,
-    val phrasebook: String,
+    val tag: String,
     @StringRes val label: Int
 ) {
     ENGLISH(TranslateLanguage.ENGLISH, Phrasebook.ENGLISH, R.string.lang_english),

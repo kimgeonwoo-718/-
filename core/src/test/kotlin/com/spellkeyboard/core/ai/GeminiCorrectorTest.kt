@@ -654,4 +654,71 @@ class GeminiCorrectorTest {
         assertTrue(result.isFailure)
         assertEquals("API key expired", result.exceptionOrNull()?.message)
     }
+
+    // --- 번역 (구독자 전용) -----------------------------------------------------
+
+    @Test
+    fun `번역은 주소에 대상 언어를 싣는다`() {
+        val seen = mutableListOf<String>()
+        val corrector = GeminiCorrector(
+            apiKey = "",
+            transport = { _, url, _, _ -> seen += url; ok("Did you eat?") },
+            baseUrl = PROXY
+        )
+        assertEquals("Did you eat?", corrector.translate("밥 먹었어", "en").getOrThrow())
+        assertTrue(seen.single().endsWith("?translate=en"), seen.single())
+    }
+
+    @Test
+    fun `번역 본문에는 교정 지시문을 싣지 않는다`() {
+        // 서버가 자기 지시문을 쓴다. 2KB 짜리 교정 지시문을 같이 보낼 이유가 없다.
+        var body: String? = null
+        val corrector = GeminiCorrector(
+            apiKey = "",
+            transport = { _, _, _, sent -> body = sent; ok("Hello") },
+            baseUrl = PROXY
+        )
+        corrector.translate("안녕", "en").getOrThrow()
+        assertTrue(body!!.contains("\"contents\""), body!!)
+        assertTrue(!body!!.contains("system_instruction"), body!!)
+    }
+
+    @Test
+    fun `구글 직통으로는 번역하지 않는다`() {
+        // 번역 지시문은 우리 서버에만 있다. 구글로 바로 보내면 교정기가 답한다.
+        val corrector = GeminiCorrector(apiKey = "k", transport = { _, _, _, _ -> ok("x") })
+        assertTrue(corrector.translate("안녕", "en").isFailure)
+    }
+
+    @Test
+    fun `번역도 빈 글은 보내지 않는다`() {
+        var sent = false
+        val corrector = GeminiCorrector(
+            apiKey = "",
+            transport = { _, _, _, _ -> sent = true; ok("x") },
+            baseUrl = PROXY
+        )
+        assertTrue(corrector.translate("   ", "en").isFailure)
+        assertTrue(!sent)
+    }
+
+    @Test
+    fun `번역도 한도를 받아 온다`() {
+        val corrector = GeminiCorrector(
+            apiKey = "",
+            transport = { _, _, _, _ ->
+                GeminiCorrector.HttpResponse(
+                    200,
+                    ok("Hello").body,
+                    mapOf("x-plan" to "subscriber", "x-quota-remaining" to "98000", "x-quota-unit" to "chars")
+                )
+            },
+            baseUrl = PROXY
+        )
+        corrector.translate("안녕", "en").getOrThrow()
+        val quota = corrector.lastQuota!!
+        assertEquals("subscriber", quota.plan)
+        assertEquals(98000, quota.remaining)
+        assertTrue(quota.countsChars)
+    }
 }

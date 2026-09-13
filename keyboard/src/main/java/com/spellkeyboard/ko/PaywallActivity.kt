@@ -145,6 +145,11 @@ class PaywallActivity : AppCompatActivity() {
         return listOf(
             Triple(getString(R.string.paywall_row_realtime), CHECK, CHECK),
             Triple(getString(R.string.paywall_row_keyboard), CHECK, CHECK),
+            Triple(
+                getString(R.string.paywall_row_translate),
+                getString(R.string.paywall_free_translate),
+                getString(R.string.paywall_premium_translate)
+            ),
             Triple(getString(R.string.paywall_row_ai), getString(R.string.paywall_free_ai), getString(R.string.paywall_premium_ai)),
             Triple(getString(R.string.paywall_row_100), freeTimes, premiumTimes(100)),
             Triple(getString(R.string.paywall_row_500), freeTimes, premiumTimes(500)),

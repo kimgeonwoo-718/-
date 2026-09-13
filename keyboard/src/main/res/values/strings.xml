@@ -20,6 +20,11 @@
     <string name="translate_download_failed">%1$s 언어팩을 받지 못했습니다. 인터넷을 확인해 주세요</string>
     <string name="translate_failed">번역하지 못했습니다</string>
     <string name="translate_blocks_ai">번역 중에는 AI 교정을 쓸 수 없어요</string>
+    <string name="translate_ai_failed">자연스러운 번역 실패: %1$s</string>
+    <string name="translate_premium_only">자연스러운 번역은 프리미엄 기능이에요. 번역 동그라미를 짧게 누르면 무료 번역을 쓸 수 있어요</string>
+    <string name="paywall_row_translate">현지인처럼 자연스러운 번역</string>
+    <string name="paywall_free_translate">기본 번역</string>
+    <string name="paywall_premium_translate">AI 번역</string>
     <string name="ai_busy">이미 교정하는 중입니다</string>
     <string name="ai_no_connection">입력란과 연결되지 않았습니다</string>
     <string name="ai_no_key">이 빌드에는 AI 서버 주소가 없어 AI 교정을 쓸 수 없습니다.</string>

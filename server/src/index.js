@@ -26,6 +26,7 @@ import {
   userTextOf,
   withoutReasoning,
   rejectsReasoning,
+  TRANSLATE_TARGETS,
 } from './openai.js';
 
 const UPSTREAM = 'https://generativelanguage.googleapis.com';
@@ -118,6 +119,11 @@ async function correct(request, env, url, fetchImpl, now) {
   const body = await request.text();
   if (body.length > MAX_BODY_BYTES) return fail(413, 'too_long');
 
+  // ?translate=en 이면 교정이 아니라 번역이다. 한도는 교정과 같은 통을 쓴다 —
+  // 값이 글자당 똑같이 매겨지므로 따로 셀 이유가 없다.
+  const translateTo = url.searchParams.get('translate');
+  if (translateTo && !TRANSLATE_TARGETS[translateTo]) return fail(400, 'unknown_language');
+
   const nowMs = now();
   const day = kstDay(nowMs);
   const purchaseToken = request.headers.get('x-purchase-token') ?? '';
@@ -158,7 +164,7 @@ async function correct(request, env, url, fetchImpl, now) {
   const model = openAiModel(env);
   const startedAt = Date.now();
   const reply = model
-    ? await askOpenAi(fetchImpl, env, model, body)
+    ? await askOpenAi(fetchImpl, env, model, body, translateTo)
     : await relay(fetchImpl, env, url, 'POST', body);
   reply.tookMs = Date.now() - startedAt;
 
@@ -193,7 +199,7 @@ function openAiModel(env) {
  * OpenAI 에 보내고 구글 모양으로 되돌려준다. **앱이 보낸 모델 이름은 쓰지 않는다** —
  * 이미 깔린 APK 들은 구글 이름을 보내오고, 무엇으로 고칠지는 서버가 정한다.
  */
-async function askOpenAi(fetchImpl, env, model, body) {
+async function askOpenAi(fetchImpl, env, model, body, translateTo = null) {
   let request;
   try {
     // 지시문과 숙고 세기는 환경변수로 바꿀 수 있다. 교정 품질을 손볼 때 코드를 고치고
@@ -201,6 +207,7 @@ async function askOpenAi(fetchImpl, env, model, body) {
     request = toOpenAiRequest(body, model, {
       reasoning: (env.OPENAI_REASONING ?? '').trim(),
       prompt: (env.OPENAI_PROMPT ?? '').trim(),
+      translateTo,
     });
   } catch {
     return { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) };
@@ -210,7 +217,7 @@ async function askOpenAi(fetchImpl, env, model, body) {
     raw = await relayTo(fetchImpl, env, OPENAI_URL, 'POST', withoutReasoning(request));
   }
   // 원문을 같이 넘긴다. 교정이 아닌 답(요약, 대답, 지시문 따라가기)을 길이로 걸러낸다.
-  return toGeminiReply(raw.status, raw.text, userTextOf(body));
+  return toGeminiReply(raw.status, raw.text, userTextOf(body), { translateTo });
 }
 
 /**

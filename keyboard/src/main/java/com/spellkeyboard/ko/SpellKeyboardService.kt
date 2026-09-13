@@ -125,6 +125,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     /** 엔터를 눌렀는데 번역이 아직 안 끝났다. 끝나면 보낸다. */
     private var pendingEnter = false
+
+    /** 서버 번역이 도는 중. 두 번 겹쳐 돌지 않게 한다. */
+    private var polishing = false
     private val translateNow = Runnable { translateBufferNow() }
 
     /** `InputConnection` 을 core 의 [Editor] 로 감싼 어댑터. */
@@ -568,6 +571,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private fun exitTranslate() {
         translating = false
         pendingEnter = false
+        polishing = false
+        keyboard?.setTranslateBusy(false)
         mainHandler.removeCallbacks(translateNow)
         translateSerial++
         // 조합을 먼저 끝낸다. 안 그러면 다음에 입력줄을 열었을 때 옛 조합 자리가 남아
@@ -629,7 +634,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 빠르기도 하고, 앞쪽 번역문이 이유 없이 흔들리지도 않는다.
         val sentences = sentenceSplitter.split(source)
         val serial = ++translateSerial
-        val code = target.phrasebook
+        val code = target.tag
 
         // 모델을 부르기 전에 두 가지를 먼저 한다.
         // 1) 채팅 한국어를 다듬는다 — 마침표를 붙이고 'ㅋㅋ' 와 늘여 쓴 글자를 떼어 낸다.
@@ -696,12 +701,150 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      */
     private fun pressEnterWhileTranslating(editor: Editor) {
         session.pressEnter(editor)
+        val source = translateBuffer.text.trim()
+        // 구독자는 보내기 직전에 서버가 문장 전체를 다시 옮긴다. 기기 번역은 그때까지
+        // 보여 주는 미리보기이고, 실제로 나가는 글은 이쪽이다.
+        if (source.isNotEmpty() && canPolish()) {
+            polishThenSend(source)
+            return
+        }
+        sendWhenTranslated()
+    }
+
+    /** 기기 번역이 최신이면 바로, 아직이면 끝나기를 기다렸다 보낸다. */
+    private fun sendWhenTranslated() {
         if (translateBuffer.text.trim() == translatedSource) {
             finishEnter()
         } else {
             pendingEnter = true
             mainHandler.removeCallbacks(translateNow)
             translateBufferNow()
+        }
+    }
+
+    /** 서버 번역을 쓸 수 있는가. 구독자 전용이고 서버가 있어야 한다. */
+    private fun canPolish(): Boolean =
+        !polishing && Prefs.aiAvailable() && isSubscriber() && currentInputConnection != null
+
+    /** 서버가 마지막으로 알려 준 요금제. 폰의 숫자는 못 믿지만 기능을 여는 데는 이걸로 충분하다 —
+     *  진짜 판단은 서버가 한다. 구독자가 아닌데 보내도 서버가 막는다. */
+    private fun isSubscriber(): Boolean = Prefs.lastQuota(this)?.plan == SUBSCRIBER_PLAN
+
+    /**
+     * 입력줄의 글을 서버 번역으로 다시 옮겨 앱에 넣고 보낸다.
+     *
+     * 실패하면 기기 번역문을 그대로 보낸다 — 못 보내는 것보다 낫다.
+     */
+    private fun polishThenSend(source: String) {
+        polishing = true
+        keyboard?.setTranslateBusy(true)
+        val requestId = aiRequestId.incrementAndGet()
+        val target = Prefs.translateTarget(this)
+
+        mainHandler.postDelayed({
+            if (polishing && aiRequestId.get() == requestId) {
+                polishing = false
+                keyboard?.setTranslateBusy(false)
+                notify(getString(R.string.ai_timeout))
+                if (translating) sendWhenTranslated()
+            }
+        }, AI_WATCHDOG_MS)
+
+        Thread {
+            val engine = runCatching { corrector() }
+            val result = engine.mapCatching { it.translate(source, target.tag).getOrThrow() }
+            val quota = engine.getOrNull()?.lastQuota
+            mainHandler.post {
+                if (aiRequestId.get() != requestId) return@post
+                polishing = false
+                keyboard?.setTranslateBusy(false)
+                quota?.let { Prefs.rememberQuota(this, it) }
+                if (!translating) return@post
+                result
+                    .onSuccess { polished ->
+                        currentInputConnection?.let {
+                            translateOutput.replace(ConnectionEditor(it), polished)
+                        }
+                        finishEnter()
+                    }
+                    .onFailure {
+                        notify(getString(R.string.translate_ai_failed, GeminiCorrector.explain(it.message)))
+                        sendWhenTranslated()
+                    }
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    /**
+     * 번역 동그라미를 길게 눌렀다. 입력란에 이미 쓴 글을 통째로 옮긴다.
+     *
+     * 입력줄은 한 줄짜리라 긴 글을 거기 칠 수는 없다. 붙여넣었거나 이미 써 둔 글은
+     * 이 길로 옮긴다 — AI 교정 버튼이 하는 일과 같은 모양이다.
+     */
+    override fun onTranslateField() {
+        if (polishing || aiBusy) {
+            notify(getString(R.string.ai_busy))
+            return
+        }
+        if (!isSubscriber()) {
+            notify(getString(R.string.translate_premium_only))
+            return
+        }
+        val connection = currentInputConnection
+        if (connection == null) {
+            notify(getString(R.string.ai_no_connection))
+            return
+        }
+        if (!Prefs.aiAvailable()) {
+            notify(getString(R.string.ai_no_key))
+            return
+        }
+        // 입력줄이 열려 있으면 닫는다. 여기서 옮기는 것은 입력란의 글이다.
+        if (translating) exitTranslate()
+
+        val editor = ConnectionEditor(connection)
+        val before = session.readBeforeCursor(editor, AI_BEFORE_CHARS)
+        val after = connection.getTextAfterCursor(AI_AFTER_CHARS, 0)?.toString().orEmpty()
+        val original = before + after
+        if (original.isBlank()) {
+            notify(getString(R.string.ai_empty))
+            return
+        }
+
+        polishing = true
+        keyboard?.setTranslateBusy(true)
+        val requestId = aiRequestId.incrementAndGet()
+        val target = Prefs.translateTarget(this)
+
+        mainHandler.postDelayed({
+            if (polishing && aiRequestId.get() == requestId) {
+                polishing = false
+                keyboard?.setTranslateBusy(false)
+                notify(getString(R.string.ai_timeout))
+            }
+        }, AI_WATCHDOG_MS)
+
+        Thread {
+            val engine = runCatching { corrector() }
+            val result = engine.mapCatching { it.translate(original, target.tag).getOrThrow() }
+            val quota = engine.getOrNull()?.lastQuota
+            mainHandler.post {
+                if (aiRequestId.get() != requestId) return@post
+                polishing = false
+                keyboard?.setTranslateBusy(false)
+                quota?.let { Prefs.rememberQuota(this, it) }
+                result
+                    .onSuccess { applyAiResult(before, after, it) }
+                    .onFailure {
+                        notify(getString(R.string.translate_ai_failed, GeminiCorrector.explain(it.message)))
+                    }
+            }
+        }.apply {
+            isDaemon = true
+            start()
         }
     }
 
@@ -892,6 +1035,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private companion object {
         /** 입력줄이 바뀐 뒤 번역까지 기다리는 시간. 타이핑 사이 간격보다 살짝 길게. */
         private const val TRANSLATE_DEBOUNCE_MS = 250L
+
+        /** 서버가 알려 주는 구독자 표시. `x-plan` 헤더 값이다. */
+        private const val SUBSCRIBER_PLAN = "subscriber"
 
         const val DICTIONARY_DIR = "spacing"
 

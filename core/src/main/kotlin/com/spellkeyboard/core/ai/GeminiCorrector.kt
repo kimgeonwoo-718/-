@@ -135,6 +135,29 @@ class GeminiCorrector(
      * 빼고 한 번 더 간다. 다른 이유의 400 이면 두 번째도 똑같이 거절당하고, 그 이유가
      * 그대로 사용자에게 간다.
      */
+    /**
+     * 중계 서버에 번역을 맡긴다. 구독자 전용 기능이라 서버가 한도를 본다.
+     *
+     * 교정과 달리 모델을 갈아타지 않는다. 어느 모델을 쓸지는 서버가 정하고, 앱이
+     * 아는 이름은 서버가 알려 준 하나뿐이라 옮겨 갈 데가 없다.
+     *
+     * @param target "en" / "ja" / "zh".
+     * @return 옮긴 글. 한도를 넘었거나 실패하면 [Result] 가 실패다.
+     */
+    fun translate(text: String, target: String): Result<String> = runCatching {
+        require(text.isNotBlank()) { "옮길 글이 없다" }
+        require(viaProxy) { "번역은 중계 서버를 거쳐야 한다" }
+
+        val body = buildRequest(text, withPrompt = false)
+        var response = attempt(body, target)
+        if (isTransient(response)) {
+            sleep(RETRY_MS)
+            response = attempt(body, target)
+        }
+        noteQuota(response)
+        readCorrection(response)
+    }
+
     private fun send(text: String): HttpResponse {
         val withThinkingOff = activeModel !in thinkingRejected
         val response = attempt(buildRequest(text))
@@ -162,8 +185,8 @@ class GeminiCorrector(
      * 걸리면 다른 모델로 옮겨 볼 기회도 없이 끝났다. 그래서 예외도 응답의 한 종류로
      * 바꿔서, 붐빌 때와 똑같이 다뤄지게 한다.
      */
-    private fun attempt(body: String): HttpResponse =
-        runCatching { transport.send("POST", endpoint(), apiKey, body) }
+    private fun attempt(body: String, translateTo: String? = null): HttpResponse =
+        runCatching { transport.send("POST", endpoint(translateTo), apiKey, body) }
             .getOrElse { error ->
                 HttpResponse(
                     NETWORK_FAILURE,
@@ -269,12 +292,30 @@ class GeminiCorrector(
             "message"
         ) as? String
 
-    internal fun endpoint(): String = "$baseUrl/$activeModel:generateContent"
+    /**
+     * 보낼 주소. [translateTo] 가 있으면 중계 서버가 교정 대신 번역을 돌린다.
+     *
+     * 헤더가 아니라 주소에 싣는 이유: [Transport] 는 요청마다 헤더를 못 바꾸게 되어
+     * 있고(설치 ID 같은 고정 헤더만 생성 때 받는다), 그 규약을 번역 하나 때문에
+     * 흔들 이유가 없다. 서버는 경로만 보고 라우팅하므로 물음표 뒤는 그냥 통과한다.
+     */
+    internal fun endpoint(translateTo: String? = null): String {
+        val base = "$baseUrl/$activeModel:generateContent"
+        return if (translateTo.isNullOrBlank()) base else "$base?translate=$translateTo"
+    }
 
-    internal fun buildRequest(text: String): String = buildString {
-        append("""{"system_instruction":{"parts":[{"text":""")
-        append(Json.quote(SYSTEM_PROMPT))
-        append("""}]},"contents":[{"role":"user","parts":[{"text":""")
+    /**
+     * 보낼 본문. [withPrompt] 가 false 면 지시문을 뺀다 — 번역은 서버가 자기 지시문을
+     * 쓰므로 교정 지시문 2KB 를 같이 보낼 이유가 없다.
+     */
+    internal fun buildRequest(text: String, withPrompt: Boolean = true): String = buildString {
+        append("{")
+        if (withPrompt) {
+            append(""""system_instruction":{"parts":[{"text":""")
+            append(Json.quote(SYSTEM_PROMPT))
+            append("""}]},""")
+        }
+        append(""""contents":[{"role":"user","parts":[{"text":""")
         append(Json.quote(text))
         append("""}]}],"generationConfig":{"temperature":0,"candidateCount":1,""")
         append(""""maxOutputTokens":$MAX_OUTPUT_TOKENS""")

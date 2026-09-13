@@ -1,7 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { handle } from '../src/index.js';
-import { toOpenAiRequest, toGeminiReply, modelList, KO_SYSTEM_PROMPT } from '../src/openai.js';
+import {
+  toOpenAiRequest,
+  toGeminiReply,
+  modelList,
+  KO_SYSTEM_PROMPT,
+  translatePrompt,
+  TRANSLATE_TARGETS,
+} from '../src/openai.js';
 import { fakeDb } from './fakeDb.js';
 
 const INSTALL = '3f2a9c1e-7b4d-4e8a-9c2f-1a2b3c4d5e6f';
@@ -269,4 +276,43 @@ test('걸린 시간을 헤더로 알려 준다', async () => {
   const took = res.headers.get('x-upstream-ms');
   assert.notEqual(took, null);
   assert.ok(Number(took) >= 0, `숫자가 아니다: ${took}`);
+});
+
+// --- 번역 -------------------------------------------------------------------
+
+test('번역이면 번역 지시문을 쓴다', () => {
+  const body = JSON.stringify({ contents: [{ parts: [{ text: '밥 먹었어' }] }] });
+  const sent = JSON.parse(toOpenAiRequest(body, 'gpt-5-mini', { translateTo: 'en' }));
+  assert.match(sent.messages[0].content, /번역가/);
+  assert.match(sent.messages[0].content, /영어/);
+  assert.equal(sent.messages[1].content, '밥 먹었어');
+});
+
+test('언어마다 지시문이 다르다', () => {
+  assert.match(translatePrompt('ja'), /일본어/);
+  assert.match(translatePrompt('zh'), /중국어/);
+  // 지시문에 템플릿 문법이 새면 통째로 깨진다. 전에 한 번 그랬다.
+  for (const code of Object.keys(TRANSLATE_TARGETS)) {
+    const prompt = translatePrompt(code);
+    assert.ok(!prompt.includes('`'), code + ' 지시문에 백틱이 있다');
+    assert.ok(!prompt.includes('${'), code + ' 지시문에 ${ 가 있다');
+    assert.ok(prompt.length > 400, code + ' 지시문이 너무 짧다');
+  }
+});
+
+test('번역은 길이가 달라도 안 버린다', () => {
+  // 교정이면 길이가 확 달라진 답을 버린다. 번역은 원래 길이가 다르다.
+  // 공백을 뺀 20자가 넘어야 길이 검사가 돈다. 짧은 글은 원래 재지 않는다.
+  const korean = '오늘 날씨가 정말 좋아서 친구랑 공원에 산책을 다녀왔어요';
+  const english = 'The weather was so nice today that I went out for a walk in the park with my friend.';
+  const raw = JSON.stringify({
+    choices: [{ message: { content: english }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 10, completion_tokens: 20 },
+  });
+  const asCorrection = toGeminiReply(200, raw, korean);
+  assert.equal(asCorrection.status, 502);
+
+  const asTranslation = toGeminiReply(200, raw, korean, { translateTo: 'en' });
+  assert.equal(asTranslation.status, 200);
+  assert.match(asTranslation.text, /went out for a walk/);
 });
