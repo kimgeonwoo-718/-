@@ -118,6 +118,56 @@ class CorrectionEngine(
     }
 
     /**
+     * 글 전체를 한 번에 교정한다. **기기 안에서만 돈다** — 서버도, 한도도, 통신도 없다.
+     *
+     * 실시간 교정은 커서 앞 세 어절만 본다. 타이핑을 따라가야 하니 그래야 한다.
+     * 이건 반대다. 이미 다 쓴 글을 통째로 받아 처음부터 끝까지 고친다.
+     *
+     * ## 왜 통째로 넘기지 않고 잘라서 넘기나
+     *
+     * 문맥 교정기는 한 번에 푸는 구간이 [ContextCorrector.MAX_SEGMENT_SYLLABLES] 음절을
+     * 넘으면 **그 구간을 통째로 포기한다**(비터비 칸이 음절 제곱으로 늘어서 그렇다).
+     * 긴 글을 그대로 넘기면 고쳐지기는커녕 **아무 일도 안 일어나고, 그게 조용히 일어난다.**
+     * 그래서 여기서 미리 잘라 준다.
+     *
+     * 자르는 자리는 두 가지다.
+     * - **문장 끝**(`. ! ? …` 과 줄바꿈). 문장이 바뀌면 앞 문맥도 끊긴다.
+     * - 한 문장이 그보다 길면 어절 단위로 더 잘게. 이때는 **앞 조각의 마지막 어절을
+     *   다음 조각의 앞 문맥으로 넘겨준다** — 안 그러면 자른 자리에서 문맥이 끊겨
+     *   그 어절만 유독 엉뚱하게 고쳐진다.
+     */
+    fun correctAll(text: String): CorrectionResult {
+        if (!hasHangul(text)) return CorrectionResult(text, text, emptyList())
+
+        val sink = mutableListOf<Correction>()
+        val out = StringBuilder()
+        var previous: String? = LanguageModel.BOS
+
+        for (chunk in chunk(text)) {
+            if (chunk.isBlank() || !hasHangul(chunk)) {
+                out.append(chunk)
+                // 줄바꿈이나 부호만 있는 조각을 지났으면 문장이 바뀐 것으로 본다.
+                if (chunk.any { it in SENTENCE_ENDERS || it == '\n' }) previous = LanguageModel.BOS
+                continue
+            }
+            val fixed = correct(chunk, previous)
+            out.append(fixed.text)
+            sink += fixed.corrections
+            previous = tailContext(fixed.text)
+        }
+        return CorrectionResult(text, out.toString(), sink)
+    }
+
+    /** 고친 조각의 마지막 어절. 다음 조각이 이걸 앞 문맥으로 쓴다. */
+    private fun tailContext(fixed: String): String? {
+        val trimmed = fixed.trimEnd()
+        if (trimmed.isEmpty()) return LanguageModel.BOS
+        if (trimmed.last() in SENTENCE_ENDERS) return LanguageModel.BOS
+        val token = trimmed.substring(trimmed.indexOfLast { it.isWhitespace() } + 1)
+        return if (token.all { it in HANGUL_SYLLABLES }) token else null
+    }
+
+    /**
      * 커서 앞 텍스트의 끝부분만 교정한다.
      *
      * 사용자가 이미 지나간 문장을 건드리지 않도록 마지막 [maxWords] 어절까지만 본다.
@@ -254,6 +304,55 @@ class CorrectionEngine(
         private const val FULL_LOOKBEHIND = 64
         private val SENTENCE_ENDERS = setOf('.', '!', '?', '…')
         private val HANGUL_SYLLABLES = '가'..'힣'
+
+        /**
+         * 한 번에 문맥 교정기에 넘길 최대 음절 수.
+         *
+         * [ContextCorrector.MAX_SEGMENT_SYLLABLES] 보다 **넉넉히 작아야** 한다. 여기서
+         * 세는 것은 조각 전체 길이인데, 교정기가 재는 것은 공백을 뺀 음절 수라 둘이
+         * 정확히 같지 않다. 아슬아슬하게 맞춰 두면 어떤 문장에서만 조용히 건너뛰어진다.
+         */
+        internal const val CHUNK_SYLLABLES = 36
+
+        /**
+         * 글을 교정하기 좋은 크기로 자른다. 자른 조각을 **그대로 이어 붙이면 원문**이다 —
+         * 공백도 줄바꿈도 하나 잃지 않는다. 그래야 고친 글에 원래 줄 모양이 남는다.
+         */
+        internal fun chunk(text: String): List<String> {
+            val out = ArrayList<String>()
+            val current = StringBuilder()
+            var syllables = 0
+
+            fun flush() {
+                if (current.isNotEmpty()) {
+                    out += current.toString()
+                    current.setLength(0)
+                    syllables = 0
+                }
+            }
+
+            for (token in TOKEN.findAll(text)) {
+                val value = token.value
+                if (value.isBlank()) {
+                    // 줄바꿈은 문단이 바뀌는 자리다. 여기서 끊어야 앞 문맥도 같이 끊긴다.
+                    if (value.contains('\n')) {
+                        flush()
+                        out += value
+                    } else {
+                        current.append(value)
+                    }
+                    continue
+                }
+                // 이 어절을 넣으면 넘치는가. 넘치면 먼저 내보낸다 — 어절은 쪼개지 않는다.
+                if (syllables > 0 && syllables + value.length > CHUNK_SYLLABLES) flush()
+                current.append(value)
+                syllables += value.length
+                // 문장이 끝났으면 여기서 끊는다.
+                if (value.last() in SENTENCE_ENDERS) flush()
+            }
+            flush()
+            return out
+        }
 
         /** 뒤에서부터 [maxWords] 개의 어절을 포함하는 창의 시작 위치를 찾는다. */
         internal fun windowStart(text: String, maxWords: Int): Int {

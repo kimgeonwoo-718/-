@@ -446,10 +446,41 @@ class ContextCorrector(
                 // 언어모델이 모르는 드문 낱말일 뿐이다), 두 조각이 실제로 잇달아 쓰인 적이
                 // 있어야 하며('할 수'), 매인 형태소 앞('자녀|들이')이나 명사|명사('치과|의사'),
                 // '-아/-어'|용언('불안해|했다') 자리는 손대지 않는다.
-                if (isWellFormed(core)) return null
+                // 한 어절로 분석되는 말은 자르지 않는다 — 였는데, 그것만으로는 못 막는다.
+                // mecab 은 거의 모든 한글 덩어리를 어떻게든 분석해 낸다. '당신의선' 도
+                // 당신+의+선 으로 읽고, '시간이걸린다' 도 한 어절이라고 한다. 그래서
+                // "분석된다" 를 금지 조건으로 쓰면 **붙여 쓴 말이 영영 안 풀린다** —
+                // 정답이 후보에 오르지도 못한 채 형태소 사전이 쪼갠 자리만 남는다
+                // ('시간이걸린다' → '시간이걸 린다').
+                //
+                // 대신 **분석이 얼마나 자연스러웠는지**로 값을 매긴다. 한 낱말인 것들은
+                // 비용이 낮고(중앙값 -1331) 붙여 쓴 구는 높다(중앙값 7121). 자연스러울수록
+                // 자르기 비싸고, 억지스러울수록 싸다. 확실한 증거가 있으면 넘어설 수 있는
+                // 벽이라 '시간이걸린다'(비용 2357, 정답이 19점 더 좋다)는 풀리고
+                // '연습문제'(비용 167)는 그대로 남는다.
+                if (wellFormedPenalty(core) >= WELL_FORMED_BAN) return null
+                cost -= wellFormedPenalty(core)
+                // 매인 형태소 앞('자녀|들이')은 자르지 않는다. 절제 실험에서 이 금지는
+                // 재현율을 **하나도** 깎지 않으면서 오교정만 줄였다(0.40 → 0.37%). 순이득이다.
                 if (boundAt(core, offset)) return null
-                if (prevKey == UNKNOWN_CONTEXT || lm.lnBigramCount(prevKey, text) == null) return null
-                if (nounJunction(prevKey, text)) return null
+                // 앞 어절을 모르면 자를 근거가 없다.
+                //
+                // 예전에는 여기에 "두 조각이 실제로 잇달아 쓰인 적이 있어야 한다"
+                // (`lnBigramCount != null`)가 붙어 있었다. 뺐다 — 절제 실험에서 이 요구는
+                // 오교정을 **전혀** 줄이지 않으면서(0.27% 그대로) 망침만 늘렸다(34 → 43).
+                // 말뭉치가 6천만 어절이라 멀쩡한 짝도 대부분 안 나온 탓이다. 본 적 없다는
+                // 것이 틀렸다는 뜻은 아니다.
+                if (prevKey == UNKNOWN_CONTEXT) return null
+                // 명사|명사 자리('치과|의사')는 한 낱말인 합성어가 많아 자르기 조심스럽다.
+                // 그렇다고 막아 버리면 '컴퓨터의|충돌', '기업|대표들이' 처럼 **띄어 써야 하는
+                // 것들까지 통째로 막힌다** — 절제 실험에서 이 금지 하나가 띄어쓰기 복원을
+                // 2.8%p 깎고 있었다(66.6 → 69.4%). 금지 대신 값을 매겨 증거와 겨루게 한다.
+                // 조사·관형사·관형형 어미로 끝났으면 **어절이 거기서 끝난다.** 한국어에서
+                // 이보다 분명한 경계 신호는 없다 ('컴퓨터의|충돌', '그|권리는', '할|책들은').
+                // 이 신호가 있으면 명사|명사 조심도 필요 없다 — 조심해야 할 합성어는
+                // '치과|의사' 처럼 조사 없이 붙는 것들이지 조사 뒤가 아니다.
+                if (endsWithBoundaryMarker(prevKey)) cost += BOUNDARY_MARKER_BONUS
+                else if (nounJunction(prevKey, text)) cost -= NOUN_JUNCTION_COST
                 if (endsWithAEo(prevKey) && spacer?.tagAt(core, offset)?.let { spacer?.isVerbTag(it) } == true) return null
                 // 체언 뒤의 '받다·당하다·시키다·드리다' 는 한 낱말이다('발급받았다', '인계받았다').
                 if (ATTACHABLE_VERBS.any { text.startsWith(it) } && endsNominal(prevKey)) return null
@@ -467,6 +498,34 @@ class ContextCorrector(
         // 붙이는 것처럼, 드물게 나온 표기로 붙이는 것은 근거가 약하다.
         if (merged && (lm.lnCount(text) ?: 0f) < MERGE_MIN_LN_COUNT) return null
         return cost
+    }
+
+    /**
+     * 이 어절을 "한 낱말" 로 보아 자르기를 얼마나 말릴 것인가.
+     *
+     * 형태소 분석 비용이 낮을수록(자연스러운 한 낱말일수록) 크고, 높을수록(억지로 분석한
+     * 붙여쓴 구일수록) 작다. 분석이 아예 안 되면 0 — 말릴 근거가 없다.
+     */
+    /**
+     * 조사·관형사·관형형 어미로 끝나는가. 그렇다면 그 자리는 어절 경계다.
+     *
+     * 관형사(MM)를 넣은 것이 중요하다. [Spacer.isNominalTag] 는 MM 을 체언으로 치는데,
+     * 그러면 '그|권리는' 이 명사|명사로 잡혀 **자르지 말아야 할 자리로 오해받는다.**
+     * 관형사 뒤는 늘 띄어 쓴다.
+     */
+    private fun endsWithBoundaryMarker(text: String): Boolean {
+        if (text == LanguageModel.BOS || text == UNKNOWN_CONTEXT) return false
+        val tail = tagsOf(text)?.second ?: return false
+        return tail in BOUNDARY_TAILS
+    }
+
+    private fun wellFormedPenalty(core: String): Float {
+        if (!isWellFormed(core)) return 0f
+        val cost = morphCost(core) ?: return WELL_FORMED_MAX
+        if (cost >= WELL_FORMED_FREE_COST) return 0f
+        val span = (WELL_FORMED_FREE_COST - WELL_FORMED_FIRM_COST).toFloat()
+        val above = (cost - WELL_FORMED_FIRM_COST).toFloat()
+        return WELL_FORMED_MAX * (1f - (above / span).coerceIn(0f, 1f))
     }
 
     private fun couldBeBound(text: String): Boolean = spacer?.couldBeBound(text) ?: false
@@ -725,6 +784,39 @@ class ContextCorrector(
         const val USAGE_PENALTY_FREE_COST = 4000f
         const val USAGE_PENALTY_PER_COST = 2000f
         const val USAGE_PENALTY_GRADED_MAX = 3f
+
+        /**
+         * 한 어절로 자연스럽게 분석되는 말을 자르지 않으려는 힘. 로그확률 단위다.
+         *
+         * 12 는 "웬만한 증거로는 못 넘는다" 는 뜻이다. 흔한 말 둘로 쪼개는 것만으로 얻는
+         * 이득이 보통 3~6 점이라 그걸로는 안 되고, '시간이걸린다 → 시간이 걸린다'(19점)
+         * 처럼 확실할 때만 넘어간다.
+         */
+        const val WELL_FORMED_MAX = 12f
+
+        /**
+         * 명사|명사 자리를 자르는 값.
+         *
+         * 합성어('치과의사')를 지키려는 힘이다. 예전에는 아예 금지였는데 그러면 띄어 써야
+         * 하는 '컴퓨터의|충돌' 까지 막혔다. 값으로 바꾸고 증거가 이만큼 이기면 자른다.
+         */
+        const val NOUN_JUNCTION_COST = 4f
+
+        /** 조사·관형사·관형형 어미 뒤라서 자르기 좋은 자리일 때 얹어 주는 값. */
+        const val BOUNDARY_MARKER_BONUS = 3f
+
+        /** 이 태그로 끝나면 어절이 끝난 것이다. 조사 전부와 관형사(MM), 관형형 어미(ETM). */
+        private val BOUNDARY_TAILS =
+            setOf("JKS", "JKC", "JKG", "JKO", "JKB", "JKV", "JKQ", "JX", "JC", "MM", "ETM")
+
+        /** 이 아래로 자연스러우면 벌점을 다 문다. 한 낱말들의 중앙값이 -1331 쯤이다. */
+        const val WELL_FORMED_FIRM_COST = 0
+
+        /** 이 위로 억지스러우면 말리지 않는다. 붙여 쓴 구들의 최솟값이 1477 쯤이다. */
+        const val WELL_FORMED_FREE_COST = 4000
+
+        /** 벌점이 이만큼이면 아예 금지로 친다. 넘을 수 없는 값을 굳이 계산하지 않는다. */
+        const val WELL_FORMED_BAN = 1e9f
 
         const val MAX_TOKEN_SYLLABLES = 14
         const val MAX_FREE_SYLLABLES = 8
