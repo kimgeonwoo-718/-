@@ -13,8 +13,9 @@ function env(overrides = {}) {
     DB: fakeDb(),
     GEMINI_API_KEY: 'server-key',
     PLAY_PACKAGE: 'com.spellkeyboard.ko',
-    FREE_DAILY_LIMIT: '5',
-    IP_DAILY_LIMIT: '300',
+    // AI 는 구독자 전용이다. 중계·토큰 세기 같은 것을 보는 시험은 전부 구독자여야
+    // 본론까지 간다. 무료가 막히는 것을 보는 시험만 이 값을 비운다.
+    TEST_INSTALL_IDS: INSTALL,
     ...overrides,
   };
 }
@@ -85,44 +86,40 @@ test('요청을 구글로 넘기고 우리 키를 붙인다 — 클라이언트 
   assert.equal(call.init.headers['x-purchase-token'], undefined);
 });
 
-test('무료는 하루 다섯 번, 여섯 번째는 402 — 성공한 것만 센다', async () => {
-  const e = env();
+test('무료는 AI 를 아예 쓸 수 없다 — 구글까지 가지 않는다', async () => {
   const up = upstream();
-  const deps = { fetch: up.fetchImpl, now: () => NOON_KST };
-
-  for (let i = 1; i <= 5; i++) {
-    const res = await handle(generate(), e, deps);
-    assert.equal(res.status, 200, `${i}번째`);
-    assert.equal(res.headers.get('x-quota-remaining'), String(5 - i));
-    assert.equal(res.headers.get('x-quota-limit'), '5');
-    assert.equal(res.headers.get('x-plan'), 'free');
-  }
-  const sixth = await handle(generate(), e, deps);
-  assert.equal(sixth.status, 402);
-  assert.equal((await sixth.json()).error.message, 'free_daily_limit');
-  assert.equal(sixth.headers.get('x-quota-remaining'), '0');
-  // 막힌 요청은 구글까지 가지 않는다.
-  assert.equal(up.calls.filter((c) => c.url.includes(':generateContent')).length, 5);
+  const res = await handle(generate(), env({ TEST_INSTALL_IDS: '' }), { fetch: up.fetchImpl, now: () => NOON_KST });
+  assert.equal(res.status, 402);
+  assert.equal((await res.json()).error.message, 'subscribers_only');
+  assert.equal(res.headers.get('x-plan'), 'free');
+  assert.equal(res.headers.get('x-quota-limit'), '0');
+  assert.equal(res.headers.get('x-quota-remaining'), '0');
+  assert.equal(up.calls.length, 0, '돈이 나가는 곳까지 가지 않는다');
 });
 
 test('구글이 거절한 요청은 세지 않는다', async () => {
   const e = env();
   const res = await handle(generate(), e, { fetch: upstream({ status: 503 }).fetchImpl, now: () => NOON_KST });
   assert.equal(res.status, 503, '상태를 그대로 전한다');
-  assert.equal(res.headers.get('x-quota-remaining'), '5', '깎이지 않았다');
+  assert.equal(res.headers.get('x-quota-remaining'), '100000', '깎이지 않았다');
   assert.equal(e.DB.usage.size, 0);
 });
 
 test('자정을 넘기면 되살아난다', async () => {
-  const e = env();
+  const e = env({ SUB_DAILY_CHARS: '120' });
   const up = upstream();
-  for (let i = 0; i < 5; i++) await handle(generate(), e, { fetch: up.fetchImpl, now: () => NOON_KST });
-  assert.equal((await handle(generate(), e, { fetch: up.fetchImpl, now: () => NOON_KST })).status, 402);
+  const body = JSON.stringify({ contents: [{ parts: [{ text: '가'.repeat(100) }] }] });
+  const deps = { fetch: up.fetchImpl, now: () => NOON_KST };
+
+  assert.equal((await handle(generate({}, body), e, deps)).status, 200);
+  const over = await handle(generate({}, body), e, deps);
+  assert.equal(over.status, 402);
+  assert.equal((await over.json()).error.message, 'sub_daily_limit');
 
   const nextDay = NOON_KST + 12 * 60 * 60 * 1000 + 60_000; // KST 00:01
-  const res = await handle(generate(), e, { fetch: up.fetchImpl, now: () => nextDay });
+  const res = await handle(generate({}, body), e, { fetch: up.fetchImpl, now: () => nextDay });
   assert.equal(res.status, 200);
-  assert.equal(res.headers.get('x-quota-remaining'), '4');
+  assert.equal(res.headers.get('x-quota-remaining'), '20');
 });
 
 /** 구독자 요청. 글자 수를 재야 하니 고칠 글이 들어 있어야 한다. */
@@ -131,17 +128,18 @@ function paidGenerate(chars) {
   return generate({ 'x-purchase-token': 'paid-token' }, JSON.stringify({ contents: [{ parts: [{ text }] }] }));
 }
 
-test('구독자는 횟수 대신 글자 수로 세고, IP 한도는 거치지 않는다', async () => {
+test('구독자는 횟수 대신 글자 수로 센다 — 확인은 Play 에 한 번만 물어본다', async () => {
   const { pem } = await testKeyPair();
   const e = env({
+    // 진짜 결제 확인 길을 보는 시험이라 시험용 목록을 비운다.
+    TEST_INSTALL_IDS: '',
     PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }),
     SUB_DAILY_CHARS: '1000',
-    IP_DAILY_LIMIT: '1',
   });
   const up = upstream({ activeToken: 'paid-token' });
   const deps = { fetch: up.fetchImpl, now: () => NOON_KST };
 
-  // 무료 하루 5회를 훌쩍 넘겨도 글자 수 안이면 된다.
+  // 횟수가 아니라 글자 수로 세니 일곱 번도 한도 안이다.
   for (let i = 0; i < 7; i++) {
     const res = await handle(paidGenerate(100), e, deps);
     assert.equal(res.status, 200, `${i + 1}번째`);
@@ -174,28 +172,30 @@ test('구독자의 아주 짧은 요청도 최소 50 자로 친다 — 한 글�
   assert.equal(res.headers.get('x-quota-remaining'), '950');
 });
 
-test('무료 사용자의 헤더에는 단위가 횟수로 실린다', async () => {
+test('구독자의 헤더에는 단위가 글자로 실린다', async () => {
   const res = await handle(generate(), env(), { fetch: upstream().fetchImpl, now: () => NOON_KST });
-  assert.equal(res.headers.get('x-quota-unit'), 'calls');
+  assert.equal(res.headers.get('x-quota-unit'), 'chars');
+  assert.equal(res.headers.get('x-plan'), 'subscriber');
 });
 
 test('가짜 구매 토큰은 무료로 취급한다', async () => {
   const { pem } = await testKeyPair();
-  const e = env({ PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }) });
+  const e = env({ TEST_INSTALL_IDS: '', PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }) });
   const res = await handle(generate({ 'x-purchase-token': 'forged' }), e, { fetch: upstream({ activeToken: 'real' }).fetchImpl, now: () => NOON_KST });
-  assert.equal(res.status, 200);
+  assert.equal(res.status, 402);
+  assert.equal((await res.json()).error.message, 'subscribers_only');
   assert.equal(res.headers.get('x-plan'), 'free');
-  assert.equal(res.headers.get('x-quota-remaining'), '4');
 });
 
 test('서비스 계정이 없으면 토큰이 있어도 무료다', async () => {
-  const res = await handle(generate({ 'x-purchase-token': 'paid' }), env(), { fetch: upstream({ activeToken: 'paid' }).fetchImpl, now: () => NOON_KST });
+  const e = env({ TEST_INSTALL_IDS: '' });
+  const res = await handle(generate({ 'x-purchase-token': 'paid' }), e, { fetch: upstream({ activeToken: 'paid' }).fetchImpl, now: () => NOON_KST });
   assert.equal(res.headers.get('x-plan'), 'free');
 });
 
 test('Play 확인이 실패하면 그 순간만 무료로 보고 캐시하지 않는다', async () => {
   const { pem } = await testKeyPair();
-  const e = env({ PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }) });
+  const e = env({ TEST_INSTALL_IDS: '', PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }) });
   let playDown = true;
   const good = upstream({ activeToken: 'paid' }).fetchImpl;
   const fetchImpl = async (url, init) => {
@@ -208,19 +208,6 @@ test('Play 확인이 실패하면 그 순간만 무료로 보고 캐시하지 �
   playDown = false;
   const second = await handle(generate({ 'x-purchase-token': 'paid' }), e, { fetch: fetchImpl, now: () => NOON_KST });
   assert.equal(second.headers.get('x-plan'), 'subscriber', '복구되면 바로 구독자로 본다');
-});
-
-test('IP 당 하루 한도를 넘기면 설치 ID 를 바꿔도 막힌다', async () => {
-  const e = env({ IP_DAILY_LIMIT: '3' });
-  const up = upstream();
-  const deps = { fetch: up.fetchImpl, now: () => NOON_KST };
-  for (let i = 0; i < 3; i++) {
-    const res = await handle(generate({ 'x-install-id': `${INSTALL.slice(0, -1)}${i}` }), e, deps);
-    assert.equal(res.status, 200);
-  }
-  const res = await handle(generate({ 'x-install-id': 'fresh-install-id-9999' }), e, deps);
-  assert.equal(res.status, 403);
-  assert.equal((await res.json()).error.message, 'too_many_requests');
 });
 
 test('너무 긴 요청은 구글까지 가지 않는다', async () => {
@@ -267,7 +254,7 @@ test('중계 객체가 있으면 구글 호출은 그 안에서 나간다 — �
   const res = await handle(generate(), env({ RELAY: relay }), { fetch: direct.fetchImpl, now: () => NOON_KST });
 
   assert.equal(res.status, 200);
-  assert.equal(res.headers.get('x-quota-remaining'), '4');
+  assert.equal(res.headers.get('x-quota-remaining'), String(100000 - 50));
   assert.equal(relay.calls.length, 1);
   assert.equal(relay.calls[0].url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-x:generateContent');
   assert.equal(relay.calls[0].init.method, 'POST');
@@ -344,12 +331,11 @@ test('시험용 설치 ID 는 결제 없이 구독자로 친다', async () => {
   assert.equal(res.headers.get('x-quota-unit'), 'chars');
 });
 
-test('시험용 목록에 없는 설치 ID 는 그대로 무료다', async () => {
+test('시험용 목록에 없는 설치 ID 는 그대로 무료라 막힌다', async () => {
   const e = env({ TEST_INSTALL_IDS: 'someone-else' });
   const res = await handle(generate(), e, { fetch: upstream().fetchImpl, now: () => NOON_KST });
-  assert.equal(res.status, 200);
+  assert.equal(res.status, 402);
   assert.equal(res.headers.get('x-plan'), 'free');
-  assert.equal(res.headers.get('x-quota-unit'), 'calls');
 });
 
 test('시험용 목록이 비어 있으면 아무도 구독자가 아니다', async () => {
@@ -358,6 +344,7 @@ test('시험용 목록이 비어 있으면 아무도 구독자가 아니다', as
       fetch: upstream().fetchImpl,
       now: () => NOON_KST,
     });
+    assert.equal(res.status, 402, 'TEST_INSTALL_IDS=' + JSON.stringify(listed));
     assert.equal(res.headers.get('x-plan'), 'free', 'TEST_INSTALL_IDS=' + JSON.stringify(listed));
   }
 });

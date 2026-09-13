@@ -139,7 +139,7 @@ class PaywallActivity : AppCompatActivity() {
     }
 
     private fun rows(): List<Triple<String, String, String>> {
-        val freeTimes = getString(R.string.paywall_times, FREE_DAILY_CALLS.toString())
+        // 무료 칸은 전부 — 다. AI 는 프리미엄에만 있다.
         fun premiumTimes(chars: Int) =
             getString(R.string.paywall_times, String.format(Locale.KOREA, "%,d", DAILY_CHARS / chars))
         return listOf(
@@ -151,18 +151,17 @@ class PaywallActivity : AppCompatActivity() {
                 getString(R.string.paywall_premium_translate)
             ),
             Triple(getString(R.string.paywall_row_ai), getString(R.string.paywall_free_ai), getString(R.string.paywall_premium_ai)),
-            Triple(getString(R.string.paywall_row_100), freeTimes, premiumTimes(100)),
-            Triple(getString(R.string.paywall_row_500), freeTimes, premiumTimes(500)),
-            Triple(getString(R.string.paywall_row_2000), freeTimes, premiumTimes(2_000))
+            Triple(getString(R.string.paywall_row_100), DASH, premiumTimes(100)),
+            Triple(getString(R.string.paywall_row_500), DASH, premiumTimes(500)),
+            Triple(getString(R.string.paywall_row_2000), DASH, premiumTimes(2_000))
         )
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        /** 서버의 SUB_DAILY_CHARS / FREE_DAILY_LIMIT 과 같아야 한다. 서버가 실제 한도이고 이건 안내다. */
+        /** 서버의 SUB_DAILY_CHARS 와 같아야 한다. 서버가 실제 한도이고 이건 안내다. */
         const val DAILY_CHARS = 100_000
-        const val FREE_DAILY_CALLS = 5
 
         private const val CHECK = "✓"
         private const val DASH = "—"

@@ -177,12 +177,14 @@ class SetupActivity : AppCompatActivity() {
         val quota = Prefs.lastQuota(this)
         view.text = when {
             quota == null -> getString(R.string.setting_quota_unknown)
+            // 무료는 AI 를 쓰지 않는다. 남은 양을 0 으로 보여 주면 "다 써서 막혔다" 로
+            // 읽히는데, 애초에 받은 적이 없다. 무엇이 프리미엄인지를 말한다.
+            quota.plan == FREE_PLAN -> getString(R.string.setting_quota_free)
             quota.remaining == null -> getString(R.string.setting_quota_unlimited)
-            quota.countsChars -> getString(
+            else -> getString(
                 R.string.setting_quota_premium,
                 String.format(java.util.Locale.KOREA, "%,d", quota.remaining)
             )
-            else -> getString(R.string.setting_quota_free, quota.remaining, quota.limit ?: 0)
         }
     }
 
@@ -258,6 +260,9 @@ class SetupActivity : AppCompatActivity() {
     }
 
     companion object {
+        /** 서버가 헤더로 알려 주는 요금제 이름. */
+        private const val FREE_PLAN = "free"
+
         private const val KEY_SCROLL = "scroll_y"
     }
 }

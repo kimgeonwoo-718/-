@@ -493,8 +493,8 @@ class GeminiCorrectorTest {
         val transport = ScriptedTransport(
             GeminiCorrector.HttpResponse(
                 402,
-                "{\"error\":{\"message\":\"free_daily_limit\"}}",
-                mapOf("x-plan" to "free", "x-quota-remaining" to "0", "x-quota-limit" to "5")
+                "{\"error\":{\"message\":\"subscribers_only\"}}",
+                mapOf("x-plan" to "free", "x-quota-remaining" to "0", "x-quota-limit" to "0")
             )
         )
         val corrector = GeminiCorrector("", transport = transport, sleep = {}, baseUrl = PROXY)

@@ -14,7 +14,7 @@
  * 백여 개가 그걸 지키고 있어서, 여기서 다시 만들면 두 벌이 어긋난다. 서버는 얇게 둔다.
  * 경로도 구글과 똑같이 둬서 앱은 호스트만 바꾸면 된다.
  */
-import { kstDay, decide, validInstallId, chargeFor, decideChars, DEFAULT_SUB_DAILY_CHARS } from './quota.js';
+import { kstDay, validInstallId, chargeFor, decideChars, DEFAULT_SUB_DAILY_CHARS } from './quota.js';
 import { fetchAccessToken, verifySubscription } from './play.js';
 import { cacheGet, cacheSet } from './cache.js';
 import {
@@ -131,36 +131,28 @@ async function correct(request, env, url, fetchImpl, now) {
     isTestSubscriber(env, installId) || (await isSubscriber(env, purchaseToken, fetchImpl, nowMs));
   const plan = subscriber ? 'subscriber' : 'free';
 
-  let usage = null;
-  let ipKey = null;
-  let limit;
-  let unit;
-  // 구독자만 쓴다: 오늘 글자 수를 쌓는 키와, 이 요청이 깎을 글자 수.
-  let charsKey = null;
-  let charge = 0;
-  if (subscriber) {
-    // 구독자는 횟수가 아니라 글자 수로 센다 — 요금이 글자 수에 붙기 때문이다.
-    // 앱에는 "하루 10만 자" 로 안내한다. IP 한도는 거치지 않는다(돈 낸 사람이다).
-    unit = 'chars';
-    limit = Number(env.SUB_DAILY_CHARS ?? DEFAULT_SUB_DAILY_CHARS);
-    charsKey = 'chars:' + installId;
-    charge = chargeFor(safeUserLength(body));
-    usage = decideChars(await used(env.DB, charsKey, day), charge, limit);
-    if (!usage.allowed) return withQuota(fail(402, 'sub_daily_limit'), usage, limit, plan, unit);
-  } else {
-    unit = 'calls';
-    limit = Number(env.FREE_DAILY_LIMIT ?? 5);
-    // 설치 ID 를 갈아 끼우며 무료를 무한히 쓰는 것을 IP 로 한 번 더 막는다. 완벽하지
-    // 않지만(통신사 NAT), 무료 한도를 우회하려는 사람에게 값을 치르게 하는 정도는 된다.
-    ipKey = await ipBucket(request);
-    if ((await used(env.DB, ipKey, day)) >= Number(env.IP_DAILY_LIMIT ?? 300)) {
-      return fail(403, 'too_many_requests');
-    }
-    usage = decide(await used(env.DB, installId, day), limit);
-    // 402 를 쓰는 이유: 앱은 429 와 5xx 를 "붐빔" 으로 보고 다른 모델로 옮겨 다시
-    // 보낸다. 한도 초과에 그러면 헛요청 세 번이다. 402 는 그 목록에 없어 바로 멈춘다.
-    if (!usage.allowed) return withQuota(fail(402, 'free_daily_limit'), usage, limit, plan, unit);
+  const unit = 'chars';
+  const limit = subscriber ? Number(env.SUB_DAILY_CHARS ?? DEFAULT_SUB_DAILY_CHARS) : 0;
+
+  // 무료는 AI 를 쓰지 않는다. 실시간 온디바이스 교정은 그대로 무제한이고, 서버로 오는
+  // 것만 막는다.
+  //
+  // 왜 이렇게까지 하냐면: 무료 한 명이 한도를 꽉 채우면 한 달에 468원이 나간다. 받는
+  // 돈은 0원이라 **쓰는 사람이 늘수록 손해가 는다**. 100만 명이면 월 4.7억이다. 한도를
+  // 낮춰도 방향은 그대로고, 서버 주소는 APK 안에 있어 누구나 두드릴 수 있다. 유일하게
+  // 확실한 천장은 "돈 낸 사람만" 이다.
+  //
+  // 402 를 쓰는 이유: 앱은 429 와 5xx 를 "붐빔" 으로 보고 다른 모델로 옮겨 다시 보낸다.
+  // 한도 초과에 그러면 헛요청 세 번이다. 402 는 그 목록에 없어 바로 멈춘다.
+  if (!subscriber) {
+    return withQuota(fail(402, 'subscribers_only'), { remaining: 0 }, limit, plan, unit);
   }
+
+  // 구독자는 횟수가 아니라 글자 수로 센다 — 요금이 글자 수에 붙기 때문이다.
+  const charsKey = 'chars:' + installId;
+  const charge = chargeFor(safeUserLength(body));
+  let usage = decideChars(await used(env.DB, charsKey, day), charge, limit);
+  if (!usage.allowed) return withQuota(fail(402, 'sub_daily_limit'), usage, limit, plan, unit);
 
   const model = openAiModel(env);
   const startedAt = Date.now();
@@ -174,13 +166,8 @@ async function correct(request, env, url, fetchImpl, now) {
     await recordTokens(env.DB, day, usageOf(reply.text));
     // 성공했을 때만 깎는다. 구글이 거절한 요청까지 세면 사용자는 아무것도 못 받고
     // 하루치만 잃는다 — 앱이 예전에 지키던 규칙과 같다.
-    if (subscriber) {
-      await bumpBy(env.DB, charsKey, day, charge);
-      usage = { remaining: Math.max(0, usage.remaining - charge) };
-    } else {
-      await Promise.all([bump(env.DB, installId, day), bump(env.DB, ipKey, day)]);
-      usage = { remaining: Math.max(0, usage.remaining - 1) };
-    }
+    await bumpBy(env.DB, charsKey, day, charge);
+    usage = { remaining: Math.max(0, usage.remaining - charge) };
   }
   return withQuota(asResponse(reply), usage, limit, plan, unit);
 }
@@ -392,10 +379,6 @@ async function used(db, id, day) {
   return row?.used ?? 0;
 }
 
-async function bump(db, id, day) {
-  await bumpBy(db, id, day, 1);
-}
-
 async function bumpBy(db, id, day, amount) {
   await db
     .prepare(
@@ -421,11 +404,6 @@ async function sweep(env) {
   await env.DB.prepare('DELETE FROM usage WHERE day < ?').bind(kstDay(nowMs - 2 * 86_400_000)).run();
   await env.DB.prepare('DELETE FROM cache WHERE expires_at < ?').bind(nowMs).run();
   await env.DB.prepare('DELETE FROM tokens WHERE day < ?').bind(kstDay(nowMs - 90 * 86_400_000)).run();
-}
-
-async function ipBucket(request) {
-  const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
-  return 'ip:' + (await sha256Hex(ip)).slice(0, 32);
 }
 
 async function sha256Hex(text) {

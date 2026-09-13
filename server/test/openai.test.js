@@ -25,8 +25,9 @@ function env(overrides = {}) {
   return {
     DB: fakeDb(),
     OPENAI_API_KEY: 'sk-test\n',
-    FREE_DAILY_LIMIT: '5',
-    IP_DAILY_LIMIT: '300',
+    // AI 는 구독자 전용이다. 이 파일의 시험은 전부 "그래서 무엇을 어떻게 보내나" 를
+    // 보는 것이라 구독자여야 본론까지 간다.
+    TEST_INSTALL_IDS: INSTALL,
     ...overrides,
   };
 }
@@ -169,11 +170,12 @@ test('모델 목록은 물어보지 않고 바로 답한다', async () => {
   assert.equal(up.calls.length, 0);
 });
 
-test('토큰과 무료 한도는 그대로 센다', async () => {
+test('토큰과 구독자 한도는 그대로 센다', async () => {
   const shared = env();
   const up = openAi();
   const res = await handle(generate(), shared, { fetch: up.fetchImpl });
-  assert.equal(res.headers.get('x-quota-remaining'), '4');
+  // '안녕하세요 반갑읍니다' 는 11 자라 최소 과금 50 자로 친다.
+  assert.equal(res.headers.get('x-quota-remaining'), String(100000 - 50));
 
   const days = await shared.DB.prepare('SELECT day, requests, prompt, output, thoughts FROM tokens ORDER BY day DESC LIMIT 31').all();
   assert.equal(days.results[0].prompt, 200);
@@ -181,12 +183,12 @@ test('토큰과 무료 한도는 그대로 센다', async () => {
   assert.equal(days.results[0].thoughts, 10);
 });
 
-test('OpenAI 가 거절하면 횟수를 깎지 않는다', async () => {
+test('OpenAI 가 거절하면 한도를 깎지 않는다', async () => {
   const shared = env();
   const up = openAi({ status: 429 });
   const res = await handle(generate(), shared, { fetch: up.fetchImpl });
   assert.equal(res.status, 429);
-  assert.equal(res.headers.get('x-quota-remaining'), '5');
+  assert.equal(res.headers.get('x-quota-remaining'), '100000');
 });
 
 test('OpenAI 키가 없으면 예전처럼 구글로 간다', async () => {
