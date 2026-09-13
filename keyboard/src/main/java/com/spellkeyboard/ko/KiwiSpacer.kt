@@ -19,9 +19,9 @@ import java.io.File
  * | 멀쩡한 문장을 건드리는 비율 | **0.37%** | 6.9~18% |
  * | 공백 전부 지운 글의 경계 F1 | 87.6% | **96.1%** |
  *
- * 같은 엔진이 자에 따라 이기고 진다. Kiwi 는 멀쩡한 글에 들이대면 합성어를 쪼갠다
- * ('개 똥으로', '일 처리를'). 그래서 **띄어쓰기가 아예 없는 덩어리에만** 쓴다 —
- * 거기엔 망가뜨릴 띄어쓰기가 없고, 그 자리에서는 확실히 이긴다.
+ * 같은 엔진이 자에 따라 이기고 진다. Kiwi 는 멀쩡한 글에 들이대면 멀쩡한 띄어쓰기를 헤집는다.
+ * 그래서 **띄어쓰기가 아예 없는 덩어리에만** 쓴다 — 거기엔 망가뜨릴 띄어쓰기가 없고,
+ * 그 자리에서는 확실히 이긴다.
  *
  * ## 없을 수도 있다
  *
@@ -31,6 +31,9 @@ import java.io.File
  */
 class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
 
+    /** [isOneWord] 의 답을 기억해 둔다. 같은 낱말이 자주 되돌아온다. 넘치면 통째로 버린다. */
+    private val oneWordCache = HashMap<String, Boolean>()
+
     override fun space(text: String): String? {
         val tokens = runCatching {
             kiwi.tokenize(text, Kiwi.AnalyzeOption(Kiwi.Match.allWithNormalizing))
@@ -39,7 +42,10 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
         // **토큰 표면을 이어 붙이면 안 된다.** 축약형('했' = 하 + 았)은 여러 형태소가 같은
         // 자리를 가리켜서 글자가 겹친다. 원문은 그대로 두고 공백만 끼워 넣는다.
         val breakAt = BooleanArray(text.length + 1)
+        var previous: Kiwi.Token? = null
         for (token in tokens) {
+            val prev = previous
+            previous = token
             if (token.position <= 0 || token.tag !in WORD_STARTS) continue
             // 보조용언 '-어지다' 는 앞말에 붙여 쓴다('행복해지는', '이어지는'). Kiwi 는 이걸
             // 따로 떼어 놓는데, 그대로 두면 '행복해 지는' 이 된다.
@@ -47,6 +53,9 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
             // '하' 는 넣지 않았다. 같은 보조용언이라도 '해야 하는' 은 띄어 쓴다 —
             // 넣었더니 말뭉치 숫자가 되레 내려갔다(통째 67.6% → 65.1%).
             if (token.tag == Kiwi.POSTag.vx && token.form == GLUED_AUXILIARY) continue
+            if (prev != null && prev.tag in NOUNS && token.tag in NOUNS &&
+                isOneWord(text.substring(prev.position, token.position + token.length))
+            ) continue
             breakAt[token.position] = true
         }
 
@@ -62,8 +71,32 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
         return if (spaced == text) null else spaced
     }
 
+    /**
+     * 명사 둘을 붙여 놓고 그것만 따로 돌려 봤을 때 형태소 하나로 나오면 합성어다.
+     *
+     * 필요한 이유는 이렇다. 규칙이 "내용어 태그 앞에서 띄운다" 라서 명사가 둘 붙어 있으면
+     * 무조건 갈라진다 — '개똥으로' 가 문장 속에서는 개/NNG + 똥/NNG 로 잘려 '개 똥으로' 가 됐다.
+     * 그런데 '개똥' 만 따로 돌리면 Kiwi 사전이 이걸 한 낱말로 안다. 반대로 '일처리' 는
+     * 혼자 돌려도 일 + 처리 로 갈린다 — 그건 진짜 두 낱말이니 띄우는 게 맞다.
+     *
+     * "명사 + 명사는 무조건 안 띄운다" 는 뭉툭한 규칙도 대 봤는데 재현율이 무너졌다
+     * (97.0% → 88.4%, 통째 67.6% → 49.6%). 사전에 물어보는 이 방식은 정밀도만 올린다
+     * (95.9 → 96.3%, 재현율 96.9 → 96.8%, 통째 68.7 → 69.3%).
+     */
+    private fun isOneWord(joined: String): Boolean {
+        oneWordCache[joined]?.let { return it }
+        val parts = runCatching {
+            kiwi.tokenize(joined, Kiwi.AnalyzeOption(Kiwi.Match.allWithNormalizing))
+        }.getOrNull() ?: return false
+        val one = parts.size == 1 && parts[0].tag in NOUNS
+        if (oneWordCache.size >= CACHE_LIMIT) oneWordCache.clear()
+        oneWordCache[joined] = one
+        return one
+    }
+
     fun close() {
         runCatching { kiwi.close() }
+        oneWordCache.clear()
     }
 
     companion object {
@@ -85,7 +118,7 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
          * 어절을 시작할 수 있는 품사. 조사·어미·접미사는 앞말에 붙으므로 뺀다.
          *
          * 이 목록이 곧 띄어쓰기 규칙이다. 넓히면 재현율이 오르고 정밀도가 떨어진다 —
-         * 지금 값으로 공백 없는 글에서 경계 F1 96.4%, 문장 통째 68.7% 다.
+         * 지금 값에 [isOneWord] 까지 얹어 공백 없는 글에서 경계 F1 96.5%, 문장 통째 69.3% 다.
          */
         private val WORD_STARTS: Set<Byte> = setOf(
             Kiwi.POSTag.nng, Kiwi.POSTag.nnp, Kiwi.POSTag.nnb, Kiwi.POSTag.nr, Kiwi.POSTag.np,
@@ -96,6 +129,12 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
             Kiwi.POSTag.vcn,
             Kiwi.POSTag.sl, Kiwi.POSTag.sh, Kiwi.POSTag.sn
         )
+
+        /** 합성어인지 따져 볼 대상. 명사 둘이 붙어 있을 때만 본다. */
+        private val NOUNS: Set<Byte> = setOf(Kiwi.POSTag.nng, Kiwi.POSTag.nnp)
+
+        /** 기억해 둘 낱말 수. 넘치면 통째로 버린다 — 다시 물어보면 되는 값이다. */
+        private const val CACHE_LIMIT = 2048
 
         /**
          * Kiwi 를 올린다. **오래 걸린다(실기기에서 수 초)** — 반드시 다른 스레드에서 불러라.
