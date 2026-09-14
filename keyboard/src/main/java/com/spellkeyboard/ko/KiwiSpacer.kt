@@ -39,7 +39,19 @@ class KiwiSpacer private constructor(
     /** [isOneWord] 의 답을 기억해 둔다. 같은 낱말이 자주 되돌아온다. 넘치면 통째로 버린다. */
     private val oneWordCache = HashMap<String, Boolean>()
 
+    /**
+     * 이미 닫혔는가.
+     *
+     * 전체교정은 **다른 스레드**에서 돈다. 그 사이에 키보드를 닫으면 [close] 가 네이티브
+     * 객체를 놓아 버리고, 돌고 있던 쪽이 그 위에서 계속 읽는다 — 자바 예외가 아니라
+     * **프로세스가 통째로 죽는 종류**다. 닫기와 쓰기를 같은 자물쇠로 묶고 깃발로 한 번 더 막는다.
+     */
+    @Volatile
+    private var closed = false
+
+    @Synchronized
     override fun space(text: String): String? {
+        if (closed) return null
         val tokens = runCatching { kiwi.tokenize(text, Kiwi.AnalyzeOption(MATCH)) }.getOrNull() ?: return null
 
         // **토큰 표면을 이어 붙이면 안 된다.** 축약형('했' = 하 + 았)은 여러 형태소가 같은
@@ -134,7 +146,9 @@ class KiwiSpacer private constructor(
      * | 안 씀 | 77.0% | 0.70% |
      * | 씀 | **88.1%** | **0.80%** |
      */
+    @Synchronized
     override fun fix(text: String): String? {
+        if (closed) return null
         val transformer = typo ?: return null
         val tokens = runCatching {
             kiwi.tokenize(text, Kiwi.AnalyzeOption(MATCH, null, 0, 0f, transformer, TYPO_THRESHOLD))
@@ -174,7 +188,9 @@ class KiwiSpacer private constructor(
         return out
     }
 
+    @Synchronized
     fun close() {
+        closed = true
         runCatching { kiwi.close() }
         runCatching { typo?.close() }
         oneWordCache.clear()
