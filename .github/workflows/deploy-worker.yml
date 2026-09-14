@@ -125,7 +125,10 @@ jobs:
             printf '%s' "$PLAY_SERVICE_ACCOUNT" | npx --yes wrangler@3 secret put PLAY_SERVICE_ACCOUNT
             echo "PLAY_SERVICE_ACCOUNT: 넣음"
           else
-            echo "PLAY_SERVICE_ACCOUNT: 없음 — 결제 확인 없이 전부 무료로 동작"
+            # 거꾸로 읽기 쉬운 자리다. 이 값이 없으면 isSubscriber 가 무조건 false 라
+            # **아무도 구독자가 될 수 없다** — 무료가 열리는 것이 아니라 AI 가 닫힌다.
+            echo "PLAY_SERVICE_ACCOUNT: 없음 — Play 결제를 확인할 길이 없다."
+            echo "  ⇒ TEST_INSTALL_IDS 에 적힌 기기 말고는 AI 가 402 로 막힌다."
           fi
           # 개발용. 여기 적힌 설치 ID 는 Play 결제 없이 구독자로 친다 — Play Console
           # 등록 전에 유료 기능(AI 번역)을 실기기에서 확인하려고 둔다.
@@ -140,6 +143,9 @@ jobs:
 
       - name: 주소 확인
         if: steps.creds.outputs.ready == 'true'
+        env:
+          # 구독자 경로까지 확인하려고 받는다. 깃허브가 로그에서 가려 준다.
+          TEST_INSTALL_IDS: ${{ secrets.TEST_INSTALL_IDS }}
         run: |
           set -euo pipefail
           url="https://spell-keyboard.${{ steps.subdomain.outputs.name }}.workers.dev"
@@ -179,3 +185,27 @@ jobs:
             "$url/v1beta/models/gemini-3.5-flash-lite:generateContent" || true
           grep -i '^x-upstream-ms' gen.head || true
           head -c 1200 gen.json; echo
+
+          # ----- 구독자 한 명으로 진짜 끝까지 -----
+          # 위 402 는 "막는 것" 만 증명한다. 모델이 실제로 답하는지는 구독자여야 보인다.
+          # TEST_INSTALL_IDS 가 있으면 그 첫 번째 ID 로 한 번 더 친다. 이 값은 비밀값이라
+          # 깃허브가 로그에서 가려 주므로 **절대 직접 찍지 않는다** — 응답 코드와 모델이
+          # 돌려준 글만 남긴다.
+          if [ -n "${TEST_INSTALL_IDS:-}" ]; then
+            echo "----- 교정 한 번 (구독자 = TEST_INSTALL_IDS 의 첫 번째) -----"
+            first=$(printf '%s' "$TEST_INSTALL_IDS" | cut -d, -f1 | tr -d '[:space:]')
+            code=$(curl -sS --max-time 45 -o sub.json -w '%{http_code}' -X POST \
+              -H 'Content-Type: application/json' -H "X-Install-Id: $first" \
+              --data '{"contents":[{"parts":[{"text":"다음 문장의 맞춤법만 고쳐서 고친 문장만 답해: 오늘 날시가 참 조은거 같애"}]}]}' \
+              "$url/v1beta/models/gemini-3.5-flash-lite:generateContent" || echo 000)
+            echo "HTTP $code"
+            jq -r '.candidates[0].content.parts[0].text // empty' sub.json 2>/dev/null || true
+            if [ "$code" != "200" ]; then
+              echo "::error title=구독자 교정 실패::구독자로 친 요청이 $code 다. 아래가 서버가 돌려준 원문이다."
+              head -c 600 sub.json; echo
+              exit 1
+            fi
+            echo "구독자 경로 OK — 모델까지 실제로 닿는다."
+          else
+            echo "TEST_INSTALL_IDS 가 없어 구독자 경로는 확인하지 못했다 (출시 때는 이게 맞다)."
+          fi
