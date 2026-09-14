@@ -1,7 +1,16 @@
 name: 모델 겨루기
 
-# 손으로만 돌린다. 값이 드는 일이고, 모델을 바꿀지 정할 때만 필요하다.
+# 값이 드는 일이라 아무 때나 돌지 않는다.
+#
+# **bench/ 를 건드리면 돈다.** 이 저장소는 기본 가지가 다른 프로젝트 가지로 돼 있어서,
+# 깃허브가 이 워크플로를 "손으로 돌릴 수 있는 것" 목록에 안 올린다(기본 가지에 있는
+# 것만 올린다). 그래서 시험지나 채점을 고칠 때 같이 돌게 해 뒀다 — 바꿨으면 재 보는
+# 것이 맞기도 하다. 기본 가지가 이 가지로 바뀌면 아래 workflow_dispatch 가 살아난다.
 on:
+  push:
+    paths:
+      - "server/bench/**"
+      - ".github/workflows/bench-models.yml"
   workflow_dispatch:
     inputs:
       models:
@@ -30,10 +39,13 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -euo pipefail
+          # 손으로 돌리면 적어 준 대로, bench/ 를 고쳐서 돌면 기본값으로 잰다.
+          models="${{ inputs.models }}"
+          [ -n "$models" ] || models="gemini-3.5-flash-lite gemini-3.5-flash gemini-3.8-flash"
           limit=""
           if [ -n "${{ inputs.limit }}" ]; then limit="--limit=${{ inputs.limit }}"; fi
           # 결과를 실행 요약에 그대로 남긴다. 로그를 뒤지지 않고 바로 보려고.
-          node bench/models.mjs ${{ inputs.models }} $limit | tee bench.txt
+          node bench/models.mjs $models $limit | tee bench.txt
           {
             echo '## 모델 겨루기'
             echo
