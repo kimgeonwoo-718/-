@@ -15,6 +15,9 @@
     <string name="toolbar_correct_all">전체</string>
     <string name="correct_all_failed">교정하지 못했어요</string>
     <string name="toolbar_translate">번역</string>
+    <!-- 도구 줄 접기/펴기. 접으면 자판이 그만큼 올라와 화면을 덜 가린다. -->
+    <string name="toolbar_collapse">도구 줄 접기</string>
+    <string name="toolbar_expand">도구 줄 펴기</string>
     <string name="lang_english">영어</string>
     <string name="lang_japanese">일본어</string>
     <string name="lang_chinese">중국어</string>

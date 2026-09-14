@@ -14,6 +14,7 @@ object Prefs {
     private const val KEY_LAYOUT = "layout_type"
     private const val KEY_TRANSLATE_TARGET = "translate_target"
     private const val KEY_KEY_ALPHA = "key_alpha_percent"
+    private const val KEY_TOOLBAR_COLLAPSED = "toolbar_collapsed"
     private const val KEY_CLIPBOARD = "clipboard"
     private const val KEY_INSTALL_ID = "install_id"
     private const val KEY_PURCHASE_TOKEN = "purchase_token"
@@ -70,6 +71,19 @@ object Prefs {
     }
 
     const val DEFAULT_KEY_TRANSPARENCY = 70
+
+    /**
+     * 도구 줄(이모티콘·전체·클립보드·교정·번역·설정)을 접어 뒀는가.
+     *
+     * 접으면 그 줄 높이만큼 자판이 통째로 내려앉아 화면을 덜 가린다. 기본은 펴 둔다 —
+     * 접힌 채로 처음 만나면 그런 기능이 있다는 것 자체를 모른다.
+     */
+    fun toolbarCollapsed(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_TOOLBAR_COLLAPSED, false)
+
+    fun setToolbarCollapsed(context: Context, collapsed: Boolean) {
+        prefs(context).edit().putBoolean(KEY_TOOLBAR_COLLAPSED, collapsed).apply()
+    }
 
     // --- AI 경로 ----------------------------------------------------------------
 

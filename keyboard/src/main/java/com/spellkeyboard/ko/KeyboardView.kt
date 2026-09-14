@@ -30,6 +30,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
+import androidx.core.view.updateLayoutParams
 
 /**
  * 소프트 키보드 화면.
@@ -136,6 +137,15 @@ class KeyboardView @JvmOverloads constructor(
     private val translateSource: TextView
     private val translateTarget: TextView
     private val settingsButton: TextView
+
+    /** 도구 줄을 접는 손잡이. 접혀 있어도 이것만은 남아 있어야 다시 펼 수 있다. */
+    private val collapseButton: TextView
+    /** 도구 줄 전체. 높이를 바꿔서 접는다. */
+    private val toolbar: LinearLayout
+    /** 접을 때 감추는 부분 — 동그라미 여섯 개. [collapseButton] 은 여기 안 든다. */
+    private val toolbarItems: LinearLayout
+    private var toolbarCollapsed = Prefs.toolbarCollapsed(context)
+
     private val clipboardTitle: TextView
     private val rowContainer: LinearLayout
     private val clipboardPanel: LinearLayout
@@ -220,19 +230,37 @@ class KeyboardView @JvmOverloads constructor(
         }
         settingsButton = toolbarButton("⚙\uFE0E") { listener?.onOpenSettings() }
 
+        // 도구 줄 접기. 안 쓰는 사람에게는 34dp 를 늘 잡아먹는 줄이라, 접으면 자판이
+        // 통째로 그만큼 내려앉는다. 접힌 상태에서는 이 손잡이가 줄 전체로 넓어져서
+        // 얇아도 누르기 쉽다 — 높이는 못 키우니 너비로 벌어 준다.
+        collapseButton = TextView(context).apply {
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
+            attachKeyTouch(this, onPress = { toggleToolbar() })
+        }
+
         // 삼성처럼 동그라미들을 줄 전체에 고르게 펼친다. 사이와 양끝의 빈칸이 같은 무게라
         // 간격이 저절로 같아진다.
-        val toolbar = LinearLayout(context).apply {
+        toolbarItems = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), 0, dp(6), 0)
+            setPadding(0, 0, dp(6), 0)
             listOf(emojiButton, aiButton, clipboardButton, correctionButton, translateButton, settingsButton).forEach { button ->
                 addView(View(context), LayoutParams(0, 1, 1f))
                 addView(button, toolbarParams())
             }
             addView(View(context), LayoutParams(0, 1, 1f))
         }
+        toolbar = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, 0, 0)
+            addView(collapseButton, LayoutParams(dp(COLLAPSE_BUTTON_DP), LayoutParams.MATCH_PARENT))
+            addView(toolbarItems, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+        }
         addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOLBAR_HEIGHT_DP)))
+        applyToolbarCollapsed()
 
         // 번역 입력줄. 지보드처럼 자판 바로 위에 열리고, 여기 쓴 한국어가 앱에는 번역돼 들어간다.
         translateSource = TextView(context).apply {
@@ -297,6 +325,49 @@ class KeyboardView @JvmOverloads constructor(
         styleCorrectionButton()
     }
 
+    private fun toggleToolbar() {
+        toolbarCollapsed = !toolbarCollapsed
+        Prefs.setToolbarCollapsed(context, toolbarCollapsed)
+        // 접는 김에 열려 있던 판도 닫는다. 접힌 줄 밑에 클립보드가 펼쳐져 있으면
+        // 무엇을 접은 것인지 알 수 없다.
+        if (toolbarCollapsed) closePanels()
+        applyToolbarCollapsed()
+    }
+
+    /**
+     * 접힘 상태를 실제 배치에 반영한다.
+     *
+     * 동그라미들을 감추고 줄 높이를 줄인다. 감추기만 하면 빈 줄이 그대로 남아서 아무것도
+     * 아낀 게 없다 — 접는 이유가 자판을 그만큼 내리는 것이라 높이를 같이 줄여야 한다.
+     */
+    private fun applyToolbarCollapsed() {
+        toolbarItems.isVisible = !toolbarCollapsed
+        collapseButton.text = if (toolbarCollapsed) "▼" else "▲"
+        collapseButton.contentDescription =
+            context.getString(if (toolbarCollapsed) R.string.toolbar_expand else R.string.toolbar_collapse)
+        // 접히면 손잡이가 줄 전체를 차지한다. 22dp 짜리 띠라 세로로는 좁으니 가로로 넓혀
+        // 어디를 눌러도 펴지게 한다.
+        collapseButton.updateLayoutParams<LayoutParams> {
+            width = if (toolbarCollapsed) LayoutParams.MATCH_PARENT else dp(COLLAPSE_BUTTON_DP)
+        }
+        toolbar.updateLayoutParams<LayoutParams> {
+            height = dp(if (toolbarCollapsed) TOOLBAR_COLLAPSED_DP else TOOLBAR_HEIGHT_DP)
+        }
+        styleCollapseButton()
+    }
+
+    /**
+     * 접기 손잡이의 색.
+     *
+     * 펴져 있을 때는 배경 없이 작은 삼각형만 둔다 — 동그라미를 주면 일곱 번째 도구처럼
+     * 보인다. 접혀 있을 때는 이 띠 하나만 남으므로, 눌러도 되는 것임이 보이도록 옅은
+     * 바탕을 깐다.
+     */
+    private fun styleCollapseButton() {
+        collapseButton.setTextColor(theme.hint)
+        collapseButton.background = if (toolbarCollapsed) roundRect(keyFill(theme.toolbarButton)) else null
+    }
+
     /** AI 가 도는 동안 AI 버튼을 흐리게. */
     fun setAiBusy(busy: Boolean) {
         aiButton.alpha = if (busy) 0.35f else 1f
@@ -359,7 +430,10 @@ class KeyboardView @JvmOverloads constructor(
             )
         }
         val left = (width - view.measuredWidth) / 2
-        val top = (dp(TOOLBAR_HEIGHT_DP) - view.measuredHeight) / 2 + dp(2)
+        // 도구 줄 자리에 띄운다. 접혀 있으면 그 줄이 얇아지니 실제 높이를 쓴다 —
+        // 상수를 쓰면 접었을 때 알림이 자판 키를 덮는다.
+        val strip = if (toolbar.height > 0) toolbar.height else dp(TOOLBAR_HEIGHT_DP)
+        val top = (strip - view.measuredHeight) / 2 + dp(2)
         view.layout(left, top, left + view.measuredWidth, top + view.measuredHeight)
         view.alpha = 0f
         overlay.add(view)
@@ -412,6 +486,7 @@ class KeyboardView @JvmOverloads constructor(
     private fun restyle() {
         listOf(emojiButton, aiButton, settingsButton).forEach { styleToolbarButton(it) }
         styleClipboardButton()
+        styleCollapseButton()
         styleCorrectionButton()
         styleTranslateButton()
         clipboardTitle.setTextColor(theme.text)
@@ -1500,6 +1575,19 @@ class KeyboardView @JvmOverloads constructor(
          * 보여, 사용자가 그어 준 선(위쪽 약 16dp)만큼 더 줄였다. 줄 34dp 에 동그라미 28dp.
          */
         const val TOOLBAR_HEIGHT_DP = 34
+
+        /**
+         * 접었을 때 남는 띠의 높이.
+         *
+         * 0 으로 만들어 완전히 없애면 다시 펼 수가 없다. 22dp 는 세로로 좁지만 접힌
+         * 손잡이가 줄 **전체 너비**로 넓어지므로 겨냥할 것이 없다 — 위쪽 아무 데나 누르면
+         * 펴진다. 그래도 12dp 를 벌어 준다.
+         */
+        const val TOOLBAR_COLLAPSED_DP = 22
+
+        /** 펴져 있을 때 손잡이가 차지하는 너비. 동그라미들보다 좁아서 도구로 안 보인다. */
+        const val COLLAPSE_BUTTON_DP = 22
+
         const val TRANSLATE_HEIGHT_DP = 40
         const val TOOLBAR_BUTTON_DP = 28
 
