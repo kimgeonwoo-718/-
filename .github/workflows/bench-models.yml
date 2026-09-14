@@ -1,0 +1,45 @@
+name: 모델 겨루기
+
+# 손으로만 돌린다. 값이 드는 일이고, 모델을 바꿀지 정할 때만 필요하다.
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: "잴 모델들 (띄어쓰기로 구분). 예: gemini-3.5-flash-lite gemini-3.5-flash gpt-5-nano"
+        required: true
+        default: "gemini-3.5-flash-lite gemini-3.5-flash gemini-3.8-flash"
+      limit:
+        description: "쓸 문장 수 (비우면 50개 전부). 빨리 보고 싶으면 10 쯤."
+        required: false
+        default: ""
+
+jobs:
+  bench:
+    name: 같은 시험지로 모델을 잰다
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 잰다
+        working-directory: server
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          limit=""
+          if [ -n "${{ inputs.limit }}" ]; then limit="--limit=${{ inputs.limit }}"; fi
+          # 결과를 실행 요약에 그대로 남긴다. 로그를 뒤지지 않고 바로 보려고.
+          node bench/models.mjs ${{ inputs.models }} $limit | tee bench.txt
+          {
+            echo '## 모델 겨루기'
+            echo
+            echo '```'
+            cat bench.txt
+            echo '```'
+            echo
+            echo '되살림만 보고 고르지 마라. **멀쩡한 글 건드림**이 낮아야 쓸 수 있는 모델이다.'
+          } >> "$GITHUB_STEP_SUMMARY"
