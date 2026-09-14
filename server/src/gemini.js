@@ -129,22 +129,33 @@ export function parseGeminiModels(text) {
 }
 
 /**
- * 고를 만한 정도. 클수록 먼저다. **앱의 `GeminiCorrector.rank` 와 같은 규칙**이다 —
- * 예전에 이 판단을 앱이 했고, 되돌리는 것이 그 시절 동작이라 규칙도 그대로 가져왔다.
+ * 고를 만한 정도. 클수록 먼저다.
  *
- * lite 를 더 쳐주는 이유: 맞춤법 교정은 기계적인 일이라 큰 모델이 필요 없는데, lite 는
- * 훨씬 빠르고(사용자가 기다리는 시간), 훨씬 싸고(구독료로 API 값을 대는 구조라 곧 마진),
- * 훨씬 덜 붐빈다(503 을 덜 만난다).
+ * ## 왜 세대를 먼저 보나 — 한 번 틀렸던 자리다
  *
- * 세대는 **같은 등급 안에서만** 따진다. 세대에 큰 점수를 주면 비싼 flash 가 싼 lite 를
- * 이겨 버린다. 미리보기는 예고 없이 사라져서 한 등급 아래로 본다.
+ * 처음에는 이 규칙이 세대를 먼저 봤고(`version * 100`), 구글 목록에서 제일 새 flash 를
+ * 골랐다. 그러다 "교정에는 어느 세대든 넘치게 똑똑하다, 갈리는 건 값이다" 라며 **등급이
+ * 세대를 이기게** 바꿨다. 그 한 줄로 실기기가 `gemini-3.8-flash` 에서
+ * `gemini-3.5-flash-lite` 로 내려갔다 — 세 세대 아래에 등급도 한 단계 아래다.
+ *
+ * **그 단정은 재 보지 않은 것이었고, 틀렸다.** 실기기 평가가 "원래 쓰던 제미나이보다
+ * 떨어진다" 로 돌아왔다. 값을 아끼려다 파는 물건을 깎았다.
+ *
+ * 그래서 세대 우선으로 되돌린다. lite 는 **같은 세대 안에서만** 이긴다(빠르고 싸고 덜
+ * 붐비는 것은 여전히 사실이다). pro 는 교정에 쓰기엔 느리고 비싸서 뒤로 민다.
+ * 미리보기는 예고 없이 사라지므로 뒤로 민다.
+ *
+ * 구글 목록에 대입하면 `gemini-3.8-flash`(420)가 `gemini-3.5-flash-lite`(415)를 이긴다.
+ * 구글이 3.9 를 내면 그날로 갈아탄다 — 그게 이 함수가 있는 이유다.
  */
 export function rankGeminiModel(name) {
   const lower = name.toLowerCase();
-  const version = Math.round((Number(/\d+(?:\.\d+)?/.exec(lower)?.[0]) || 0) * 10);
-  const tier = lower.includes('lite') ? 3000 : lower.includes('flash') ? 2000 : lower.includes('pro') ? 0 : 1000;
-  const preview = lower.includes('preview') || lower.includes('exp') ? 1500 : 0;
-  return tier + version - preview;
+  let score = Math.round((Number(/\d+(?:\.\d+)?/.exec(lower)?.[0]) || 0) * 100);
+  if (lower.includes('flash')) score += 40;
+  if (lower.includes('lite')) score += 25;
+  if (lower.includes('pro')) score -= 30;
+  if (lower.includes('preview') || lower.includes('exp')) score -= 20;
+  return score;
 }
 
 /** 목록에서 교정에 쓸 것 하나. 없으면 null. */

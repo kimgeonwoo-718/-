@@ -218,7 +218,7 @@ jobs:
             # 사용자 글은 고칠 원문만 보낸다(GeminiCorrector.buildRequest).
             code=$(curl -sS --max-time 45 -o sub.json -w '%{http_code}' -X POST \
               -H 'Content-Type: application/json' -H "X-Install-Id: $first" \
-              --data '{"system_instruction":{"parts":[{"text":"너는 한국어 맞춤법 교정기다. 입력 문장의 맞춤법과 띄어쓰기만 고쳐서 고친 문장만 출력해라. 설명하거나 덧붙이지 마라."}]},"contents":[{"role":"user","parts":[{"text":"오늘 날시가 참 조은거 같애 우리 내일 어디서 만날까 시간은 저녁 일곱시쯤이 괜찬을거 같은데"}]}],"generationConfig":{"temperature":0,"candidateCount":1,"thinkingConfig":{"thinkingBudget":0}}}' \
+              --data '{"system_instruction":{"parts":[{"text":"너는 한국어 맞춤법 교정기다. 입력 문장의 맞춤법과 띄어쓰기만 고쳐서 고친 문장만 출력해라. 설명하거나 덧붙이지 마라."}]},"contents":[{"role":"user","parts":[{"text":"오늘 날시가 참 조은거 같애 우리 내일 어디서 만날까 시간은 저녁 일곱시쯤이 괜찬을거 같은데"}]}],"generationConfig":{"temperature":0,"candidateCount":1}}' \
               "$url/v1beta/models/gemini-3.5-flash-lite:generateContent" || echo 000)
             echo "HTTP $code"
             jq -r '.candidates[0].content.parts[0].text // empty' sub.json 2>/dev/null || true

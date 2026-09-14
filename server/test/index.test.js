@@ -261,17 +261,23 @@ function upstreamWithModels(names) {
   return { calls, fetchImpl };
 }
 
-const LIVE_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.8-flash-lite', 'gemini-3.9-pro'];
+// 2026-09-14 에 구글이 실제로 내주던 목록. 지어낸 이름으로 재면 실제와 어긋난다.
+const LIVE_MODELS = [
+  'gemini-3-flash-preview', 'gemini-3.1-flash-lite', 'gemini-3.1-flash-lite-preview',
+  'gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.5-flash-lite',
+  'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash',
+  'gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-pro-latest',
+];
 
-test('모델을 안 박으면 구글에 물어 제일 좋은 lite 를 고른다', async () => {
+test('모델을 안 박으면 구글에 물어 제일 새 것을 고른다', async () => {
   const up = upstreamWithModels(LIVE_MODELS);
   const e = env({ GEMINI_MODEL: '' });
   const req = new Request('https://spell.test/v1beta/models?pageSize=200');
   const res = await handle(req, e, { fetch: up.fetchImpl, now: () => NOON_KST });
   assert.equal(res.status, 200);
-  // flash 가 아니라 lite 다 — 교정은 기계적인 일이라 큰 모델이 필요 없고, lite 가
-  // 빠르고 싸고 덜 붐빈다. 같은 등급 안에서만 세대를 따지므로 3.8-flash 는 진다.
-  assert.equal((await res.json()).models[0].name, 'models/gemini-3.8-flash-lite');
+  // 세대가 먼저다. 한때 등급이 세대를 이기게 해 뒀다가 3.8-flash 에서
+  // 3.5-flash-lite 로 내려갔고, 실기기 평가가 "원래보다 떨어진다" 로 돌아왔다.
+  assert.equal((await res.json()).models[0].name, 'models/gemini-3.8-flash');
 });
 
 test('한 번 고르면 하루는 다시 묻지 않는다 — 사용자가 기다리는 시간이 0 이어야 한다', async () => {
@@ -284,7 +290,7 @@ test('한 번 고르면 하루는 다시 묻지 않는다 — 사용자가 기�
   assert.equal(asked.length, 1, '세 번 교정해도 목록은 한 번만 묻는다');
   const sent = up.calls.filter((c) => c.url.includes(':generateContent'));
   assert.equal(sent.length, 3);
-  assert.ok(sent.every((c) => c.url.includes('gemini-3.8-flash-lite')), '고른 것으로 나간다');
+  assert.ok(sent.every((c) => c.url.includes('gemini-3.8-flash')), '고른 것으로 나간다');
 });
 
 test('목록을 못 받으면 아는 이름으로 가되, 그 실패를 하루 물고 있지 않는다', async () => {
@@ -295,7 +301,7 @@ test('목록을 못 받으면 아는 이름으로 가되, 그 실패를 하루 �
     if (url.endsWith('/v1beta/models?pageSize=200')) {
       if (!listOk) return new Response('{}', { status: 503 });
       return new Response(
-        JSON.stringify({ models: [{ name: 'models/gemini-3.8-flash-lite', supportedGenerationMethods: ['generateContent'] }] }),
+        JSON.stringify({ models: [{ name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent'] }] }),
         { status: 200 }
       );
     }
@@ -313,7 +319,7 @@ test('목록을 못 받으면 아는 이름으로 가되, 그 실패를 하루 �
   listOk = true;
   await handle(generate(), e, { fetch: fetchImpl, now: () => NOON_KST + 1000 });
   const last = calls.filter((c) => c.url.includes(':generateContent')).at(-1);
-  assert.ok(last.url.includes('gemini-3.8-flash-lite'), '다음 요청에서 다시 묻는다');
+  assert.ok(last.url.includes('gemini-3.8-flash'), '다음 요청에서 다시 묻는다');
 });
 
 test('AI_PROVIDER 로 어느 쪽인지 정한다 — 키를 지우지 않아도 된다', async () => {
