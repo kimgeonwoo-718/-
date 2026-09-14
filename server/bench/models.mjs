@@ -53,8 +53,20 @@ const limitArg = args.find((a) => a.startsWith('--limit='));
 const models = args.filter((a) => !a.startsWith('--'));
 const PROMPT = promptArg ? readFileSync(promptArg.slice('--prompt='.length), 'utf8') : APP_PROMPT;
 const LIMIT = limitArg ? Number(limitArg.slice('--limit='.length)) : Infinity;
+/**
+ * 폰 안 엔진이 붙여 쓴 글을 푼 결과. **있으면 그냥 쓴다.**
+ *
+ * 처음엔 `--preSpaced=파일` 로만 켜지게 했는데, 워크플로에 그 플래그를 넘기는 것을
+ * 잊어서 한 판을 통째로 헛돌렸다. 잊을 수 있는 자리는 없애는 것이 맞다.
+ */
 const preArg = args.find((a) => a.startsWith('--preSpaced='));
-const PRE_SPACED = preArg ? JSON.parse(readFileSync(preArg.slice('--preSpaced='.length), 'utf8')) : null;
+const prePath = preArg ? new URL(preArg.slice('--preSpaced='.length), `file://${process.cwd()}/`) : new URL('./pre-spaced.json', import.meta.url);
+let PRE_SPACED = null;
+try {
+  PRE_SPACED = JSON.parse(readFileSync(prePath, 'utf8'));
+} catch {
+  console.error('폰 안 엔진이 푼 결과가 없다 — 그 갈래는 건너뛴다.');
+}
 
 if (!models.length) {
   console.error('모델 이름을 하나 이상 대라. 예: node bench/models.mjs gemini-3.5-flash-lite');
