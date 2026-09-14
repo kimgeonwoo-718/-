@@ -1455,6 +1455,17 @@ AI(길게 누르기)가 **같이** 쓰고 있었다. 짧게 눌렀는데 "AI 가
 '이제서야' 가 표준형이 되면서 같이 인정하는 쪽으로 갔다 — 논란 중인 것은 안 건드린다.
 '밥 한 번' 도 횟수로 읽으면 맞아서 그대로 둔다.
 
+## 그레이들 없이 검사하기 → `tools/localcheck/`
+
+**수첩에만 적어 뒀더니 다음 판에서 못 썼다.** 저장소에 넣었다.
+
+```
+tools/localcheck/test-core.sh          코어 시험 220개, 1초
+tools/localcheck/typecheck-keyboard.sh 키보드 모듈 타입 검사, 30초
+```
+
+아래 설명은 그 스크립트가 하는 일이다. 자세한 것은 `tools/localcheck/README.md`.
+
 ## 그레이들 없이 :core:test 돌리기
 
 이 컨테이너의 망 정책이 **`dl.google.com` 을 막는다**(프록시가 CONNECT 에 403).
@@ -1780,3 +1791,36 @@ basicTypoSet 도 그쪽은 약하다. 남은 큰 구멍이다 — 다음에 볼 
 2. **전체교정 도중에 키보드를 닫으면** 네이티브 객체를 닫고 그 위에서 계속 읽는다 —
    자바 예외가 아니라 **프로세스가 통째로 죽는 종류**다. `space`/`fix`/`close` 를 같은
    자물쇠로 묶고 `closed` 깃발로 한 번 더 막았다.
+
+
+## 컴파일 오류를 세 번 연속 CI 에 올렸다
+
+`KiwiSpacer.open` 의 반환형이 `KiwiSpacer?` 인데 `.onSuccess { opened -> opened.close() }`
+로 썼다. 코틀린은 nullable 수신자에 점을 못 찍는다. 빌드 #92·#93·#94 가 같은 이유로
+죽었는데 **올리고 다음 일로 넘어가느라 세 번을 못 봤다.**
+
+두 가지가 겹쳤다.
+
+1. **지역 검사가 반쪽이었다.** `KiwiSpacer.kt` 만 껍데기로 감싸 컴파일하고 있었고,
+   같이 고친 `SpellKeyboardService.kt` 는 안 봤다. 바로 그 파일에서 났다.
+2. **올린 뒤 결과를 안 봤다.** 이게 더 큰 잘못이다.
+
+### 고친 것
+
+- `tools/localcheck/typecheck-keyboard.sh` — **키보드 모듈 전체**를 타입 검사한다.
+  일부러 그 버그를 다시 넣어 보고 잡는 것을 확인했다(통과만 하는 검사는 검사가 아니다).
+- 규칙: **올린 뒤에는 빌드 결과를 확인하고 나서 다음 일로 넘어간다.**
+
+### 왜 안드로이드 SDK 없이 되는가
+
+`dl.google.com` 이 막혀서 안드로이드 SDK 도 androidx 도 못 받는다. 대신
+
+- `android.jar` → **메이븐 중앙**의 `org.robolectric:android-all`(구글 메이븐이 아니다)
+- androidx·결제·ML Kit → `tools/localcheck/stubs/` 에 **쓰는 자리의 서명만** 흉내낸 껍데기
+- `R`·`BuildConfig` → 소스에서 이름을 긁어 매번 다시 만든다
+- Kiwi → `build.gradle.kts` 의 판 번호를 읽어 AAR 을 받아 `classes.jar` 만 꺼내 쓴다
+
+껍데기는 **돌리기 위한 것이 아니라 타입을 맞추기 위한 것**이다. 새 API 를 쓰기 시작하면
+"unresolved reference" 가 나고, 그 자리의 서명만 `stubs/` 에 더하면 된다.
+
+**못 잡는 것**: 리소스·매니페스트·프로가드·실제 실행. 그건 CI 몫이다.
