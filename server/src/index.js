@@ -79,7 +79,7 @@ const MODEL_TTL_MS = 24 * 60 * 60 * 1000;
  * 규칙을 되돌려 배포하고도 로그에 옛 모델이 찍혀서 한 번 헷갈렸다. 이름을 바꾸면
  * 옛 줄은 아무도 안 읽고 남았다가 크론이 치운다.
  */
-const MODEL_KEY = 'gemini:model:v2';
+const MODEL_KEY = 'gemini:model:v3';
 
 export default {
   fetch: (request, env) => handle(request, env),
