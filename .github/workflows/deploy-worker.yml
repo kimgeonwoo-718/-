@@ -146,6 +146,8 @@ jobs:
         env:
           # 구독자 경로까지 확인하려고 받는다. 깃허브가 로그에서 가려 준다.
           TEST_INSTALL_IDS: ${{ secrets.TEST_INSTALL_IDS }}
+          # 구글이 실제로 무슨 모델을 내주는지 눈으로 보려고 받는다.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           set -euo pipefail
           url="https://spell-keyboard.${{ steps.subdomain.outputs.name }}.workers.dev"
@@ -165,7 +167,20 @@ jobs:
           # 앱이 맨 처음 하는 일이 모델 목록 받기다. 이게 막히면 교정도, 모델 갈아타기도
           # 전부 막힌다. 구글이 뭐라고 하는지 원문 앞부분을 그대로 남긴다 (키는 안 찍힌다).
           # (파이프로 head 에 넘기면 curl 이 SIGPIPE 로 죽어 단계가 실패한다. 파일로 받는다.)
-          # 이 이름이 곧 "지금 교정에 쓰는 모델" 이다. 서버가 구글 목록에서 고른 결과라,
+          # 구글이 **실제로** 무엇을 내주는지 먼저 본다. 서버가 고른 이름만 보면
+          # "고른 것" 인지 "못 골라서 아는 이름으로 간 것" 인지 구분이 안 된다.
+          if [ -n "${GEMINI_API_KEY:-}" ]; then
+            echo "----- 구글이 지금 내주는 것 (교정에 쓸 만한 것만) -----"
+            curl -sS --max-time 20 -o google.json \
+              -H "x-goog-api-key: $GEMINI_API_KEY" \
+              "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200" || true
+            jq -r '[.models[]? | select(.supportedGenerationMethods // [] | index("generateContent"))
+                    | .name | sub("^models/";"")]
+                   | map(select(startswith("gemini")))
+                   | map(select(test("embedding|aqa|imagen|vision|tts|image|audio|video|live") | not))
+                   | sort | .[]' google.json 2>/dev/null || echo "(목록을 못 읽었다)"
+          fi
+          # 이 이름이 곧 "지금 교정에 쓰는 모델" 이다. 서버가 위 목록에서 고른 결과라,
           # 구글이 새 모델을 내면 여기 찍히는 이름이 바뀐다.
           echo "----- 지금 쓰는 모델 (앱과 같은 요청) -----"
           curl -sS --max-time 20 -o models.json -w 'HTTP %{http_code}\n' \
@@ -196,9 +211,14 @@ jobs:
           if [ -n "${TEST_INSTALL_IDS:-}" ]; then
             echo "----- 교정 한 번 (구독자 = TEST_INSTALL_IDS 의 첫 번째) -----"
             first=$(printf '%s' "$TEST_INSTALL_IDS" | cut -d, -f1 | tr -d '[:space:]')
+            # **앱과 같은 모양으로 보내야 한다.** 지시문 없이 "이것 좀 고쳐줘" 로 보내면
+            # 모델이 채팅처럼 짧게 답하고, 그러면 서버의 길이 안전장치(tooDifferent)가
+            # 정상적으로 걸러 버린다. 실제로 그렇게 짜서 502 를 받았다 — 서버가 아니라
+            # 확인하는 쪽이 틀린 것이었다. 앱은 system_instruction 에 지시를 싣고
+            # 사용자 글은 고칠 원문만 보낸다(GeminiCorrector.buildRequest).
             code=$(curl -sS --max-time 45 -o sub.json -w '%{http_code}' -X POST \
               -H 'Content-Type: application/json' -H "X-Install-Id: $first" \
-              --data '{"contents":[{"parts":[{"text":"다음 문장의 맞춤법만 고쳐서 고친 문장만 답해: 오늘 날시가 참 조은거 같애"}]}]}' \
+              --data '{"system_instruction":{"parts":[{"text":"너는 한국어 맞춤법 교정기다. 입력 문장의 맞춤법과 띄어쓰기만 고쳐서 고친 문장만 출력해라. 설명하거나 덧붙이지 마라."}]},"contents":[{"role":"user","parts":[{"text":"오늘 날시가 참 조은거 같애 우리 내일 어디서 만날까 시간은 저녁 일곱시쯤이 괜찬을거 같은데"}]}],"generationConfig":{"temperature":0,"candidateCount":1,"thinkingConfig":{"thinkingBudget":0}}}' \
               "$url/v1beta/models/gemini-3.5-flash-lite:generateContent" || echo 000)
             echo "HTTP $code"
             jq -r '.candidates[0].content.parts[0].text // empty' sub.json 2>/dev/null || true
