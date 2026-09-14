@@ -401,7 +401,11 @@ class ContextCorrector(
         // 편집 후보는 언어모델이 아는 어절만. 모르는 말끼리 형태소 비용으로 겨루게 하면
         // 이름과 외래어('웰트쿠겔브루넨')가 비슷한 소리의 엉뚱한 말로 바뀐다.
         val penalty = knownPenalty(identityCount) + EDIT_BASE_COST
-        for ((edited, cost) in singleEdits(surface, codaSlip = (identityCount ?: -1f) < CODA_SLIP_MAX_LN)) {
+        for ((edited, cost) in singleEdits(
+            surface,
+            codaSlip = (identityCount ?: -1f) < CODA_SLIP_MAX_LN,
+            nearKey = (identityCount ?: -1f) < NEAR_KEY_MAX_LN
+        )) {
             if (lm.lnCount(edited) != null && !(kind == KIND_FREE && startsBound(edited))) {
                 out += Candidate(edited, -(cost + penalty))
             }
@@ -722,13 +726,27 @@ class ContextCorrector(
      *   받침이 빠지면 거의 언제나 없는 말이 되므로, 있는 말에까지 이 편집을 허용하면
      *   '서명해 → 설명해', '이식될 → 인식될' 처럼 **뜻이 바뀐다**.
      */
-    private fun singleEdits(word: String, codaSlip: Boolean = false): List<Pair<String, Float>> {
+    private fun singleEdits(word: String, codaSlip: Boolean = false, nearKey: Boolean = false): List<Pair<String, Float>> {
         val out = ArrayList<Pair<String, Float>>()
         for (index in word.indices) {
             val (cho, jung, jong) = Hangul.decompose(word[index]) ?: continue
             if (codaSlip && jong == 0) CODA_SLIPS.forEach { (alternative, cost) ->
                 val id = Hangul.jongseongIndex(alternative)
                 if (id >= 0) out += swap(word, index, Hangul.compose(cho, jung, id)) to cost
+            }
+            if (nearKey) {
+                NEAR_KEYS[Hangul.CHOSEONG[cho]]?.forEach { alternative ->
+                    val id = Hangul.choseongIndex(alternative)
+                    if (id >= 0) out += swap(word, index, Hangul.compose(id, jung, jong)) to NEAR_KEY_COST
+                }
+                NEAR_KEYS[Hangul.JUNGSEONG[jung]]?.forEach { alternative ->
+                    val id = Hangul.jungseongIndex(alternative)
+                    if (id >= 0) out += swap(word, index, Hangul.compose(cho, id, jong)) to NEAR_KEY_COST
+                }
+                if (jong != 0) NEAR_KEYS[Hangul.JONGSEONG[jong]]?.forEach { alternative ->
+                    val id = Hangul.jongseongIndex(alternative)
+                    if (id >= 0) out += swap(word, index, Hangul.compose(cho, jung, id)) to NEAR_KEY_COST
+                }
             }
             CHOSEONG_EDITS[Hangul.CHOSEONG[cho]]?.forEach { (alternative, cost) ->
                 val id = Hangul.choseongIndex(alternative)
@@ -945,6 +963,53 @@ class ContextCorrector(
          * | 5 | 53.2% | 1.13% |
          */
         const val CODA_SLIP_MAX_LN = 3.0f
+
+        /**
+         * 두벌식 자판에서 **옆 키를 누른** 오타를 되돌리는 값.
+         *
+         * 소리가 헷갈려서가 아니라 손가락이 빗나가서 나는 오타다. 폰에서는 이게 제일 흔한데
+         * 편집 표가 소리 혼동만 보고 있어서 **3.0%밖에 못 되돌렸다**.
+         *
+         * 값이 다른 편집(1.0~3.0)보다 훨씬 비싼 이유: 후보가 자모 하나당 서넛씩 쏟아진다.
+         * 싸게 두면 아무 말이나 가까운 다른 말로 미끄러진다.
+         *
+         * | 값 | 옆 키 되살림 | 멀쩡한 글 건드림 | 늘어난 오교정의 성격 |
+         * |---|---|---|---|
+         * | 없음 | 3.0% | 1.07% | |
+         * | **8.0** | **39.0%** | **1.20%** | 지명 표기('로열 → 로얄') 넷 |
+         * | 6.0 | 47.4% | 1.27% | 여기서부터 뜻이 바뀐다('먹기 → 막기') |
+         * | 4.0 | 55.5% | 1.50% | '케이블 → 테이블', '분비 → 준비' |
+         */
+        const val NEAR_KEY_COST = 8.0f
+
+        /**
+         * 옆 키 편집은 **말뭉치가 아예 모르는 어절에만** 연다.
+         *
+         * 받침 편집(ln<3)보다 훨씬 좁다. 옆 키 편집은 후보가 자모 하나당 서넛씩 쏟아져서
+         * 아무 말이나 가까운 다른 말로 미끄러지기 때문이다.
+         */
+        const val NEAR_KEY_MAX_LN = 0f
+
+        private val CONSONANTS = "ㅂㅈㄷㄱㅅㅁㄴㅇㄹㅎㅋㅌㅊㅍ".toSet()
+
+        /**
+         * 두벌식 자판에서 맞닿은 자모. 같은 줄 양옆과 위아래 줄을 잇는다.
+         *
+         * 초성·중성·종성 어디에 쓰이든 표는 하나다 — 자판은 한 벌이므로. 그 자리에 올 수
+         * 없는 자모는 [Hangul] 의 색인이 -1 을 돌려줘서 저절로 걸러진다.
+         */
+        private val NEAR_KEYS: Map<Char, List<Char>> = buildMap {
+            val rows = listOf("ㅂㅈㄷㄱㅅㅛㅕㅑㅐㅔ", "ㅁㄴㅇㄹㅎㅗㅓㅏㅣ", "ㅋㅌㅊㅍㅠㅜㅡ")
+            fun link(a: Char, b: Char) {
+                // 자음↔모음은 서로 대신할 수 없다. 이을 이유가 없다.
+                if ((a in CONSONANTS) != (b in CONSONANTS)) return
+                put(a, (get(a) ?: emptyList()) + b)
+                put(b, (get(b) ?: emptyList()) + a)
+            }
+            for (row in rows) for (i in 0 until row.length - 1) link(row[i], row[i + 1])
+            for (i in rows[1].indices) link(rows[0][i], rows[1][i])
+            for (i in rows[2].indices) link(rows[1][i], rows[2][i])
+        }
 
         /** 흔한 홑받침. 겹받침은 기존 표가 이미 본다. */
         private val CODA_SLIPS: List<Pair<Char, Float>> =
