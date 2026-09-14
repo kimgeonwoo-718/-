@@ -22,6 +22,9 @@ import {
   toGeminiRequest,
   fromGeminiReply,
   DEFAULT_GEMINI_MODEL,
+  GEMINI_MODELS_URL,
+  parseGeminiModels,
+  pickGeminiModel,
 } from './gemini.js';
 import {
   OPENAI_URL,
@@ -65,6 +68,9 @@ const MAX_BODY_BYTES = 64 * 1024;
 const VERDICT_TTL_MS = 60 * 60 * 1000;
 
 const ACCESS_TOKEN_MARGIN_SEC = 300;
+
+/** 구글에 "지금 무슨 모델 있냐" 고 다시 묻는 주기. */
+const MODEL_TTL_MS = 24 * 60 * 60 * 1000;
 
 export default {
   fetch: (request, env) => handle(request, env),
@@ -112,7 +118,11 @@ export async function handle(request, env, deps = {}) {
   // 모델 목록은 돈이 안 든다. 어느 쪽이든 **서버가 모델을 정하므로** 물어볼 것 없이
   // 지금 쓰는 이름 하나만 알려 준다. 앱은 이 목록으로 "쓸 수 있는 이름" 을 판단한다.
   if (request.method === 'GET' && url.pathname === '/v1beta/models') {
-    return json(200, modelList(provider(env) === 'openai' ? openAiModel(env) : geminiModel(env)));
+    const name =
+      provider(env) === 'openai'
+        ? openAiModel(env)
+        : await resolveGeminiModel(env, fetchImpl, now());
+    return json(200, modelList(name));
   }
   // 날짜별 토큰 사용량. 개인 정보는 없고 합계뿐이라 열어 둔다 — 요금이 얼마나 나가는지
   // 구글 콘솔을 안 열고도 보려고. 숙고 토큰(thoughts)이 따로 찍히니 그게 새는지도 보인다.
@@ -175,7 +185,7 @@ async function correct(request, env, url, fetchImpl, now) {
   const reply =
     provider(env) === 'openai'
       ? await askOpenAi(fetchImpl, env, openAiModel(env), body, translateTo)
-      : await askGemini(fetchImpl, env, geminiModel(env), body, translateTo);
+      : await askGemini(fetchImpl, env, await resolveGeminiModel(env, fetchImpl, nowMs), body, translateTo);
   reply.tookMs = Date.now() - startedAt;
 
   if (reply.status === 200) {
@@ -212,6 +222,49 @@ function openAiModel(env) {
 
 function geminiModel(env) {
   return (env.GEMINI_MODEL ?? '').trim() || DEFAULT_GEMINI_MODEL;
+}
+
+/**
+ * 어느 제미나이로 갈 것인가 — **구글에 물어서** 정한다.
+ *
+ * ## 왜 물어보나
+ *
+ * 예전에는 앱이 물어봤다. 앱이 구글 목록을 받아 `pickModel` 로 제일 좋은 lite 를 골랐고,
+ * 구글이 새 모델을 내면 앱이 저절로 갈아탔다. OpenAI 로 갔다가 되돌아오면서 그 자리를
+ * **이름 하나로 못박아** 버렸는데, 그러면 구글이 새 모델을 내도 영영 낡은 것에 머문다.
+ * 실기기에서 "예전 제미나이보다 못하다" 는 말이 나온 자리가 여기다.
+ *
+ * ## 그래도 앱한테 안 시키는 이유
+ *
+ * 앱이 물으면 **교정 한 번에 왕복이 두 번**이 된다(목록 한 번, 교정 한 번). 그 한 번이
+ * 첫 교정의 대기 시간으로 그대로 붙었다. 서버가 물으면 하루에 한 번이고, 그 결과를
+ * D1 에 넣어 두므로 사용자가 기다리는 시간은 0 이다.
+ *
+ * ## 못 물었을 때
+ *
+ * 아는 이름([DEFAULT_GEMINI_MODEL])으로 간다. **실패는 캐시하지 않는다** — 구글이 잠깐
+ * 삐끗한 것 때문에 하루를 낡은 모델로 보내면 고치는 의미가 없다.
+ *
+ * `GEMINI_MODEL` 이 적혀 있으면 그게 이긴다. 특정 모델에 묶어 두고 재 보고 싶을 때가 있다.
+ */
+async function resolveGeminiModel(env, fetchImpl, nowMs) {
+  const pinned = (env.GEMINI_MODEL ?? '').trim();
+  if (pinned) return pinned;
+
+  const cached = await cacheGet(env.DB, 'gemini:model', nowMs);
+  if (cached?.name) return cached.name;
+
+  let picked = null;
+  try {
+    const raw = await relayTo(fetchImpl, env, GEMINI_MODELS_URL, 'GET', null);
+    if (raw.status === 200) picked = pickGeminiModel(parseGeminiModels(raw.text));
+  } catch {
+    picked = null;
+  }
+  if (!picked) return DEFAULT_GEMINI_MODEL;
+
+  await cacheSet(env.DB, 'gemini:model', { name: picked }, MODEL_TTL_MS, nowMs);
+  return picked;
 }
 
 /**

@@ -16,6 +16,10 @@ function env(overrides = {}) {
     // AI 는 구독자 전용이다. 중계·토큰 세기 같은 것을 보는 시험은 전부 구독자여야
     // 본론까지 간다. 무료가 막히는 것을 보는 시험만 이 값을 비운다.
     TEST_INSTALL_IDS: INSTALL,
+    // 모델을 못박아 둔다. 안 박으면 서버가 구글에 목록을 물어 제일 좋은 것을 고르는데,
+    // 그러면 중계·헤더·한도를 보는 시험들이 바깥 호출 하나에 같이 흔들린다.
+    // 고르는 동작 자체는 아래 '모델 고르기' 시험들이 따로 본다.
+    GEMINI_MODEL: 'gemini-3.5-flash-lite',
     ...overrides,
   };
 }
@@ -224,15 +228,92 @@ test('너무 긴 요청은 구글까지 가지 않는다', async () => {
   assert.equal(up.calls.length, 0);
 });
 
-test('모델 목록은 밖에 묻지 않고 바로 답한다', async () => {
+test('모델을 못박아 두면 밖에 묻지 않는다', async () => {
   const up = upstream();
   const req = new Request('https://spell.test/v1beta/models?pageSize=200');
   const res = await handle(req, env(), { fetch: up.fetchImpl });
   assert.equal(res.status, 200);
-  // 어느 쪽으로 보낼지는 서버가 정한다. 구글에 목록을 받아 올 이유가 없어졌다 —
-  // 앱이 맨 처음 하는 일이라 이 한 번이 그대로 첫 교정의 대기 시간이었다.
   assert.equal((await res.json()).models[0].name, 'models/gemini-3.5-flash-lite');
-  assert.equal(up.calls.length, 0, '밖으로 나가지 않는다');
+  assert.equal(up.calls.length, 0, '못박힌 이름이 있으면 물어볼 이유가 없다');
+});
+
+// --- 모델 고르기 -----------------------------------------------------------------
+//
+// 예전에는 앱이 구글 목록을 받아 제일 좋은 lite 를 골랐고, 구글이 새 모델을 내면
+// 저절로 갈아탔다. OpenAI 로 갔다 되돌아오면서 그 자리를 이름 하나로 못박아 버렸는데,
+// 그러면 구글이 새 것을 내도 영영 낡은 것에 머문다. 아래가 그 되살린 동작이다.
+
+/** lite 둘·flash 하나·pro 하나를 내주는 구글. 제일 좋은 lite 는 3.8 이다. */
+function upstreamWithModels(names) {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith('/v1beta/models?pageSize=200')) {
+      return new Response(
+        JSON.stringify({
+          models: names.map((name) => ({ name: 'models/' + name, supportedGenerationMethods: ['generateContent'] })),
+        }),
+        { status: 200 }
+      );
+    }
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '고침' }] } }] }), { status: 200 });
+  };
+  return { calls, fetchImpl };
+}
+
+const LIVE_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.8-flash-lite', 'gemini-3.9-pro'];
+
+test('모델을 안 박으면 구글에 물어 제일 좋은 lite 를 고른다', async () => {
+  const up = upstreamWithModels(LIVE_MODELS);
+  const e = env({ GEMINI_MODEL: '' });
+  const req = new Request('https://spell.test/v1beta/models?pageSize=200');
+  const res = await handle(req, e, { fetch: up.fetchImpl, now: () => NOON_KST });
+  assert.equal(res.status, 200);
+  // flash 가 아니라 lite 다 — 교정은 기계적인 일이라 큰 모델이 필요 없고, lite 가
+  // 빠르고 싸고 덜 붐빈다. 같은 등급 안에서만 세대를 따지므로 3.8-flash 는 진다.
+  assert.equal((await res.json()).models[0].name, 'models/gemini-3.8-flash-lite');
+});
+
+test('한 번 고르면 하루는 다시 묻지 않는다 — 사용자가 기다리는 시간이 0 이어야 한다', async () => {
+  const up = upstreamWithModels(LIVE_MODELS);
+  const e = env({ GEMINI_MODEL: '' });
+  for (let i = 0; i < 3; i++) {
+    await handle(generate(), e, { fetch: up.fetchImpl, now: () => NOON_KST });
+  }
+  const asked = up.calls.filter((c) => c.url.endsWith('/v1beta/models?pageSize=200'));
+  assert.equal(asked.length, 1, '세 번 교정해도 목록은 한 번만 묻는다');
+  const sent = up.calls.filter((c) => c.url.includes(':generateContent'));
+  assert.equal(sent.length, 3);
+  assert.ok(sent.every((c) => c.url.includes('gemini-3.8-flash-lite')), '고른 것으로 나간다');
+});
+
+test('목록을 못 받으면 아는 이름으로 가되, 그 실패를 하루 물고 있지 않는다', async () => {
+  let listOk = false;
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith('/v1beta/models?pageSize=200')) {
+      if (!listOk) return new Response('{}', { status: 503 });
+      return new Response(
+        JSON.stringify({ models: [{ name: 'models/gemini-3.8-flash-lite', supportedGenerationMethods: ['generateContent'] }] }),
+        { status: 200 }
+      );
+    }
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '고침' }] } }] }), { status: 200 });
+  };
+  const e = env({ GEMINI_MODEL: '' });
+
+  await handle(generate(), e, { fetch: fetchImpl, now: () => NOON_KST });
+  assert.ok(
+    calls.find((c) => c.url.includes(':generateContent')).url.includes('gemini-3.5-flash-lite'),
+    '못 물었으면 아는 이름으로 간다'
+  );
+
+  // 구글이 잠깐 삐끗한 것 때문에 하루를 낡은 모델로 보내면 고치는 의미가 없다.
+  listOk = true;
+  await handle(generate(), e, { fetch: fetchImpl, now: () => NOON_KST + 1000 });
+  const last = calls.filter((c) => c.url.includes(':generateContent')).at(-1);
+  assert.ok(last.url.includes('gemini-3.8-flash-lite'), '다음 요청에서 다시 묻는다');
 });
 
 test('AI_PROVIDER 로 어느 쪽인지 정한다 — 키를 지우지 않아도 된다', async () => {

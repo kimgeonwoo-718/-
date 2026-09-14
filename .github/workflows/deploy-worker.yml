@@ -165,7 +165,9 @@ jobs:
           # 앱이 맨 처음 하는 일이 모델 목록 받기다. 이게 막히면 교정도, 모델 갈아타기도
           # 전부 막힌다. 구글이 뭐라고 하는지 원문 앞부분을 그대로 남긴다 (키는 안 찍힌다).
           # (파이프로 head 에 넘기면 curl 이 SIGPIPE 로 죽어 단계가 실패한다. 파일로 받는다.)
-          echo "----- 모델 목록 (앱과 같은 요청) -----"
+          # 이 이름이 곧 "지금 교정에 쓰는 모델" 이다. 서버가 구글 목록에서 고른 결과라,
+          # 구글이 새 모델을 내면 여기 찍히는 이름이 바뀐다.
+          echo "----- 지금 쓰는 모델 (앱과 같은 요청) -----"
           curl -sS --max-time 20 -o models.json -w 'HTTP %{http_code}\n' \
             -H 'Content-Type: application/json' -H 'X-Install-Id: ci-smoke-test-0000' \
             "$url/v1beta/models?pageSize=200" || true

@@ -94,3 +94,64 @@ function safeParse(text) {
     return null;
   }
 }
+
+/**
+ * 구글이 지금 내주는 모델 목록 주소.
+ *
+ * 앱이 예전에 직접 물어보던 그 자리다(`GeminiCorrector.listModels`).
+ */
+export const GEMINI_MODELS_URL = `${GEMINI_UPSTREAM}/v1beta/models?pageSize=200`;
+
+/** 교정에 쓸 수 없는 것들. 이름만 보고 거른다. */
+const NOT_FOR_TEXT = ['embedding', 'aqa', 'imagen', 'vision', 'tts', 'image', 'audio', 'video', 'live'];
+
+/**
+ * 목록 응답에서 교정에 쓸 만한 이름만 뽑는다.
+ *
+ * `supportedGenerationMethods` 에 `generateContent` 가 있어야 한다 — 목록에는 임베딩처럼
+ * 아예 다른 일을 하는 것도 같이 온다.
+ */
+export function parseGeminiModels(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return [];
+  }
+  const models = Array.isArray(parsed?.models) ? parsed.models : [];
+  return models
+    .filter((model) => (model?.supportedGenerationMethods ?? []).includes('generateContent'))
+    .map((model) => String(model?.name ?? '').replace(/^models\//, ''))
+    .filter((name) => {
+      const lower = name.toLowerCase();
+      return lower.startsWith('gemini') && !NOT_FOR_TEXT.some((bad) => lower.includes(bad));
+    });
+}
+
+/**
+ * 고를 만한 정도. 클수록 먼저다. **앱의 `GeminiCorrector.rank` 와 같은 규칙**이다 —
+ * 예전에 이 판단을 앱이 했고, 되돌리는 것이 그 시절 동작이라 규칙도 그대로 가져왔다.
+ *
+ * lite 를 더 쳐주는 이유: 맞춤법 교정은 기계적인 일이라 큰 모델이 필요 없는데, lite 는
+ * 훨씬 빠르고(사용자가 기다리는 시간), 훨씬 싸고(구독료로 API 값을 대는 구조라 곧 마진),
+ * 훨씬 덜 붐빈다(503 을 덜 만난다).
+ *
+ * 세대는 **같은 등급 안에서만** 따진다. 세대에 큰 점수를 주면 비싼 flash 가 싼 lite 를
+ * 이겨 버린다. 미리보기는 예고 없이 사라져서 한 등급 아래로 본다.
+ */
+export function rankGeminiModel(name) {
+  const lower = name.toLowerCase();
+  const version = Math.round((Number(/\d+(?:\.\d+)?/.exec(lower)?.[0]) || 0) * 10);
+  const tier = lower.includes('lite') ? 3000 : lower.includes('flash') ? 2000 : lower.includes('pro') ? 0 : 1000;
+  const preview = lower.includes('preview') || lower.includes('exp') ? 1500 : 0;
+  return tier + version - preview;
+}
+
+/** 목록에서 교정에 쓸 것 하나. 없으면 null. */
+export function pickGeminiModel(names) {
+  let best = null;
+  for (const name of names) {
+    if (best === null || rankGeminiModel(name) > rankGeminiModel(best)) best = name;
+  }
+  return best;
+}
