@@ -401,7 +401,7 @@ class ContextCorrector(
         // 편집 후보는 언어모델이 아는 어절만. 모르는 말끼리 형태소 비용으로 겨루게 하면
         // 이름과 외래어('웰트쿠겔브루넨')가 비슷한 소리의 엉뚱한 말로 바뀐다.
         val penalty = knownPenalty(identityCount) + EDIT_BASE_COST
-        for ((edited, cost) in singleEdits(surface)) {
+        for ((edited, cost) in singleEdits(surface, codaSlip = (identityCount ?: -1f) < CODA_SLIP_MAX_LN)) {
             if (lm.lnCount(edited) != null && !(kind == KIND_FREE && startsBound(edited))) {
                 out += Candidate(edited, -(cost + penalty))
             }
@@ -717,10 +717,19 @@ class ContextCorrector(
     // ---------------------------------------------------------------- 편집 후보
 
     /** 헷갈리는 자모 하나만 바꾼 후보와 그 비용. */
-    private fun singleEdits(word: String): List<Pair<String, Float>> {
+    /**
+     * @param codaSlip 받침을 통째로 빠뜨린 것까지 볼 것인가. **원문이 말뭉치에 없을 때만** 켠다.
+     *   받침이 빠지면 거의 언제나 없는 말이 되므로, 있는 말에까지 이 편집을 허용하면
+     *   '서명해 → 설명해', '이식될 → 인식될' 처럼 **뜻이 바뀐다**.
+     */
+    private fun singleEdits(word: String, codaSlip: Boolean = false): List<Pair<String, Float>> {
         val out = ArrayList<Pair<String, Float>>()
         for (index in word.indices) {
             val (cho, jung, jong) = Hangul.decompose(word[index]) ?: continue
+            if (codaSlip && jong == 0) CODA_SLIPS.forEach { (alternative, cost) ->
+                val id = Hangul.jongseongIndex(alternative)
+                if (id >= 0) out += swap(word, index, Hangul.compose(cho, jung, id)) to cost
+            }
             CHOSEONG_EDITS[Hangul.CHOSEONG[cho]]?.forEach { (alternative, cost) ->
                 val id = Hangul.choseongIndex(alternative)
                 if (id >= 0) out += swap(word, index, Hangul.compose(id, jung, jong)) to cost
@@ -903,6 +912,44 @@ class ContextCorrector(
             // ('비숍의'→'비숍이') 멀쩡한 문장을 망친다.
         )
 
+        /**
+         * 받침을 통째로 빠뜨린 오타를 되돌리는 값.
+         *
+         * 다른 편집은 **자모를 잘못 친 것**(ㅐ/ㅔ, ㅅ/ㅆ)인데 이건 **키를 하나 덜 친 것**이다.
+         * 두벌식에서 받침은 따로 한 번 더 눌러야 해서 흔하다. 그런데 편집 표에 없어서
+         * 우리 엔진은 이걸 **0.4%밖에 못 되돌렸다**.
+         *
+         * | 값 | 받침 되살림 | 멀쩡한 글 건드림 |
+         * |---|---|---|
+         * | 없음 | 0.4% | 1.00% |
+         * | 2.5 | 62.7% | 1.20% |
+         * | **3.0** | **60.2%** | 1.17% → **1.00%** (아래 문지방과 함께) |
+         * | 4.0 | 54.5% | 1.10% |
+         *
+         * 받침을 **빼는** 쪽도 대 봤는데 전 항목이 나빠졌다(오교정 1.53%). 안 넣는다.
+         */
+        const val CODA_ADD_COST = 3.0f
+
+        /**
+         * 이보다 드문 어절에만 받침 넣기를 허용한다. ln(빈도) 3 ≈ 6,700만 어절에 스무 번.
+         *
+         * 문지방이 없으면 **뜻이 바뀐다** — '서명해 → 설명해', '이식될 → 인식될',
+         * '끝내는지 → 끝냈는지'. 받침이 빠지면 거의 언제나 없는 말이 되므로,
+         * 흔한 말에까지 이 편집을 열어 줄 이유가 없다.
+         *
+         * | 문지방 | 받침 되살림 | 멀쩡한 글 건드림 |
+         * |---|---|---|
+         * | 없음(무제한) | 60.2% | 1.17% |
+         * | 0 (모르는 말만) | 45.5% | 1.07% |
+         * | **3** | **50.6%** | **1.07%** |
+         * | 5 | 53.2% | 1.13% |
+         */
+        const val CODA_SLIP_MAX_LN = 3.0f
+
+        /** 흔한 홑받침. 겹받침은 기존 표가 이미 본다. */
+        private val CODA_SLIPS: List<Pair<Char, Float>> =
+            listOf('ㄱ', 'ㄴ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ').map { it to CODA_ADD_COST }
+
         /** 받침 혼동. 소리가 같거나(ㅅ/ㅆ/ㄷ/ㅈ/ㅊ/ㅌ) 겹받침의 한쪽이 떨어진 것. */
         val JONGSEONG_EDITS = edits(
             'ㅅ' to ('ㅆ' to 0.8f), 'ㅆ' to ('ㅅ' to 0.8f),
@@ -922,5 +969,6 @@ class ContextCorrector(
             'ㅍ' to ('ㅂ' to 2.5f), 'ㅂ' to ('ㅍ' to 2.5f),
             'ㅋ' to ('ㄱ' to 2.5f), 'ㄱ' to ('ㅋ' to 2.5f)
         )
+
     }
 }
