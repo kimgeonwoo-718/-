@@ -2,6 +2,7 @@ package com.spellkeyboard.ko
 
 import android.content.Context
 import android.util.Log
+import com.spellkeyboard.core.correct.TypoFixer
 import com.spellkeyboard.core.spacing.LongSpacer
 import kr.pe.bab2min.Kiwi
 import kr.pe.bab2min.KiwiBuilder
@@ -29,7 +30,11 @@ import java.io.File
  * 모델을 꺼내다 실패할 수도 있다. 그때는 [open] 이 null 을 주고 기존 엔진이 그대로 한다.
  * 이 기능이 없다고 교정이 멈추면 안 된다.
  */
-class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
+class KiwiSpacer private constructor(
+    private val kiwi: Kiwi,
+    private val typo: KiwiBuilder.PreparedTypoTransformer?,
+    private val knownWord: (String) -> Boolean
+) : LongSpacer, TypoFixer {
 
     /** [isOneWord] 의 답을 기억해 둔다. 같은 낱말이 자주 되돌아온다. 넘치면 통째로 버린다. */
     private val oneWordCache = HashMap<String, Boolean>()
@@ -103,8 +108,75 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
         return one
     }
 
+    /**
+     * 오타를 맞춤법만 고친다. 띄어쓰기는 건드리지 않는다.
+     *
+     * ## 어떻게
+     *
+     * Kiwi 에 **오타 변형기**가 들어 있다. 켜면 분석기가 "이 글자를 저 글자로 바꾸면 말이
+     * 되는가" 를 같이 따져서, 바뀐 형태소에 [Kiwi.Token.typoCost] 를 남긴다. 그 값이 붙은
+     * 어절만 형태소로 되짚어 다시 만든다.
+     *
+     * ## 왜 어절 단위인가
+     *
+     * [Kiwi.join] 으로 문장을 통째로 다시 만들면 **띄어쓰기까지 갈아엎는다** — 멀쩡한 글의
+     * 30%를 건드렸다('되어 → 돼', '체크포인트 → 체크 포인트'). 문맥은 문장 전체로 보되,
+     * 되짚는 것은 오타가 난 어절 하나로 좁힌다.
+     *
+     * ## 말뭉치가 아는 낱말은 안 건드린다
+     *
+     * [knownWord] 가 마지막 문지방이다. 없이 돌리면 ㅐ/ㅔ 되살림이 89.3% 로 1.2%p 높지만,
+     * 멀쩡한 글을 건드리는 비율이 0.90% 로 두 배 오른다 — '계획이 → 계획의', '줄리안 →
+     * 줄리아' 처럼 **멀쩡한 낱말을 다른 멀쩡한 낱말로** 바꾸는 것이 그 차이다.
+     *
+     * | | ㅐ/ㅔ 되살림 | 멀쩡한 글 건드림 |
+     * |---|---|---|
+     * | 안 씀 | 77.0% | 0.70% |
+     * | 씀 | **88.1%** | **0.80%** |
+     */
+    override fun fix(text: String): String? {
+        val transformer = typo ?: return null
+        val tokens = runCatching {
+            kiwi.tokenize(text, Kiwi.AnalyzeOption(MATCH, null, 0, 0f, transformer, TYPO_THRESHOLD))
+        }.getOrNull() ?: return null
+        if (tokens.none { it.typoCost > 0f }) return null
+
+        val out = StringBuilder(text)
+        // 뒤에서부터 바꾼다. 앞에서부터 바꾸면 길이가 달라진 만큼 뒤쪽 자리가 어긋난다.
+        for (word in wordRanges(text).asReversed()) {
+            val mine = tokens.filter { it.position >= word.first && it.position + it.length <= word.last + 1 }
+            if (mine.isEmpty() || mine.none { it.typoCost > 0f }) continue
+            val joined = runCatching {
+                kiwi.join(Array(mine.size) { index ->
+                    Kiwi.JoinableToken(mine[index]).also { if (index > 0) it.space = Kiwi.Space.no_space }
+                })
+            }.getOrNull() ?: continue
+            // 띄어쓰기가 끼어들었으면 이 단계가 할 일이 아니다.
+            if (joined.isEmpty() || joined.any { it.isWhitespace() }) continue
+            if (knownWord(text.substring(word.first, word.last + 1))) continue
+            out.replace(word.first, word.last + 1, joined)
+        }
+        val fixed = out.toString()
+        return if (fixed == text) null else fixed
+    }
+
+    /** 공백으로 나눈 어절들의 자리. */
+    private fun wordRanges(text: String): List<IntRange> {
+        val out = ArrayList<IntRange>()
+        var index = 0
+        while (index < text.length) {
+            while (index < text.length && text[index].isWhitespace()) index++
+            if (index >= text.length) break
+            val start = index
+            while (index < text.length && !text[index].isWhitespace()) index++
+            out += start until index
+        }
+        return out
+    }
+
     fun close() {
         runCatching { kiwi.close() }
+        runCatching { typo?.close() }
         oneWordCache.clear()
     }
 
@@ -199,12 +271,20 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
         private const val CACHE_LIMIT = 2048
 
         /**
+         * 오타 변형을 어디까지 봐줄 것인가. Kiwi 기본값은 2.5 다.
+         *
+         * 1.5 로 내려도 ㅐ/ㅔ 되살림은 89.3% 로 같고, 이미 틀어진 글을 엉뚱하게 바꾸는 비율만
+         * 내려간다(5.5% → 4.4%). 넓힐 이유가 없다.
+         */
+        private const val TYPO_THRESHOLD = 1.5f
+
+        /**
          * Kiwi 를 올린다. **오래 걸린다(실기기에서 수 초)** — 반드시 다른 스레드에서 불러라.
          *
          * 못 올리면 null 이다. 32비트 폰(네이티브 라이브러리 없음), 저장 공간 부족,
          * 메모리 부족 — 어느 쪽이든 교정 자체는 계속돼야 하므로 조용히 넘어간다.
          */
-        fun open(context: Context): KiwiSpacer? = runCatching {
+        fun open(context: Context, knownWord: (String) -> Boolean = { false }): KiwiSpacer? = runCatching {
             val modelDir = unpack(context)
             val builder = KiwiBuilder(
                 modelDir.absolutePath,
@@ -212,7 +292,9 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
                 KiwiBuilder.BuildOption.default_,
                 KiwiBuilder.ModelType.none
             )
-            KiwiSpacer(builder.build())
+            // 오타 변형기는 못 만들어도 띄어쓰기는 돌아야 한다.
+            val typo = runCatching { KiwiBuilder.basicTypoSet.prepare() }.getOrNull()
+            KiwiSpacer(builder.build(), typo, knownWord)
         }.onFailure { Log.w(TAG, "Kiwi 를 올리지 못했다. 기존 엔진으로 간다.", it) }.getOrNull()
 
         /**

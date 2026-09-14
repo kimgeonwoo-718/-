@@ -202,8 +202,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 .getOrNull()
             // 언어모델은 형태소 사전 뒤에 연다. 이게 올라오면 어절 하나씩 보던 교정 대신
             // 창 전체를 앞뒤 문맥으로 푸는 교정이 된다. 못 열면 위의 둘로 계속 간다.
-            runCatching { LanguageModel.open(target) }
+            val lm = runCatching { LanguageModel.open(target) }
                 .onSuccess { session.engine.context = ContextCorrector(it, spacer) }
+                .getOrNull()
             // Kiwi 는 맨 끝에 올린다. 105MB 를 꺼내고 읽느라 수 초가 걸려서, 앞의 둘이
             // 먼저 준비돼야 그 동안에도 교정이 된다. 32비트 폰에서는 안 올라오고,
             // 그때는 형태소 사전이 그대로 이 일을 한다.
@@ -212,13 +213,18 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             // 이미 클래스가 올라온 뒤의 이야기다. 네이티브 라이브러리가 없는 기기에서는
             // `KiwiSpacer` 를 **처음 건드리는 순간** NoClassDefFoundError 가 나서
             // 그 안으로 들어가지도 못한다. arm64 가 아닌 폰이 정확히 그 경우다.
-            runCatching { KiwiSpacer.open(this) }
+            // 오타 교정기는 "말뭉치가 아는 낱말은 안 건드린다" 를 마지막 문지방으로 쓴다.
+            // 언어모델을 못 열었으면 그 문지방이 없는 셈이라 **아무것도 안 고치는 쪽**으로 둔다 —
+            // 문지방 없이 돌리면 멀쩡한 낱말을 다른 멀쩡한 낱말로 바꾸는 일이 두 배가 된다.
+            val known: (String) -> Boolean = if (lm == null) { { true } } else { { lm.lnCount(it) != null } }
+            runCatching { KiwiSpacer.open(this, known) }
                 .onSuccess { opened ->
                     if (destroyed) {
                         runCatching { opened.close() }
                     } else {
                         kiwi = opened
                         session.engine.longSpacer = opened
+                        session.engine.typoFixer = opened
                     }
                 }
         }.apply {
@@ -276,6 +282,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 네이티브 쪽이 잡고 있는 것을 놓아 준다. 키보드가 죽어도 모델이 남으면
         // 다음에 올릴 때 메모리가 모자란다.
         session.engine.longSpacer = null
+        session.engine.typoFixer = null
         runCatching { kiwi?.close() }
         kiwi = null
         super.onDestroy()

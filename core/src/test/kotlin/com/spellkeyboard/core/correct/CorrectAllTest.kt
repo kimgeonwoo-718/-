@@ -36,6 +36,23 @@ class CorrectAllTest {
     }
 
     @Test
+    fun `오타 교정기는 맞춤법만 고치고 띄어쓰기는 못 바꾼다`() {
+        val engine = CorrectionEngine()
+
+        engine.typoFixer = TypoFixer { it.replace("바밥", "바쁨") }
+        assertEquals("요새 바쁨", engine.correctAll("요새 바밥").text)
+
+        // **공백 수를 바꾸면 통째로 버린다.** 이 단계는 맞춤법만 맡는다 — 띄어쓰기까지
+        // 손대게 두면 Kiwi 의 join 이 문장을 통째로 다시 띄우면서 멀쩡한 글을 헤집는다.
+        engine.typoFixer = TypoFixer { it.replace(" ", "") }
+        assertEquals("요새 바밥", engine.correctAll("요새 바밥").text)
+
+        // 없어도 돌아야 한다. 32비트 폰에는 Kiwi 가 아예 안 올라온다.
+        engine.typoFixer = null
+        assertEquals("요새 바밥", engine.correctAll("요새 바밥").text)
+    }
+
+    @Test
     fun `긴 문장은 여러 조각으로 잘린다`() {
         val long = "가나다라마바사아자차카타파하".repeat(6) // 84 음절, 공백 없음
         val pieces = CorrectionEngine.chunk("$long 끝")
