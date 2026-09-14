@@ -72,6 +72,15 @@ const ACCESS_TOKEN_MARGIN_SEC = 300;
 /** 구글에 "지금 무슨 모델 있냐" 고 다시 묻는 주기. */
 const MODEL_TTL_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * 고른 모델을 넣어 두는 자리. **고르는 규칙을 바꾸면 이 이름의 끝 번호를 올려라.**
+ *
+ * 안 올리면 배포해도 하루 동안 예전 규칙으로 고른 이름이 그대로 나간다. 실제로
+ * 규칙을 되돌려 배포하고도 로그에 옛 모델이 찍혀서 한 번 헷갈렸다. 이름을 바꾸면
+ * 옛 줄은 아무도 안 읽고 남았다가 크론이 치운다.
+ */
+const MODEL_KEY = 'gemini:model:v2';
+
 export default {
   fetch: (request, env) => handle(request, env),
   scheduled: (_event, env) => sweep(env),
@@ -251,7 +260,7 @@ async function resolveGeminiModel(env, fetchImpl, nowMs) {
   const pinned = (env.GEMINI_MODEL ?? '').trim();
   if (pinned) return pinned;
 
-  const cached = await cacheGet(env.DB, 'gemini:model', nowMs);
+  const cached = await cacheGet(env.DB, MODEL_KEY, nowMs);
   if (cached?.name) return cached.name;
 
   let picked = null;
@@ -263,7 +272,7 @@ async function resolveGeminiModel(env, fetchImpl, nowMs) {
   }
   if (!picked) return DEFAULT_GEMINI_MODEL;
 
-  await cacheSet(env.DB, 'gemini:model', { name: picked }, MODEL_TTL_MS, nowMs);
+  await cacheSet(env.DB, MODEL_KEY, { name: picked }, MODEL_TTL_MS, nowMs);
   return picked;
 }
 
