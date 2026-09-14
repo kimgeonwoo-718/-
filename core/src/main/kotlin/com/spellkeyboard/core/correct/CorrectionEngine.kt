@@ -213,6 +213,37 @@ class CorrectionEngine(
         return CorrectionResult(text, out.toString(), sink)
     }
 
+    /**
+     * 띄어쓰기를 안 친 덩어리가 들어 있나. **훑기만 한다 — 고치지 않는다.**
+     *
+     * AI 에 보내기 전에 우리가 먼저 풀어 줄지 정하는 데 쓴다. 같은 시험지로 재 보면
+     * 띄어쓰기를 통째로 지운 글에서 우리가 문장의 78.1% 를 되살리는데
+     * `gemini-3.5-flash-lite` 는 70.0% 고, 게다가 **30%** 를 엉뚱하게 바꾼다.
+     * 우리가 잘하는 것을 굳이 돈 주고 시킬 이유가 없다.
+     *
+     * 그런데 먼저 푸는 데도 시간이 든다(2,000자면 폰에서 몇 초다). 그래서 **풀 것이
+     * 있을 때만** 푼다. 이 함수가 그 값을 싸게 판단한다 — 사전도 언어모델도 안 부르고
+     * 길이만 센다.
+     *
+     * 판단 기준은 [applyLongSplit] 과 같다: 여덟 음절이 넘는 한 덩어리. 다만 여기서는
+     * "언어모델이 아는 말인가" 까지는 안 본다 — 그건 비싸고, 어차피 푸는 쪽이 다시 본다.
+     * 여기서 틀리면 괜히 한 번 더 돌 뿐이지 글이 나빠지지는 않는다.
+     */
+    fun hasGluedRun(text: String): Boolean {
+        var run = 0
+        for (ch in text) {
+            if (ch in HANGUL_SYLLABLES) {
+                run++
+                if (run > GLUED_RUN_SYLLABLES) return true
+            } else if (ch.isWhitespace()) {
+                run = 0
+            }
+            // 한글도 공백도 아닌 것(부호·숫자·영문)은 덩어리를 끊지 않는다.
+            // '오늘은3시에만나자' 처럼 가운데 숫자가 끼어도 붙여 쓴 것은 붙여 쓴 것이다.
+        }
+        return false
+    }
+
     /** 고친 조각의 마지막 어절. 다음 조각이 이걸 앞 문맥으로 쓴다. */
     private fun tailContext(fixed: String): String? {
         val trimmed = fixed.trimEnd()
@@ -414,7 +445,7 @@ class CorrectionEngine(
          *
          * **언어모델이 아는 어절은 이 문지방을 안 탄다.** 흔한 말은 길어도 그대로 둔다.
          */
-        private const val GLUED_RUN_SYLLABLES = 8
+        internal const val GLUED_RUN_SYLLABLES = 8
 
         private val WHITESPACE = Regex("\\s+")
 

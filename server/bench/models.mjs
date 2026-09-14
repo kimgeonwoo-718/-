@@ -53,6 +53,8 @@ const limitArg = args.find((a) => a.startsWith('--limit='));
 const models = args.filter((a) => !a.startsWith('--'));
 const PROMPT = promptArg ? readFileSync(promptArg.slice('--prompt='.length), 'utf8') : APP_PROMPT;
 const LIMIT = limitArg ? Number(limitArg.slice('--limit='.length)) : Infinity;
+const preArg = args.find((a) => a.startsWith('--preSpaced='));
+const PRE_SPACED = preArg ? JSON.parse(readFileSync(preArg.slice('--preSpaced='.length), 'utf8')) : null;
 
 if (!models.length) {
   console.error('모델 이름을 하나 이상 대라. 예: node bench/models.mjs gemini-3.5-flash-lite');
@@ -73,6 +75,14 @@ function paper() {
     }
   }
   for (const gold of clean) items.push({ kind: '띄어쓰기 전부', broken: dropAllSpaces(gold), gold });
+  // **우리가 먼저 푼 뒤에 보내면** 얼마나 달라지나. 폰 안 엔진이 내놓은 결과를 그대로
+  // 적어 둔 파일이 있으면 그것으로 한 갈래를 더 잰다(`--preSpaced=파일`).
+  if (PRE_SPACED) {
+    for (const gold of clean) {
+      const ours = PRE_SPACED[dropAllSpaces(gold)];  // '_설명' 키는 어차피 안 맞는다
+      if (ours) items.push({ kind: '전부→우리가먼저', broken: ours, gold });
+    }
+  }
   // 멀쩡한 글은 그대로 둬야 한다. 되살림만 보면 막 고치는 모델이 이기므로 같이 잰다.
   for (const gold of clean) items.push({ kind: '멀쩡한 글', broken: gold, gold });
   return items;

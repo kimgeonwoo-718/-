@@ -872,8 +872,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }, AI_WATCHDOG_MS)
 
         Thread {
+            val toSend = spacedForServer(original)
             val engine = runCatching { corrector() }
-            val result = engine.mapCatching { it.translate(original, target.tag).getOrThrow() }
+            val result = engine.mapCatching { it.translate(toSend, target.tag).getOrThrow() }
             val quota = engine.getOrNull()?.lastQuota
             mainHandler.post {
                 if (aiRequestId.get() != requestId) return@post
@@ -1010,8 +1011,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }, AI_WATCHDOG_MS)
 
         Thread {
+            val toSend = spacedForServer(original)
             val engine = runCatching { corrector() }
-            val result = engine.mapCatching { it.correct(original).getOrThrow() }
+            val result = engine.mapCatching { it.correct(toSend).getOrThrow() }
             // 서버가 헤더로 알려 준 남은 횟수. 한도 초과(402)에도 실려 오니 실패해도 받는다.
             val quota = engine.getOrNull()?.lastQuota
             mainHandler.post {
@@ -1031,6 +1033,37 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             isDaemon = true
             start()
         }
+    }
+
+    /**
+     * 서버로 보내기 전에 **붙여 쓴 덩어리만 우리가 먼저 푼다.**
+     *
+     * ## 왜
+     *
+     * 같은 시험지로 재 봤다. 띄어쓰기를 통째로 지운 글에서
+     *
+     *     우리 (폰 안, 공짜)        문장 통째 78.1%
+     *     gemini-3.5-flash-lite    문장 통째 70.0%, 게다가 30% 를 엉뚱하게 바꾼다
+     *
+     * 우리가 더 잘하는 일을 돈 주고 시키면서 결과까지 나빠지고 있었다. 맞춤법은 저쪽이
+     * 훨씬 낫지만(92~96%) 띄어쓰기는 아니다. 각자 잘하는 것만 시킨다.
+     *
+     * ## 풀 것이 있을 때만 판다
+     *
+     * 먼저 푸는 데도 시간이 든다 — 2,000자면 폰에서 몇 초다. 그래서 [hasGluedRun] 으로
+     * 훑어보고 붙여 쓴 데가 없으면 **아무 일도 안 한다.** 대부분의 글이 그렇다.
+     *
+     * ## 입력란은 안 건드린다
+     *
+     * 여기서 만든 글은 **서버에 보낼 사본**이다. 화면의 글은 그대로 둔다 — 사용자가
+     * 누른 것은 AI 교정이지 전체교정이 아니고, 결과는 어차피 `applyAiResult` 가 통째로
+     * 갈아 끼운다. 그래서 지울 길이(before/after)도 원래 것을 그대로 쓴다.
+     *
+     * 실패하면 원문을 그대로 보낸다. 먼저 푸는 것은 도움이지 관문이 아니다.
+     */
+    private fun spacedForServer(original: String): String {
+        if (!session.engine.hasGluedRun(original)) return original
+        return runCatching { session.engine.correctAll(original).text }.getOrDefault(original)
     }
 
     private fun applyAiResult(before: String, after: String, corrected: String) {
