@@ -76,8 +76,10 @@ class CorrectionEngine(
     /**
      * 형태소 분석기로 오타를 잡는 교정기. 규칙 표가 못 잡는 것을 잡는다.
      *
-     * 같은 말뭉치 2,000 문장에 ㅐ/ㅔ 를 하나씩 뒤집어 넣고 되돌려 보면 77.0% → **88.1%** 다.
-     * 멀쩡한 글을 건드리는 비율은 0.70% → 0.80% 로 0.1%p 만 올랐다.
+     * 같은 말뭉치 2,000 문장에 ㅐ/ㅔ 를 하나씩 뒤집어 넣고 되돌려 보면 77.0% → **88.3%** 다.
+     * 멀쩡한 글을 건드리는 비율은 그대로다.
+     *
+     * **파이프라인의 맨 뒤에서 돈다.** 규칙 표와 디코더가 못 잡은 것만 넘어온다.
      */
     @Volatile
     var typoFixer: TypoFixer? = null
@@ -130,10 +132,7 @@ class CorrectionEngine(
         if (!hasHangul(text)) return CorrectionResult(text, text, emptyList())
 
         val sink = mutableListOf<Correction>()
-        // 오타 교정이 **맨 앞**이다. 규칙 표는 정확히 적힌 꼴만 잡으므로, 분석기가 먼저
-        // '됬다 → 됐다' 같은 꼴로 되돌려 놓으면 그 뒤 규칙이 걸릴 것이 늘어난다.
-        var current = applyTypoFixer(text, sink)
-        current = applyWordRules(current, sink)
+        var current = applyWordRules(text, sink)
         val context = this.context
         if (context != null) {
             current = applyLongSplit(current, sink)
@@ -142,6 +141,12 @@ class CorrectionEngine(
             current = applySpacer(current, sink)
             current = applySpeller(current, sink)
         }
+        // **오타 교정은 맨 뒤다.** 규칙 표와 디코더가 먼저 손을 대고, 둘 다 못 잡은 것만
+        // 넘어온다. 처음에는 맨 앞에 뒀는데 그게 틀렸다 — 정확히 아는 것(규칙)과 근거를
+        // 견주는 것(디코더)이 있는데, 넘겨짚는 쪽을 먼저 돌리면 그 답을 뒤집을 수 없다.
+        // '햇어' 가 '했어'(규칙이 아는 답) 대신 '해서' 로, '연라할게' 가 '연락할게'
+        // (디코더가 아는 답) 대신 '열라할게' 로 굳었다.
+        current = applyTypoFixer(current, sink)
         current = applyTextRules(current, sink)
         // 띄어쓰기 교정으로 새 어절이 드러날 수 있어 어절 규칙을 한 번 더 돌린다.
         current = applyWordRules(current, sink)

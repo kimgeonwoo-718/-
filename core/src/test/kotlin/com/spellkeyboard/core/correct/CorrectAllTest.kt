@@ -53,6 +53,16 @@ class CorrectAllTest {
     }
 
     @Test
+    fun `오타 교정기는 규칙보다 뒤에 돈다`() {
+        val engine = CorrectionEngine()
+        // 규칙 표는 '됬 → 됐' 을 **정확히** 안다. 넘겨짚는 교정기를 먼저 돌리면 그 답이
+        // 먼저 굳어 규칙이 손댈 것이 없어진다 — 실기기 예문에서 '햇어' 가 '했어' 대신
+        // '해서' 로, '연라할게' 가 '연락할게' 대신 '열라할게' 로 굳었다.
+        engine.typoFixer = TypoFixer { text -> text.replace("됬다", "뒀다") }
+        assertEquals("다 됐다", engine.correctAll("다 됬다").text)
+    }
+
+    @Test
     fun `긴 문장은 여러 조각으로 잘린다`() {
         val long = "가나다라마바사아자차카타파하".repeat(6) // 84 음절, 공백 없음
         val pieces = CorrectionEngine.chunk("$long 끝")
