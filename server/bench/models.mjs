@@ -114,13 +114,37 @@ async function askOpenAi(model, text) {
   return { text: (body?.choices?.[0]?.message?.content ?? '').trim() };
 }
 
-const ask = (model, text) =>
+const send = (model, text) =>
   model.startsWith('gpt') ? askOpenAi(model, text) : askGemini(model, text);
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 한 문항을 묻는다. **끊기면 다시 묻는다.**
+ *
+ * 처음엔 재시도 없이 짰다가 ECONNRESET 하나에 겨루기가 통째로 죽었다. 수백 번을
+ * 몰아치면 저쪽이 끊거나 429 를 주는 것이 정상이고, 그것 때문에 점수가 안 나오면
+ * 재는 도구가 아니다. 붐빔(429)과 저쪽 잘못(5xx)도 같이 기다렸다 다시 묻는다.
+ */
+async function ask(model, text, tries = 4) {
+  for (let i = 0; i < tries; i++) {
+    try {
+      const got = await send(model, text);
+      if (!got.error) return got;
+      const code = Number(/HTTP (\d+)/.exec(got.error)?.[1] ?? 0);
+      if (code !== 429 && code < 500) return got; // 우리 잘못이면 다시 물어도 같다
+    } catch (e) {
+      if (i === tries - 1) return { error: String(e?.cause?.code ?? e?.message ?? e) };
+    }
+    await sleep(500 * 2 ** i);
+  }
+  return { error: '여러 번 물어도 안 된다' };
+}
 
 /** 끝의 마침표 하나로 틀렸다고 하지는 않는다. 우리가 보는 것은 맞춤법과 띄어쓰기다. */
 const norm = (s) => s.replace(/[.\s]+$/, '').trim();
 
-/** 한 번에 여러 개를 보내되 너무 몰아치지 않는다. */
+/** 한 번에 여러 개를 보내되 너무 몰아치지 않는다. 여덟은 끊겼다. */
 async function inBatches(items, size, fn) {
   const out = [];
   for (let i = 0; i < items.length; i += size) {
@@ -137,13 +161,14 @@ console.log(`지시문 ${PROMPT.length}자\n`);
 
 for (const model of models) {
   const started = Date.now();
-  const answers = await inBatches(items, 8, async (item) => ask(model, item.broken));
+  const answers = await inBatches(items, 4, async (item) => ask(model, item.broken));
 
   const score = {};
   let errors = 0;
+  const why = new Map();
   items.forEach((item, i) => {
     const got = answers[i];
-    if (got.error) { errors++; return; }
+    if (got.error) { errors++; why.set(got.error, (why.get(got.error) ?? 0) + 1); return; }
     const bucket = (score[item.kind] ??= { n: 0, ok: 0, touched: 0 });
     bucket.n++;
     if (norm(got.text) === norm(item.gold)) bucket.ok++;
@@ -151,7 +176,8 @@ for (const model of models) {
   });
 
   const secs = ((Date.now() - started) / 1000).toFixed(0);
-  console.log(`== ${model}  (${secs}초${errors ? `, 실패 ${errors}건` : ''})`);
+  const reasons = [...why].map(([k, n]) => `${k}×${n}`).join(', ');
+  console.log(`== ${model}  (${secs}초${errors ? `, 실패 ${errors}건: ${reasons}` : ''})`);
   for (const [kind, b] of Object.entries(score)) {
     if (kind === '멀쩡한 글') {
       const left = b.n - b.ok;
