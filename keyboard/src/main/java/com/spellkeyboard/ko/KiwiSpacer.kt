@@ -35,9 +35,7 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
     private val oneWordCache = HashMap<String, Boolean>()
 
     override fun space(text: String): String? {
-        val tokens = runCatching {
-            kiwi.tokenize(text, Kiwi.AnalyzeOption(Kiwi.Match.allWithNormalizing))
-        }.getOrNull() ?: return null
+        val tokens = runCatching { kiwi.tokenize(text, Kiwi.AnalyzeOption(MATCH)) }.getOrNull() ?: return null
 
         // **토큰 표면을 이어 붙이면 안 된다.** 축약형('했' = 하 + 았)은 여러 형태소가 같은
         // 자리를 가리켜서 글자가 겹친다. 원문은 그대로 두고 공백만 끼워 넣는다.
@@ -53,6 +51,15 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
             // '하' 는 넣지 않았다. 같은 보조용언이라도 '해야 하는' 은 띄어 쓴다 —
             // 넣었더니 말뭉치 숫자가 되레 내려갔다(통째 67.6% → 65.1%).
             if (token.tag in AUXILIARY_VERBS && token.form == GLUED_AUXILIARY) continue
+            // '-아/어 하다' 도 한 낱말처럼 붙여 쓴다('좋아하다', '행복해하다'). 앞이 '-아/어'
+            // 어미일 때만이다 — '해야 하는' 의 '하' 는 앞이 '야' 라 걸리지 않는다.
+            if (token.tag in AUXILIARY_VERBS && token.form == GLUED_HADA &&
+                prev != null && prev.tag == Kiwi.POSTag.ec && prev.form.lastOrNull() in EU_ENDINGS
+            ) continue
+            // '그것'·'이곳'·'그때' 는 한 낱말이다. 관형사 + 의존명사로 잘리면 갈라진다.
+            if (token.tag == Kiwi.POSTag.nnb && token.form in BOUND_JOIN &&
+                prev != null && prev.tag == Kiwi.POSTag.mm && prev.form in DEMONSTRATIVES
+            ) continue
             if (prev != null && prev.tag in NOUNS && token.tag in NOUNS &&
                 isOneWord(text.substring(prev.position, token.position + token.length))
             ) continue
@@ -88,7 +95,7 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
     private fun isOneWord(joined: String): Boolean {
         oneWordCache[joined]?.let { return it }
         val parts = runCatching {
-            kiwi.tokenize(joined, Kiwi.AnalyzeOption(Kiwi.Match.allWithNormalizing))
+            kiwi.tokenize(joined, Kiwi.AnalyzeOption(MATCH))
         }.getOrNull() ?: return false
         val one = parts.size == 1 && parts[0].tag in NOUNS
         if (oneWordCache.size >= CACHE_LIMIT) oneWordCache.clear()
@@ -113,8 +120,45 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
         /** 다 꺼냈다는 표시. 중간에 끊긴 것을 온전한 것으로 착각하지 않게 맨 마지막에 쓴다. */
         private const val DONE_MARK = ".complete"
 
+        /**
+         * 분석 방식.
+         *
+         * `allWithNormalizing` 만 쓰다가 세 가지를 더 켰다. 같은 3,000 문장 기준이다.
+         *
+         * | | 경계 F1 | 문장 통째 |
+         * |---|---|---|
+         * | allWithNormalizing 만 | 97.28 | 75.5% |
+         * | + `oovChrModel` | 97.67 | 79.2% |
+         * | + `joinNounPrefix` | (같이 적용) | |
+         * | + `mergeSaisiot` | **97.70** | **79.3%** |
+         *
+         * - **`oovChrModel`**: 사전에 없는 말을 글자 모델로 가른다. 기본값은 규칙만 쓰는
+         *   `oovRuleOnly` 라 외국 인명이 통째로 뭉쳤다('패니플로노', '유진뎁스').
+         * - **`joinNounPrefix`**: 접두사를 뒷 명사에 붙인다('맨손'). 이걸 손으로 짜 넣었더니
+         *   네이티브 옵션과 결과가 **똑같아서** 규칙을 지우고 옵션만 남겼다.
+         * - **`mergeSaisiot`**: 사이시옷 합성어를 한 낱말로 둔다.
+         *
+         * `splitComplex` 는 안 켠다 — 합성명사를 되레 쪼갠다. `joinAffix` 는 차이가 없었다.
+         */
+        private const val MATCH = Kiwi.Match.allWithNormalizing or
+            Kiwi.Match.oovChrModel or
+            Kiwi.Match.joinNounPrefix or
+            Kiwi.Match.mergeSaisiot
+
         /** 앞말에 붙여 쓰는 보조용언. '-어지다' 하나뿐이다. */
         private const val GLUED_AUXILIARY = "지"
+
+        /** '-아/어 하다'. 앞이 '-아/어' 어미일 때만 붙인다. */
+        private const val GLUED_HADA = "하"
+
+        /** '-아/어' 계열 어미의 끝 글자. */
+        private val EU_ENDINGS = setOf('아', '어', '여', '해')
+
+        /** 관형사와 붙어 한 낱말이 되는 의존명사. '그것', '이곳', '그때'. */
+        private val BOUND_JOIN = setOf("것", "곳", "때", "거", "쪽", "편", "놈", "년")
+
+        /** 위 의존명사와 붙는 관형사. */
+        private val DEMONSTRATIVES = setOf("그", "이", "저")
 
         /** 보조용언 태그. 불규칙 활용은 값이 따로라 둘 다 본다. */
         private val AUXILIARY_VERBS: Set<Byte> = setOf(Kiwi.POSTag.vx, Kiwi.POSTag.vxi)
@@ -123,7 +167,7 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
          * 어절을 시작할 수 있는 품사. 조사·어미·접미사는 앞말에 붙으므로 뺀다.
          *
          * 이 목록이 곧 띄어쓰기 규칙이다. 넓히면 재현율이 오르고 정밀도가 떨어진다 —
-         * 지금 값에 [isOneWord] 까지 얹어 공백 없는 글에서 경계 F1 96.5%, 문장 통째 69.3% 다.
+         * [MATCH] 와 [isOneWord] 까지 얹어 공백 없는 글에서 경계 F1 97.7%, 문장 통째 79.3% 다.
          */
         private val WORD_STARTS: Set<Byte> = setOf(
             Kiwi.POSTag.nng, Kiwi.POSTag.nnp, Kiwi.POSTag.nnb, Kiwi.POSTag.nr, Kiwi.POSTag.np,

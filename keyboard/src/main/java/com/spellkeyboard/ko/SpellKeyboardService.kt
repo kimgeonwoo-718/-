@@ -181,6 +181,16 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     /** 올라와 있으면 긴 덩어리 띄어쓰기를 맡는다. 못 올리면 null 이고 기존 엔진이 한다. */
     private var kiwi: KiwiSpacer? = null
 
+    /**
+     * 서비스가 이미 죽었는가.
+     *
+     * Kiwi 를 올리는 데 실기기에서 수 초가 걸린다. 그 사이에 키보드를 닫으면 [onDestroy] 가
+     * 먼저 끝나고, 그 뒤에 올라온 모델을 **아무도 닫아 주지 않는다** — 네이티브 쪽이 잡은
+     * 100MB 가 프로세스가 죽을 때까지 남는다. 올리고 나서 이 깃발을 보고 바로 닫는다.
+     */
+    @Volatile
+    private var destroyed = false
+
     private fun loadSpacingDictionary() {
         val target = File(filesDir, DICTIONARY_DIR)
         Thread {
@@ -203,7 +213,14 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             // `KiwiSpacer` 를 **처음 건드리는 순간** NoClassDefFoundError 가 나서
             // 그 안으로 들어가지도 못한다. arm64 가 아닌 폰이 정확히 그 경우다.
             runCatching { KiwiSpacer.open(this) }
-                .onSuccess { kiwi = it; session.engine.longSpacer = it }
+                .onSuccess { opened ->
+                    if (destroyed) {
+                        runCatching { opened.close() }
+                    } else {
+                        kiwi = opened
+                        session.engine.longSpacer = opened
+                    }
+                }
         }.apply {
             isDaemon = true
             priority = Thread.MIN_PRIORITY
@@ -253,6 +270,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onDestroy() {
+        destroyed = true
         translator?.close()
         translator = null
         // 네이티브 쪽이 잡고 있는 것을 놓아 준다. 키보드가 죽어도 모델이 남으면
