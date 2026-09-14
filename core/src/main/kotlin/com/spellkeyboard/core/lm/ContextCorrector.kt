@@ -87,6 +87,9 @@ class ContextCorrector(
      * @param contextBefore 창 바로 앞 어절. [LanguageModel.BOS] 면 문장 첫머리, null 이면 모름.
      * @return 고친 문자열. 고칠 것이 없으면 null.
      */
+    /** 언어모델이 이 어절을 본 적 있는가. 붙여 쓴 덩어리인지 가리는 데 쓴다. */
+    fun knowsWord(word: String): Boolean = lm.lnCount(word) != null
+
     fun correct(window: String, contextBefore: String? = null): String? {
         val pieces = tokenize(window)
         if (pieces.none { it.soft }) return null

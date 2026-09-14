@@ -52,7 +52,7 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
             //
             // '하' 는 넣지 않았다. 같은 보조용언이라도 '해야 하는' 은 띄어 쓴다 —
             // 넣었더니 말뭉치 숫자가 되레 내려갔다(통째 67.6% → 65.1%).
-            if (token.tag == Kiwi.POSTag.vx && token.form == GLUED_AUXILIARY) continue
+            if (token.tag in AUXILIARY_VERBS && token.form == GLUED_AUXILIARY) continue
             if (prev != null && prev.tag in NOUNS && token.tag in NOUNS &&
                 isOneWord(text.substring(prev.position, token.position + token.length))
             ) continue
@@ -62,7 +62,9 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
         val out = StringBuilder(text.length + 16)
         for (index in text.indices) {
             val char = text[index]
-            if (breakAt[index] && out.isNotEmpty() && !out.last().isWhitespace() && !char.isWhitespace()) {
+            if (breakAt[index] && out.isNotEmpty() && !out.last().isWhitespace() &&
+                !char.isWhitespace() && out.last() !in OPENERS
+            ) {
                 out.append(' ')
             }
             out.append(char)
@@ -114,6 +116,9 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
         /** 앞말에 붙여 쓰는 보조용언. '-어지다' 하나뿐이다. */
         private const val GLUED_AUXILIARY = "지"
 
+        /** 보조용언 태그. 불규칙 활용은 값이 따로라 둘 다 본다. */
+        private val AUXILIARY_VERBS: Set<Byte> = setOf(Kiwi.POSTag.vx, Kiwi.POSTag.vxi)
+
         /**
          * 어절을 시작할 수 있는 품사. 조사·어미·접미사는 앞말에 붙으므로 뺀다.
          *
@@ -123,12 +128,25 @@ class KiwiSpacer private constructor(private val kiwi: Kiwi) : LongSpacer {
         private val WORD_STARTS: Set<Byte> = setOf(
             Kiwi.POSTag.nng, Kiwi.POSTag.nnp, Kiwi.POSTag.nnb, Kiwi.POSTag.nr, Kiwi.POSTag.np,
             Kiwi.POSTag.vv, Kiwi.POSTag.va, Kiwi.POSTag.vx,
+            // **불규칙 활용은 태그 값이 다르다.** '돕는'은 vv 가 아니라 vvi(VV-I), '어떻게'는
+            // vai 다. 이게 빠져 있어서 '당신을돕는'·'백악관은어떻게'가 통째로 붙어 나왔다 —
+            // ㅂ·ㅎ·ㅅ 불규칙은 한국어에서 드문 말이 아니다.
+            Kiwi.POSTag.vvi, Kiwi.POSTag.vai, Kiwi.POSTag.vxi,
             Kiwi.POSTag.mag, Kiwi.POSTag.maj, Kiwi.POSTag.mm, Kiwi.POSTag.ic,
             Kiwi.POSTag.xpn, Kiwi.POSTag.xr,
             // 부정지정사 '아니다'. 이게 빠져 있어서 '게아니라고'·'거아니냐' 가 안 띄워졌다.
             Kiwi.POSTag.vcn,
             Kiwi.POSTag.sl, Kiwi.POSTag.sh, Kiwi.POSTag.sn
         )
+
+        /**
+         * 이 부호 바로 뒤에는 띄우지 않는다.
+         *
+         * Kiwi 는 여는 괄호를 부호로 보고 그 다음 낱말을 새 어절로 시작한다. 그대로 두면
+         * '이루어졌다(유나이티드' 가 '이루어졌다( 유나이티드' 가 된다 — 여는 괄호는 뒷말에
+         * 붙여 쓴다.
+         */
+        private const val OPENERS = "([{〈《「『【\u201C\u2018\"'"
 
         /** 합성어인지 따져 볼 대상. 명사 둘이 붙어 있을 때만 본다. */
         private val NOUNS: Set<Byte> = setOf(Kiwi.POSTag.nng, Kiwi.POSTag.nnp)

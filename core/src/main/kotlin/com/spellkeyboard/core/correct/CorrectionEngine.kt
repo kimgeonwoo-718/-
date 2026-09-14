@@ -263,7 +263,7 @@ class CorrectionEngine(
     private fun applyLongSplit(text: String, sink: MutableList<Correction>): String {
         val long = longSpacer ?: LongSpacer { (this.spacer ?: return@LongSpacer null).spaceLong(it) }
         return mapWords(text) { word ->
-            if (word.length <= LONG_WORD_SYLLABLES) return@mapWords word
+            if (word.length <= GLUED_RUN_SYLLABLES) return@mapWords word
             // 형태소 사전은 **어절**을 받는다. 끝에 붙은 마침표 하나가 분석을 통째로
             // 실패시켜서, 부호를 떼고 넘긴 뒤 도로 붙인다. 이걸 안 했더니 마지막 조각이
             // 늘 안 풀렸다 — 문장 끝이라 부호가 거의 항상 붙어 있기 때문이다.
@@ -271,7 +271,8 @@ class CorrectionEngine(
             if (start < 0) return@mapWords word
             val end = word.indexOfLast { it in HANGUL_SYLLABLES } + 1
             val core = word.substring(start, end)
-            if (core.length <= LONG_WORD_SYLLABLES) return@mapWords word
+            val floor = if (context?.knowsWord(core) == false) GLUED_RUN_SYLLABLES else LONG_WORD_SYLLABLES
+            if (core.length <= floor) return@mapWords word
 
             val spaced = analyse(LONG_KEY + core) { long.space(core) ?: core }
             if (spaced == core) return@mapWords word
@@ -328,6 +329,35 @@ class CorrectionEngine(
          * [ContextCorrector.MAX_TOKEN_SYLLABLES] 와 같아야 한다 — 그 값이 디코더의 한계다.
          */
         private const val LONG_WORD_SYLLABLES = ContextCorrector.MAX_TOKEN_SYLLABLES
+
+        /**
+         * 언어모델이 모르는 어절이 이보다 길면 **붙여 쓴 덩어리로 보고** [longSpacer] 에 넘긴다.
+         *
+         * [LONG_WORD_SYLLABLES] 는 "디코더가 아예 못 보는 길이" 지 "디코더가 잘하는 길이" 가
+         * 아니다. 공백을 전부 지운 3,000 문장을 길이로 갈라 재 보면 그 차이가 그대로 보인다.
+         *
+         * | | 14음절 이하 | 넘는 것 |
+         * |---|---|---|
+         * | 디코더 (예전) | 51.3% | — |
+         * | Kiwi | **85.6%** | 72.3% |
+         *
+         * 짧은 덩어리는 디코더가 반도 못 풀고 있었다. 문지방을 내리면 그 자리를 Kiwi 가 맡는다.
+         *
+         * | 문지방 | 공백 없는 글 통째 | 멀쩡한 글을 건드림 |
+         * |---|---|---|
+         * | 14 (예전) | 68.0% | 0.80% |
+         * | **8** | **75.8%** | **1.10%** |
+         * | 6 | 76.4% | 1.83% |
+         * | 5 | 76.5% | 3.47% |
+         *
+         * 8 에서 멈춘다. 6 은 0.6%p 를 더 얻자고 오교정을 0.7%p 더 내는데, 그 오교정이
+         * '중국요리사들 → 중국 요리사들', '스파르타인들 → 스파르타 인들' 처럼 멀쩡한 말을
+         * 가르는 것이다. 8 에서 늘어난 오교정은 3,000 문장에 대여섯 건이고, 같이 늘어난
+         * 교정 중에는 제대로 고친 것도 있다('발령해야하는 → 발령해야 하는').
+         *
+         * **언어모델이 아는 어절은 이 문지방을 안 탄다.** 흔한 말은 길어도 그대로 둔다.
+         */
+        private const val GLUED_RUN_SYLLABLES = 8
 
         private val WHITESPACE = Regex("\\s+")
 
