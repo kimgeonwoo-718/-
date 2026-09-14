@@ -921,7 +921,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 result
                     .onSuccess { fixed ->
                         if (!fixed.changed) {
-                            notify(getString(R.string.ai_unchanged))
+                            // 이건 AI 가 아니라 기기 안 교정이다. "AI 가 보기에" 라고 하면
+                            // 서버까지 갔다 온 줄 알고 AI 를 다시 안 눌러 본다.
+                            notify(getString(R.string.correct_all_unchanged))
                         } else {
                             applyAiResult(before, after, fixed.text)
                             notify(resources.getQuantityString(R.plurals.correct_all_done, fixed.corrections.size, fixed.corrections.size))
