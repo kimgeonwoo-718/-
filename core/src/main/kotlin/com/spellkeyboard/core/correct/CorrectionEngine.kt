@@ -48,7 +48,7 @@ class CorrectionEngine(
         set(value) {
             field = value
             // 사전이 없던 동안 "고칠 것 없음" 으로 기억해 둔 것들은 이제 틀렸다.
-            analysed.clear()
+            clearAnalysed()
         }
 
     /** 사전 기반 맞춤법 교정기. 규칙 사전이 못 잡는 오타를 분석 비용으로 잡는다. */
@@ -56,7 +56,7 @@ class CorrectionEngine(
     var speller: Speller? = null
         set(value) {
             field = value
-            analysed.clear()
+            clearAnalysed()
         }
 
     /**
@@ -70,7 +70,7 @@ class CorrectionEngine(
     var longSpacer: LongSpacer? = null
         set(value) {
             field = value
-            analysed.clear()
+            clearAnalysed()
         }
 
     /**
@@ -85,7 +85,7 @@ class CorrectionEngine(
     var typoFixer: TypoFixer? = null
         set(value) {
             field = value
-            analysed.clear()
+            clearAnalysed()
         }
 
     /**
@@ -99,7 +99,7 @@ class CorrectionEngine(
     var context: ContextCorrector? = null
         set(value) {
             field = value
-            analysed.clear()
+            clearAnalysed()
         }
 
     /**
@@ -121,6 +121,24 @@ class CorrectionEngine(
     @Synchronized
     private fun analyse(word: String, compute: (String) -> String): String =
         analysed.getOrPut(word) { compute(word) }
+
+    /**
+     * 기억해 둔 것을 버린다. **[analyse] 와 같은 자물쇠를 쓴다.**
+     *
+     * 읽는 쪽은 실시간 입력 스레드고, 버리는 쪽은 사전·Kiwi·언어모델이 올라오는 딴
+     * 스레드다 — 키보드가 뜨고 몇 초 뒤, 사용자가 한창 타이핑하는 그 시점이다.
+     * `LinkedHashMap` 은 스레드 안전하지 않고, 게다가 이건 접근 순서 맵이라 **읽기만
+     * 해도 내부 연결을 고친다.** 한쪽에만 자물쇠가 있는 것은 그냥 틀린 코드다.
+     *
+     * **다만 이걸로 교정이 틀려지지는 않는다.** `getOrPut` 은 그 열쇠의 값 아니면 방금
+     * 계산한 값을 주지, 남의 값을 주지 않는다. 실제로 일어날 법한 일은 기억해 둔 것이
+     * 몇 개 사라지는 것이고 그건 다시 계산하면 그만이다. 재현 시험도 써 봤지만 자물쇠를
+     * 떼고도 통과해서 지웠다 — 통과만 하는 시험은 시험이 아니다.
+     */
+    @Synchronized
+    private fun clearAnalysed() {
+        analysed.clear()
+    }
 
     /**
      * 문자열 전체를 교정한다.
