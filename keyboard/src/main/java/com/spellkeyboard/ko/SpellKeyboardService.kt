@@ -217,16 +217,16 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             // 언어모델을 못 열었으면 그 문지방이 없는 셈이라 **아무것도 안 고치는 쪽**으로 둔다 —
             // 문지방 없이 돌리면 멀쩡한 낱말을 다른 멀쩡한 낱말로 바꾸는 일이 두 배가 된다.
             val known: (String) -> Boolean = if (lm == null) { { true } } else { { lm.lnCount(it) != null } }
-            runCatching { KiwiSpacer.open(this, known) }
-                .onSuccess { opened ->
-                    if (destroyed) {
-                        runCatching { opened.close() }
-                    } else {
-                        kiwi = opened
-                        session.engine.longSpacer = opened
-                        session.engine.typoFixer = opened
-                    }
+            val opened = runCatching { KiwiSpacer.open(this, known) }.getOrNull()
+            if (opened != null) {
+                if (destroyed) {
+                    runCatching { opened.close() }
+                } else {
+                    kiwi = opened
+                    session.engine.longSpacer = opened
+                    session.engine.typoFixer = opened
                 }
+            }
         }.apply {
             isDaemon = true
             priority = Thread.MIN_PRIORITY

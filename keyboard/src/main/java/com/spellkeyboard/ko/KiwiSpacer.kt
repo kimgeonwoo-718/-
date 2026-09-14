@@ -158,6 +158,10 @@ class KiwiSpacer private constructor(
         val out = StringBuilder(text)
         // 뒤에서부터 바꾼다. 앞에서부터 바꾸면 길이가 달라진 만큼 뒤쪽 자리가 어긋난다.
         for (word in wordRanges(text).asReversed()) {
+            // **긴 덩어리는 손대지 않는다.** 띄어쓰기를 통째로 생략한 글은 어절 하나가
+            // 30~50음절로 들어오는데, 그걸 형태소로 되짚어 다시 만들면 오타 한 자 때문에
+            // 덩어리 전체가 다시 쓰인다. 이 단계가 맡는 것은 어절 하나의 맞춤법이다.
+            if (word.last + 1 - word.first > MAX_TYPO_WORD) continue
             val mine = tokens.filter { it.position >= word.first && it.position + it.length <= word.last + 1 }
             if (mine.isEmpty() || mine.none { it.typoCost > 0f }) continue
             val joined = runCatching {
@@ -293,6 +297,9 @@ class KiwiSpacer private constructor(
          * 내려간다(5.5% → 4.4%). 넓힐 이유가 없다.
          */
         private const val TYPO_THRESHOLD = 1.5f
+
+        /** 이보다 긴 어절은 오타 교정을 안 한다. 실제 한국어 어절은 대개 열 자를 안 넘는다. */
+        private const val MAX_TYPO_WORD = 12
 
         /**
          * Kiwi 를 올린다. **오래 걸린다(실기기에서 수 초)** — 반드시 다른 스레드에서 불러라.
