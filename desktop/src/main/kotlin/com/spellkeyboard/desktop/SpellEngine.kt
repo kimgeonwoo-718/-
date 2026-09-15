@@ -96,6 +96,16 @@ class SpellEngine(
     @Volatile
     private var spacer: Spacer? = null
 
+    /**
+     * 사전과 언어모델이 둘 다 올라왔을 때만 만들어진다. 없으면 예전 길([correctGlued])로 간다.
+     *
+     * 이것 하나가 띄어쓰기를 맡는다 — 엔진 뒤에 붙어, 엔진이 모르는 어절을 남긴 자리
+     * 둘레만 다시 고르고, 사전에 있는 복합명사는 통째로 지킨다. 자세한 것은
+     * [NBestCorrector] 의 머리말에 있다.
+     */
+    @Volatile
+    private var nbest: NBestCorrector? = null
+
     @Volatile
     var state: EngineState = EngineState.Loading
         private set
@@ -126,9 +136,16 @@ class SpellEngine(
                 .onFailure { troubles += "언어모델을 못 열었다: ${describe(it)}" }
                 .getOrNull()
             // spacer 가 null 이어도 넣는다. 문맥 교정은 사전 없이도 절반은 한다.
-            if (lm != null) engine.context = ContextCorrector(lm, spacer)
+            val context = if (lm != null) ContextCorrector(lm, spacer) else null
+            if (context != null) engine.context = context
 
-            // longSpacer 는 비워 둔다. 엔진이 알아서 spacer.spaceLong 으로 되돌아간다.
+            // 둘 다 올라왔으면 띄어쓰기를 [NBestCorrector] 에 넘긴다. 생성자가 엔진의
+            // longSpacer 를 복합어 거부권으로 감싸므로, 여기서 longSpacer 를 따로 건드리면
+            // 안 된다. 하나라도 없으면 nbest 는 null 로 남고 예전 길이 그대로 돈다.
+            if (spacer != null && lm != null && context != null) {
+                nbest = NBestCorrector(engine, spacer, lm, context)
+            }
+
             // typoFixer 는 Kiwi 자리다. v1 에는 없다.
 
             val level = when {
@@ -185,8 +202,16 @@ class SpellEngine(
      *
      * 붙여 쓴 덩어리가 없으면 아무것도 하지 않는다 — 평범한 글은 예전 그대로 한 번만
      * 돈다. 바르게 띄어 쓴 50문장에서 이 길은 한 번도 타지 않았다.
+     *
+     * ## 이제는 [NBestCorrector] 가 맡는다
+     *
+     * 사전과 언어모델이 둘 다 올라왔으면 이 길을 [NBestCorrector.correctResult] 에
+     * 넘긴다. 그쪽이 여기 적힌 전처리·두 번 돌리기를 **그대로** 품고 있고, 그 뒤에
+     * 재분절을 한 겹 얹는다. 아래 몸통은 사전이 덜 올라왔을 때만 도는 되돌림 길이다.
      */
     private fun correctGlued(text: String): CorrectionResult {
+        nbest?.let { return it.correctResult(text) }
+
         if (!engine.hasGluedRun(text)) return engine.correctAll(text)
 
         val first = engine.correctAll(preSpace(text))
