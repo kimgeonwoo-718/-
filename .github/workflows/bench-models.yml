@@ -41,7 +41,11 @@ jobs:
           set -euo pipefail
           # 손으로 돌리면 적어 준 대로, bench/ 를 고쳐서 돌면 기본값으로 잰다.
           models="${{ inputs.models }}"
-          [ -n "$models" ] || models="gemini-3.5-flash-lite gemini-3.5-flash gemini-3.8-flash"
+          # 지금 쓰는 것 + 더 싼 후보 둘. 값은 수첩의 2026-09 조사 기준이다.
+          #   gemini-3.5-flash-lite  $0.30/$2.50   ← 지금 쓰는 것
+          #   gemini-3.1-flash-lite  $0.25/$1.50
+          #   gpt-5-nano             $0.05/$0.40   ← 6배 싸다
+          [ -n "$models" ] || models="gemini-3.5-flash-lite gemini-3.1-flash-lite gpt-5-nano"
           limit=""
           if [ -n "${{ inputs.limit }}" ]; then limit="--limit=${{ inputs.limit }}"; fi
           # 결과를 실행 요약에 그대로 남긴다. 로그를 뒤지지 않고 바로 보려고.

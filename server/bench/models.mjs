@@ -171,13 +171,17 @@ async function inBatches(items, size, fn) {
   const out = [];
   for (let i = 0; i < items.length; i += size) {
     out.push(...(await Promise.all(items.slice(i, i + size).map(fn))));
-    process.stderr.write(`\r  ${Math.min(i + size, items.length)}/${items.length}`);
+    const done = Math.min(i + size, items.length);
+    // CI 로그에서는 \r 이 안 먹어서 진행 줄이 수백 개 쌓인다. 결과가 그 속에 묻힌다.
+    if (done % 100 < size || done === items.length) process.stderr.write(`  ${done}/${items.length}\n`);
   }
   process.stderr.write('\r');
   return out;
 }
 
 const items = paper();
+/** 모델별 점수. 맨 끝에 나란히 놓고 보려고 모아 둔다. */
+const table = new Map();
 console.log(`시험지 ${items.length}문항 (깨끗한 문장 ${clean.length}개)`);
 console.log(`지시문 ${PROMPT.length}자\n`);
 
@@ -198,6 +202,7 @@ for (const model of models) {
   });
 
   const secs = ((Date.now() - started) / 1000).toFixed(0);
+  table.set(model, { score, secs, errors });
   const reasons = [...why].map(([k, n]) => `${k}×${n}`).join(', ');
   console.log(`== ${model}  (${secs}초${errors ? `, 실패 ${errors}건: ${reasons}` : ''})`);
   for (const [kind, b] of Object.entries(score)) {
@@ -213,3 +218,30 @@ for (const model of models) {
   }
   console.log();
 }
+
+// --- 한눈에 보기 -----------------------------------------------------------------
+//
+// 모델을 나란히 놓지 않으면 고를 수가 없다. 로그를 위아래로 훑으며 비교하게 두지 않는다.
+const kinds = [...new Set([...table.values()].flatMap((t) => Object.keys(t.score)))];
+const w = Math.max(...kinds.map((k) => k.length)) + 2;
+console.log('== 한눈에 보기 (되살림 % / 엉뚱하게 바꿈 %)\n');
+process.stdout.write('   '.padEnd(w));
+for (const m of table.keys()) process.stdout.write(m.padEnd(26));
+console.log();
+for (const kind of kinds) {
+  process.stdout.write('   ' + kind.padEnd(w - 3));
+  for (const t of table.values()) {
+    const b = t.score[kind];
+    if (!b) { process.stdout.write('-'.padEnd(26)); continue; }
+    const cell =
+      kind === '멀쩡한 글'
+        ? `건드림 ${((100 * (b.n - b.ok)) / b.n).toFixed(1)}%`
+        : `${((100 * b.ok) / b.n).toFixed(1)} / ${((100 * b.touched) / b.n).toFixed(1)}`;
+    process.stdout.write(cell.padEnd(26));
+  }
+  console.log();
+}
+process.stdout.write('   ' + '걸린 시간'.padEnd(w - 3));
+for (const t of table.values()) process.stdout.write(`${t.secs}초${t.errors ? ` (실패 ${t.errors})` : ''}`.padEnd(26));
+console.log('\n');
+console.log('되살림만 보고 고르지 마라. 멀쩡한 글 건드림이 낮아야 쓸 수 있는 모델이다.');
