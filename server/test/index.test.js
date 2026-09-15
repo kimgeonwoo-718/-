@@ -365,6 +365,36 @@ function fakeRelay(response) {
   };
 }
 
+test('번역도 교정과 같은 통에서 깎인다 — 한도는 하나다', async () => {
+  // echo: 답이 원문만큼 길어야 길이 검사(tooDifferent)를 지나 본론까지 간다.
+  const up = upstream({ echo: true });
+  const e = env();
+  // 최소 과금(50자)보다 길어야 한다. 짧으면 50 으로 깎여서 "글자 수만큼" 을 못 본다.
+  const long =
+    '오늘 날씨가 참 좋은 것 같아요 우리 내일 어디서 만날까요 시간은 저녁 일곱 시쯤이 괜찮을 것 같은데 어떠세요';
+  const body = JSON.stringify({ contents: [{ parts: [{ text: long }] }] });
+
+  // 교정 한 번.
+  const one = await handle(generate({}, body), e, { fetch: up.fetchImpl, now: () => NOON_KST });
+  assert.equal(one.status, 200);
+  const afterCorrect = Number(one.headers.get('x-quota-remaining'));
+  assert.equal(afterCorrect, DEFAULT_SUB_DAILY_CHARS - long.length, '글자 수만큼 깎인다');
+
+  // 같은 글을 번역으로 한 번 더. **같은 통에서** 또 깎여야 한다.
+  const req = new Request(GENERATE + '?translate=en', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-install-id': INSTALL },
+    body,
+  });
+  const two = await handle(req, e, { fetch: up.fetchImpl, now: () => NOON_KST });
+  assert.equal(two.status, 200);
+  assert.equal(
+    Number(two.headers.get('x-quota-remaining')),
+    afterCorrect - long.length,
+    '번역은 따로 세지 않는다 — 값이 글자당 똑같이 매겨지므로 통이 하나여야 한다'
+  );
+});
+
 test('중계 객체가 있으면 구글 호출은 그 안에서 나간다 — 미국 서부 위치 힌트로', async () => {
   const relay = fakeRelay(() => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '고침' }] } }] }), { status: 200 }));
   const direct = upstream();
