@@ -107,13 +107,24 @@ async function askGemini(model, text) {
     body: JSON.stringify({
       system_instruction: { parts: [{ text: PROMPT }] },
       contents: [{ role: 'user', parts: [{ text }] }],
-      generationConfig: { temperature: 0, candidateCount: 1 },
+      // **앱과 같은 설정이어야 한다.** 앱은 숙고를 끄고 보낸다(thinkingBudget 0).
+      // 여기서 안 끄면 두 가지가 한꺼번에 틀어진다 — 앱이 실제로 받는 품질이 아닌 것을
+      // 재게 되고, 숙고 토큰이 출력 요금으로 청구돼 값이 몇 배로 뛴다. 실제로 이것 때문에
+      // 크레딧이 바닥나 실기기의 AI 교정이 멈췄다.
+      generationConfig: { temperature: 0, candidateCount: 1, thinkingConfig: { thinkingBudget: 0 } },
     }),
   });
   if (!res.ok) return { error: `HTTP ${res.status}` };
   const body = await res.json();
   const parts = body?.candidates?.[0]?.content?.parts ?? [];
-  return { text: parts.map((p) => p?.text ?? '').join('').trim() };
+  const used = body?.usageMetadata ?? {};
+  return {
+    text: parts.map((p) => p?.text ?? '').join('').trim(),
+    tokens: {
+      in: Number(used.promptTokenCount ?? 0),
+      out: Number(used.candidatesTokenCount ?? 0) + Number(used.thoughtsTokenCount ?? 0),
+    },
+  };
 }
 
 async function askOpenAi(model, text) {
@@ -133,7 +144,11 @@ async function askOpenAi(model, text) {
   });
   if (!res.ok) return { error: `HTTP ${res.status}` };
   const body = await res.json();
-  return { text: (body?.choices?.[0]?.message?.content ?? '').trim() };
+  const used = body?.usage ?? {};
+  return {
+    text: (body?.choices?.[0]?.message?.content ?? '').trim(),
+    tokens: { in: Number(used.prompt_tokens ?? 0), out: Number(used.completion_tokens ?? 0) },
+  };
 }
 
 const send = (model, text) =>
@@ -179,11 +194,34 @@ async function inBatches(items, size, fn) {
   return out;
 }
 
+/**
+ * 100만 토큰당 입력/출력 값($). 수첩의 2026-09 조사 그대로다.
+ *
+ * **여기 없는 모델은 값을 모르는 모델이다.** 모르면 모른다고 찍는다 — 지어내면
+ * "얼마 안 나가겠지" 하고 돌리게 되고, 그러다 크레딧이 바닥났다.
+ */
+const PRICE = {
+  'gemini-3.5-flash-lite': [0.30, 2.50],
+  'gemini-3.1-flash-lite': [0.25, 1.50],
+  'gpt-5-nano': [0.05, 0.40],
+  'gpt-5-mini': [0.13, 1.00],
+};
+const KRW = 1350;
+
 const items = paper();
 /** 모델별 점수. 맨 끝에 나란히 놓고 보려고 모아 둔다. */
 const table = new Map();
 console.log(`시험지 ${items.length}문항 (깨끗한 문장 ${clean.length}개)`);
-console.log(`지시문 ${PROMPT.length}자\n`);
+console.log(`지시문 ${PROMPT.length}자`);
+// **돌기 전에 얼마 나갈지 먼저 찍는다.** 다 쓰고 나서 아는 것은 늦다.
+console.log('\n예상 값 (한 문항에 입력 ~340토큰, 출력 ~40토큰으로 잡고):');
+for (const m of models) {
+  const p = PRICE[m];
+  if (!p) { console.log(`   ${m.padEnd(24)} 값을 모르는 모델이다. 돌리기 전에 단가부터 확인해라.`); continue; }
+  const won = ((340 * p[0] + 40 * p[1]) / 1e6) * KRW * items.length;
+  console.log(`   ${m.padEnd(24)} 약 ${won.toFixed(0)}원`);
+}
+console.log();
 
 for (const model of models) {
   const started = Date.now();
@@ -202,9 +240,19 @@ for (const model of models) {
   });
 
   const secs = ((Date.now() - started) / 1000).toFixed(0);
-  table.set(model, { score, secs, errors });
+  const spent = answers.reduce(
+    (acc, a) => ({ in: acc.in + (a.tokens?.in ?? 0), out: acc.out + (a.tokens?.out ?? 0) }),
+    { in: 0, out: 0 }
+  );
+  const p = PRICE[model];
+  const won = p ? ((spent.in * p[0] + spent.out * p[1]) / 1e6) * KRW : null;
+  table.set(model, { score, secs, errors, spent, won });
   const reasons = [...why].map(([k, n]) => `${k}×${n}`).join(', ');
-  console.log(`== ${model}  (${secs}초${errors ? `, 실패 ${errors}건: ${reasons}` : ''})`);
+  const cost = won == null ? '값 모름' : `${won.toFixed(0)}원`;
+  console.log(
+    `== ${model}  (${secs}초, 토큰 입력 ${spent.in.toLocaleString()} 출력 ${spent.out.toLocaleString()}, ${cost}` +
+      `${errors ? `, 실패 ${errors}건: ${reasons}` : ''})`
+  );
   for (const [kind, b] of Object.entries(score)) {
     if (kind === '멀쩡한 글') {
       const left = b.n - b.ok;
@@ -243,5 +291,10 @@ for (const kind of kinds) {
 }
 process.stdout.write('   ' + '걸린 시간'.padEnd(w - 3));
 for (const t of table.values()) process.stdout.write(`${t.secs}초${t.errors ? ` (실패 ${t.errors})` : ''}`.padEnd(26));
+console.log();
+process.stdout.write('   ' + '이 판에 쓴 값'.padEnd(w - 5));
+for (const t of table.values()) process.stdout.write((t.won == null ? '값 모름' : `${t.won.toFixed(0)}원`).padEnd(26));
 console.log('\n');
+const total = [...table.values()].reduce((a, t) => a + (t.won ?? 0), 0);
+console.log(`이 판에 쓴 값 합계: 약 ${total.toFixed(0)}원`);
 console.log('되살림만 보고 고르지 마라. 멀쩡한 글 건드림이 낮아야 쓸 수 있는 모델이다.');

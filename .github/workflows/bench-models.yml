@@ -1,25 +1,30 @@
 name: 모델 겨루기
 
-# 값이 드는 일이라 아무 때나 돌지 않는다.
+# **손으로만 돈다. 자동 방아쇠는 없다.**
 #
-# **bench/ 를 건드리면 돈다.** 이 저장소는 기본 가지가 다른 프로젝트 가지로 돼 있어서,
-# 깃허브가 이 워크플로를 "손으로 돌릴 수 있는 것" 목록에 안 올린다(기본 가지에 있는
-# 것만 올린다). 그래서 시험지나 채점을 고칠 때 같이 돌게 해 뒀다 — 바꿨으면 재 보는
-# 것이 맞기도 하다. 기본 가지가 이 가지로 바뀌면 아래 workflow_dispatch 가 살아난다.
+# 처음에는 `server/bench/**` 를 건드리면 돌게 해 뒀다. 기본 가지가 다른 프로젝트 것이라
+# 손으로 돌릴 수가 없어서 낸 꾀였는데, **그게 사고였다.** 시험지를 고칠 때마다 모델 셋에
+# 347문항씩 나갔고 네 판이 돌아 구글 크레딧이 바닥났다. 실기기의 AI 교정이 그것 때문에
+# 멈췄다. 재는 도구가 파는 물건을 세운 것이다.
+#
+# 방아쇠를 뽑았다. 이 워크플로는 이제 기본 가지에 올라가야 손으로 돌릴 수 있고,
+# 그때까지는 아예 안 돈다. **그게 맞다** — 값이 드는 일은 사람이 누를 때만 돌아야 한다.
+#
+# 돌릴 때도 `정말로` 칸에 확인 문구를 쳐야 한다. 아래 '값' 항목을 먼저 읽어라.
 on:
-  push:
-    paths:
-      - "server/bench/**"
-      - ".github/workflows/bench-models.yml"
   workflow_dispatch:
     inputs:
       models:
-        description: "잴 모델들 (띄어쓰기로 구분). 예: gemini-3.5-flash-lite gemini-3.5-flash gpt-5-nano"
+        description: "잴 모델들 (띄어쓰기로 구분)"
         required: true
-        default: "gemini-3.5-flash-lite gemini-3.5-flash gemini-3.8-flash"
+        default: "gemini-3.5-flash-lite"
       limit:
-        description: "쓸 문장 수 (비우면 50개 전부). 빨리 보고 싶으면 10 쯤."
+        description: "쓸 문장 수. 10이면 약 70문항. 비우면 10."
         required: false
+        default: "10"
+      confirm:
+        description: "값이 드는 일이다. 돌리려면 정확히 '돈 쓴다' 라고 쳐라."
+        required: true
         default: ""
 
 jobs:
@@ -39,15 +44,14 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -euo pipefail
-          # 손으로 돌리면 적어 준 대로, bench/ 를 고쳐서 돌면 기본값으로 잰다.
+          # 확인 문구가 정확히 맞아야 한다. 값이 드는 일은 실수로 돌면 안 된다.
+          if [ "${{ inputs.confirm }}" != "돈 쓴다" ]; then
+            echo "::error title=확인 문구 없음::'돈 쓴다' 라고 정확히 쳐야 돈다. 이 워크플로는 실제 API 값이 나간다."
+            exit 1
+          fi
           models="${{ inputs.models }}"
-          # 지금 쓰는 것 + 더 싼 후보 둘. 값은 수첩의 2026-09 조사 기준이다.
-          #   gemini-3.5-flash-lite  $0.30/$2.50   ← 지금 쓰는 것
-          #   gemini-3.1-flash-lite  $0.25/$1.50
-          #   gpt-5-nano             $0.05/$0.40   ← 6배 싸다
-          [ -n "$models" ] || models="gemini-3.5-flash-lite gemini-3.1-flash-lite gpt-5-nano"
-          limit=""
-          if [ -n "${{ inputs.limit }}" ]; then limit="--limit=${{ inputs.limit }}"; fi
+          limit="--limit=${{ inputs.limit }}"
+          [ -n "${{ inputs.limit }}" ] || limit="--limit=10"
           # 결과를 실행 요약에 그대로 남긴다. 로그를 뒤지지 않고 바로 보려고.
           node bench/models.mjs $models $limit | tee bench.txt
           {
