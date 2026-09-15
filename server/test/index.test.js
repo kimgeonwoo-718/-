@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { handle, GoogleRelay } from '../src/index.js';
 import { fakeDb } from './fakeDb.js';
 import { testKeyPair } from './play.test.js';
+// 한도는 코드에서 가져온다. 손으로 적어 두면 값을 바꿀 때마다 시험을 같이 고쳐야 한다.
+import { DEFAULT_SUB_DAILY_CHARS } from '../src/quota.js';
 
 const INSTALL = '3f2a9c1e-7b4d-4e8a-9c2f-1a2b3c4d5e6f';
 const GENERATE = 'https://spell.test/v1beta/models/gemini-x:generateContent';
@@ -112,7 +114,7 @@ test('구글이 거절한 요청은 세지 않는다', async () => {
   const e = env();
   const res = await handle(generate(), e, { fetch: upstream({ status: 503 }).fetchImpl, now: () => NOON_KST });
   assert.equal(res.status, 503, '상태를 그대로 전한다');
-  assert.equal(res.headers.get('x-quota-remaining'), '20000', '깎이지 않았다');
+  assert.equal(res.headers.get('x-quota-remaining'), String(DEFAULT_SUB_DAILY_CHARS), '깎이지 않았다');
   assert.equal(e.DB.usage.size, 0);
 });
 
@@ -369,7 +371,7 @@ test('중계 객체가 있으면 구글 호출은 그 안에서 나간다 — �
   const res = await handle(generate(), env({ RELAY: relay }), { fetch: direct.fetchImpl, now: () => NOON_KST });
 
   assert.equal(res.status, 200);
-  assert.equal(res.headers.get('x-quota-remaining'), String(20000 - 50));
+  assert.equal(res.headers.get('x-quota-remaining'), String(DEFAULT_SUB_DAILY_CHARS - 50));
   assert.equal(relay.calls.length, 1);
   assert.equal(relay.calls[0].url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
   assert.equal(relay.calls[0].init.method, 'POST');

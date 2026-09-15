@@ -166,7 +166,14 @@ class SetupActivity : AppCompatActivity() {
     }
 
     /**
-     * 요금 상태 한 줄. 판단은 서버가 하고, 여기 보이는 숫자는 서버가 마지막으로 알려 준 것이다.
+     * 요금 상태 한 줄.
+     *
+     * **남은 양은 안 보여준다.** 숫자가 줄어드는 것을 보면 아껴 쓰게 된다 — 쓰라고 만든
+     * 기능에 쓰지 말라는 표시를 달아 둔 꼴이다. 한도는 원가를 막는 장치이지 사용자가
+     * 신경 쓸 것이 아니고, 실제로 닿는 사람도 거의 없다(카톡 한 줄이면 하루 500번).
+     * 닿으면 그때 서버가 알려 준다.
+     *
+     * 판단은 서버가 한다. 여기 있는 것은 "지금 어느 요금제인가" 뿐이다.
      */
     private fun showQuota() {
         val view = quotaOutput ?: return
@@ -176,15 +183,9 @@ class SetupActivity : AppCompatActivity() {
         }
         val quota = Prefs.lastQuota(this)
         view.text = when {
-            quota == null -> getString(R.string.setting_quota_unknown)
-            // 무료는 AI 를 쓰지 않는다. 남은 양을 0 으로 보여 주면 "다 써서 막혔다" 로
-            // 읽히는데, 애초에 받은 적이 없다. 무엇이 프리미엄인지를 말한다.
-            quota.plan == FREE_PLAN -> getString(R.string.setting_quota_free)
-            quota.remaining == null -> getString(R.string.setting_quota_unlimited)
-            else -> getString(
-                R.string.setting_quota_premium,
-                String.format(java.util.Locale.KOREA, "%,d", quota.remaining)
-            )
+            // 무료는 AI 를 쓰지 않는다. 무엇이 프리미엄인지를 말한다.
+            quota?.plan == FREE_PLAN -> getString(R.string.setting_quota_free)
+            else -> getString(R.string.setting_quota_unlimited)
         }
     }
 

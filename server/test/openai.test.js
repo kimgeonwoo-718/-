@@ -10,6 +10,8 @@ import {
   TRANSLATE_TARGETS,
 } from '../src/openai.js';
 import { fakeDb } from './fakeDb.js';
+// 한도는 코드에서 가져온다. 손으로 적어 두면 값을 바꿀 때마다 시험을 같이 고쳐야 한다.
+import { DEFAULT_SUB_DAILY_CHARS } from '../src/quota.js';
 
 const INSTALL = '3f2a9c1e-7b4d-4e8a-9c2f-1a2b3c4d5e6f';
 const GENERATE = 'https://spell.test/v1beta/models/gemini-3.5-flash-lite:generateContent';
@@ -175,7 +177,7 @@ test('토큰과 구독자 한도는 그대로 센다', async () => {
   const up = openAi();
   const res = await handle(generate(), shared, { fetch: up.fetchImpl });
   // '안녕하세요 반갑읍니다' 는 11 자라 최소 과금 50 자로 친다.
-  assert.equal(res.headers.get('x-quota-remaining'), String(20000 - 50));
+  assert.equal(res.headers.get('x-quota-remaining'), String(DEFAULT_SUB_DAILY_CHARS - 50));
 
   const days = await shared.DB.prepare('SELECT day, requests, prompt, output, thoughts FROM tokens ORDER BY day DESC LIMIT 31').all();
   assert.equal(days.results[0].prompt, 200);
@@ -188,7 +190,7 @@ test('OpenAI 가 거절하면 한도를 깎지 않는다', async () => {
   const up = openAi({ status: 429 });
   const res = await handle(generate(), shared, { fetch: up.fetchImpl });
   assert.equal(res.status, 429);
-  assert.equal(res.headers.get('x-quota-remaining'), '20000');
+  assert.equal(res.headers.get('x-quota-remaining'), String(DEFAULT_SUB_DAILY_CHARS));
 });
 
 test('OpenAI 키가 없으면 예전처럼 구글로 간다', async () => {
