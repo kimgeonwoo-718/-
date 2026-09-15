@@ -74,6 +74,18 @@ const MAX_WON = capArg ? Number(capArg.slice('--maxWon='.length)) : 5;
 let spentWon = 0;
 let stopped = false;
 
+/**
+ * 잴 갈래를 좁힌다. `--kinds=멀쩡,우리가먼저`
+ *
+ * 돈이 빠듯할 때 쓴다. 스물몇 문항을 여섯 갈래에 흩으면 갈래당 네댓 개라 아무것도
+ * 못 가린다 — 그럴 바에는 결정에 필요한 갈래에 다 쓰는 것이 낫다.
+ *
+ * **이름 일부만 적어도 걸린다.** 갈래 이름에 공백이 있어서(`멀쩡한 글`) 통째로 적으면
+ * 쉘이 거기서 인자를 쪼갠다. 공백 없는 조각으로 고를 수 있어야 한다.
+ */
+const kindsArg = args.find((a) => a.startsWith('--kinds='));
+const ONLY = kindsArg ? kindsArg.slice('--kinds='.length).split(',').filter(Boolean) : null;
+
 const preArg = args.find((a) => a.startsWith('--preSpaced='));
 const prePath = preArg ? new URL(preArg.slice('--preSpaced='.length), `file://${process.cwd()}/`) : new URL('./pre-spaced.json', import.meta.url);
 let PRE_SPACED = null;
@@ -238,7 +250,7 @@ const PRICE = {
 };
 const KRW = 1350;
 
-const items = paper();
+const items = paper().filter((it) => !ONLY || ONLY.some((k) => it.kind.includes(k)));
 /** 모델별 점수. 맨 끝에 나란히 놓고 보려고 모아 둔다. */
 const table = new Map();
 console.log(`시험지 ${items.length}문항 (깨끗한 문장 ${clean.length}개)`);
