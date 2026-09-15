@@ -116,6 +116,101 @@ class SpellEngineTest {
     }
 
     @Test
+    fun `숫자가 섞여 있어도 띄어쓰기가 들어간다`() {
+        // Spacer_space 는 한글 아닌 글자가 끼면 null 을 준다. 손질 없이 넣으면 공백이
+        // 하나도 안 들어간다 — 붙여넣는 글의 대부분이 여기 해당한다.
+        val engine = readyEngine()
+        try {
+            val corrected = correct(engine, "오늘은3시에친구를만나기로했다")
+            assertTrue(
+                corrected.result.text.count { it == ' ' } >= 3,
+                "숫자가 끼자 띄어쓰기가 죽었다: ${corrected.result.text}",
+            )
+            // '3시' 는 붙어 있어야 한다. 숫자 뒤의 한글은 단위다.
+            assertTrue("3시" in corrected.result.text, "단위를 떼어 놓았다: ${corrected.result.text}")
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `문장이 여럿이어도 뒤 문장까지 띄어진다`() {
+        val engine = readyEngine()
+        try {
+            val corrected = correct(engine, "어제는하루종일집에있었다.밖에비가많이왔기때문이다.")
+            val tail = corrected.result.text.substringAfter('.')
+            assertTrue(
+                tail.count { it == ' ' } >= 3,
+                "첫 문장만 띄우고 뒤는 붙은 채로 뒀다: ${corrected.result.text}",
+            )
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `바르게 띄어 쓴 글은 건드리지 않는다`() {
+        val engine = readyEngine()
+        try {
+            val clean = listOf(
+                "오늘 날씨가 참 좋네요.",
+                "내일 오전 10시에 회의가 있습니다.",
+                "어제 친구를 만나서 저녁을 먹었다.",
+            )
+            for (text in clean) {
+                val corrected = correct(engine, text)
+                assertEquals(text, corrected.result.text, "멀쩡한 글을 건드렸다")
+            }
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `숫자 문자열을 깨뜨리지 않는다`() {
+        val engine = readyEngine()
+        try {
+            // 전처리가 부호에까지 공백을 넣으면 이런 것들이 깨진다.
+            for (text in listOf("전화번호는010-1234-5678이다", "원주율은3.14159이다", "가격은 12,500원입니다")) {
+                val corrected = correct(engine, text)
+                val digitsOnly = { s: String -> s.filter { it.isDigit() || it == '-' || it == '.' || it == ',' } }
+                assertEquals(
+                    digitsOnly(text),
+                    digitsOnly(corrected.result.text),
+                    "숫자 덩어리가 깨졌다: ${corrected.result.text}",
+                )
+            }
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `두 번 돌려도 결과는 사용자가 넣은 원문을 기준으로 나온다`() {
+        val engine = readyEngine()
+        try {
+            val original = "오늘은3시에친구를만나기로했다"
+            val corrected = correct(engine, original)
+            assertEquals(original, corrected.result.original, "중간 결과가 원문 자리에 들어갔다")
+            assertTrue(corrected.result.changed)
+            assertTrue(corrected.guessedSpacing, "붙여 쓴 글인데 추측 표시가 안 섰다")
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `띄어쓰기가 멀쩡한 글에는 추측 표시를 세우지 않는다`() {
+        val engine = readyEngine()
+        try {
+            val corrected = correct(engine, "오늘 날씨가 참 좋네요.")
+            assertTrue(!corrected.guessedSpacing, "평범한 글에 추측 표시가 섰다")
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun `교정은 언제나 같은 스레드 하나에서 돈다`() {
         val engine = readyEngine()
         try {
