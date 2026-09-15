@@ -12,6 +12,16 @@ name: 모델 겨루기
 #
 # 돌릴 때도 `정말로` 칸에 확인 문구를 쳐야 한다. 아래 '값' 항목을 먼저 읽어라.
 on:
+  # **한 번만 켜지는 스위치.** `server/bench/RUN` 파일이 있으면 그 안에 적힌 대로 한 판
+  # 돌고, 없으면 아무것도 안 하고 끝난다(값이 안 든다). 돌리려면 파일을 만들어 올리고,
+  # 끝나면 지운다. 지울 때도 이 일감이 돌지만 파일이 없으니 바로 끝난다.
+  #
+  # 기본 가지가 다른 프로젝트 것이라 workflow_dispatch 가 목록에 안 올라와서 낸 방법이다.
+  # 예전처럼 `bench/**` 전체를 방아쇠로 두지 않는 것이 핵심이다 — 그러면 시험지만 손봐도
+  # 돈이 나갔고, 실제로 그렇게 크레딧이 바닥났다.
+  push:
+    paths:
+      - "server/bench/RUN"
   workflow_dispatch:
     inputs:
       models:
@@ -37,7 +47,20 @@ jobs:
         with:
           node-version: "22"
 
+      - name: 돌릴 일이 있나
+        id: gate
+        run: |
+          if [ -f server/bench/RUN ]; then
+            echo "돌린다: $(cat server/bench/RUN)"
+            echo "args=$(cat server/bench/RUN)" >> "$GITHUB_OUTPUT"
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "server/bench/RUN 이 없다. 아무것도 안 한다."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 잰다
+        if: steps.gate.outputs.go == 'true'
         working-directory: server
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -45,13 +68,20 @@ jobs:
         run: |
           set -euo pipefail
           # 확인 문구가 정확히 맞아야 한다. 값이 드는 일은 실수로 돌면 안 된다.
-          if [ "${{ inputs.confirm }}" != "돈 쓴다" ]; then
+          if [ "${{ github.event_name }}" != "push" ] && [ "${{ inputs.confirm }}" != "돈 쓴다" ]; then
             echo "::error title=확인 문구 없음::'돈 쓴다' 라고 정확히 쳐야 돈다. 이 워크플로는 실제 API 값이 나간다."
             exit 1
           fi
-          models="${{ inputs.models }}"
-          limit="--limit=${{ inputs.limit }}"
-          [ -n "${{ inputs.limit }}" ] || limit="--limit=10"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # 파일에 적힌 대로. 확인 문구는 파일을 만든 것 자체로 갈음한다.
+            set -- ${{ steps.gate.outputs.args }}
+            models="$1"; shift
+            extra="$@"
+          else
+            models="${{ inputs.models }}"
+            extra="--limit=${{ inputs.limit }}"
+          fi
+          limit="$extra"
           # 결과를 실행 요약에 그대로 남긴다. 로그를 뒤지지 않고 바로 보려고.
           node bench/models.mjs $models $limit | tee bench.txt
           {

@@ -59,6 +59,21 @@ const LIMIT = limitArg ? Number(limitArg.slice('--limit='.length)) : Infinity;
  * 처음엔 `--preSpaced=파일` 로만 켜지게 했는데, 워크플로에 그 플래그를 넘기는 것을
  * 잊어서 한 판을 통째로 헛돌렸다. 잊을 수 있는 자리는 없애는 것이 맞다.
  */
+const reasonArg = args.find((a) => a.startsWith('--reasoning='));
+/** 숙고 세기. 비우면 'minimal' — 끄는 쪽이다. */
+const REASONING = reasonArg ? reasonArg.slice('--reasoning='.length) : '';
+
+/**
+ * **이 돈을 넘기면 그 자리에서 멈춘다.**
+ *
+ * 말로 "조심하겠다" 는 것은 이미 한 번 실패했다 — 겨루기가 구글 크레딧을 바닥내
+ * 실기기의 AI 를 세웠다. 재는 도중에 실제로 쓴 값을 세고, 넘으면 남은 문항을 버린다.
+ */
+const capArg = args.find((a) => a.startsWith('--maxWon='));
+const MAX_WON = capArg ? Number(capArg.slice('--maxWon='.length)) : 5;
+let spentWon = 0;
+let stopped = false;
+
 const preArg = args.find((a) => a.startsWith('--preSpaced='));
 const prePath = preArg ? new URL(preArg.slice('--preSpaced='.length), `file://${process.cwd()}/`) : new URL('./pre-spaced.json', import.meta.url);
 let PRE_SPACED = null;
@@ -140,6 +155,10 @@ async function askOpenAi(model, text) {
         { role: 'system', content: PROMPT },
         { role: 'user', content: text },
       ],
+      // **반드시 적어 보낸다.** 안 적으면 OpenAI 기본값으로 도는데, 그러면 무엇으로
+      // 재고 있는지도 모르고 값도 예측이 안 된다. 실제로 그렇게 짜여 있었다.
+      // 서버는 OPENAI_REASONING 으로 정하므로 여기서도 같은 값을 줄 수 있어야 한다.
+      ...(REASONING ? { reasoning_effort: REASONING } : { reasoning_effort: 'minimal' }),
     }),
   });
   if (!res.ok) return { error: `HTTP ${res.status}` };
@@ -164,10 +183,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * 재는 도구가 아니다. 붐빔(429)과 저쪽 잘못(5xx)도 같이 기다렸다 다시 묻는다.
  */
 async function ask(model, text, tries = 4) {
+  if (stopped) return { error: '상한을 넘겨 멈췄다' };
   for (let i = 0; i < tries; i++) {
     try {
       const got = await send(model, text);
-      if (!got.error) return got;
+      if (!got.error) {
+        const p = PRICE[model];
+        if (p && got.tokens) {
+          spentWon += ((got.tokens.in * p[0] + got.tokens.out * p[1]) / 1e6) * KRW;
+          if (spentWon > MAX_WON) {
+            stopped = true;
+            console.error(`\n상한 ${MAX_WON}원을 넘겼다(${spentWon.toFixed(2)}원). 남은 문항은 버린다.`);
+          }
+        }
+        return got;
+      }
       const code = Number(/HTTP (\d+)/.exec(got.error)?.[1] ?? 0);
       if (code !== 429 && code < 500) return got; // 우리 잘못이면 다시 물어도 같다
     } catch (e) {
@@ -214,6 +244,8 @@ const table = new Map();
 console.log(`시험지 ${items.length}문항 (깨끗한 문장 ${clean.length}개)`);
 console.log(`지시문 ${PROMPT.length}자`);
 // **돌기 전에 얼마 나갈지 먼저 찍는다.** 다 쓰고 나서 아는 것은 늦다.
+console.log(`숙고: ${REASONING || 'minimal (끔)'}`);
+console.log(`상한: ${MAX_WON}원 — 넘으면 그 자리에서 멈춘다`);
 console.log('\n예상 값 (한 문항에 입력 ~340토큰, 출력 ~40토큰으로 잡고):');
 for (const m of models) {
   const p = PRICE[m];
