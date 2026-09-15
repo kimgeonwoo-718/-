@@ -7,6 +7,10 @@ on:
       - "claude/**"
     tags:
       - "v*"
+    # 윈도우 데스크톱만 고친 밀기에 안드로이드 APK 를 빌드할 이유가 없다.
+    # 두 얼굴이 한 저장소에 있어서 생기는 헛수고를 여기서 끊는다.
+    paths-ignore:
+      - "desktop/**"
   workflow_dispatch:
 
 permissions:
