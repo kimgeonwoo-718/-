@@ -36,6 +36,10 @@ application {
 tasks.test {
     useJUnitPlatform()
     testLogging { events("passed", "failed", "skipped") }
+
+    // 시험은 **화면 없이** 돈다. 이것이 없으면 쟁반·창 시험이 진짜 알림 영역을 건드리고,
+    // 떠 있는 창 시험이 사용자 화면에 창을 띄운다. 일부러 첫 단언으로 못 박아 두었다.
+    systemProperty("java.awt.headless", "true")
 }
 
 /**

@@ -1,6 +1,27 @@
 package com.spellkeyboard.desktop
 
 import com.spellkeyboard.core.correct.Correction
+import com.spellkeyboard.desktop.floating.FloatingWindow
+import com.spellkeyboard.desktop.floating.PreferenceSettings
+import com.spellkeyboard.desktop.hotkey.GlobalHotkeyManager
+import com.spellkeyboard.desktop.hotkey.HotkeyCombo
+import com.spellkeyboard.desktop.hotkey.HotkeyResult
+import com.spellkeyboard.desktop.paste.PasteBack
+import com.spellkeyboard.desktop.paste.PasteOutcome
+import com.spellkeyboard.desktop.paste.PasteSettings
+import com.spellkeyboard.desktop.paste.WindowHider
+import com.spellkeyboard.desktop.paste.ownWindowHandle
+import com.spellkeyboard.desktop.shell.DesktopSettings
+import com.spellkeyboard.desktop.shell.SettingsDialog
+import com.spellkeyboard.desktop.shell.SettingsStore
+import com.spellkeyboard.desktop.shell.SingleInstance
+import com.spellkeyboard.desktop.shell.SingleInstanceResult
+import com.spellkeyboard.desktop.shell.TrayController
+import com.spellkeyboard.desktop.shell.TrayResult
+import com.spellkeyboard.desktop.shell.Win32HotkeyProbe
+import com.spellkeyboard.desktop.shell.installHideOnClose
+import com.spellkeyboard.desktop.shell.onEdt
+import kotlin.system.exitProcess
 import com.spellkeyboard.desktop.live.LiveCorrector
 import com.spellkeyboard.desktop.live.caretFollowingComposition
 import com.spellkeyboard.desktop.live.changedSpan
@@ -41,9 +62,227 @@ import javax.swing.SwingUtilities
 import javax.swing.UIManager
 import javax.swing.border.EmptyBorder
 
+/**
+ * 떠 있는 교정창을 세운다.
+ *
+ * ## 차례가 왜 이런가
+ *
+ * 1. **한 벌만 돈다**([SingleInstance]). 전역 단축키는 먼저 잡는 쪽이 임자라, 두 벌이
+ *    뜨면 둘째는 1409 를 받고 아무 일도 못 하면서 알림 영역에만 남는다. 그래서 단축키를
+ *    잡기 **전에** 자리를 다툰다. 둘째는 첫째의 창을 띄워 주고 조용히 나간다.
+ * 2. 창을 **만들고**([CorrectorWindow.build]) 떠 있는 창 노릇을 붙인다([FloatingWindow.install]).
+ *    창은 여기서 딱 한 번 만들어지고 그 뒤로는 보이고 숨을 뿐이다 — 사전이 올라간 엔진을
+ *    다시 부수지 않으려는 것이다.
+ * 3. 그다음에 단축키를 잡는다. 실패하면 **반드시 화면에 적는다.** 설계서가 고른
+ *    Ctrl+Alt+Space 는 이 기계에서 이미 남이 쓰고 있었다.
+ * 4. 알림 영역을 붙인다. 못 붙이면 그 사실과 "닫으면 진짜 끝난다" 를 같이 말한다.
+ */
 fun main() {
     runCatching { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()) }
-    SwingUtilities.invokeLater { CorrectorWindow(SpellEngine()).open() }
+
+    val store = SettingsStore()
+
+    // 둘째 벌이 첫째에게 "창 띄워라" 를 보내면 소켓 실에서 이 상자가 불린다.
+    // 창은 아직 없으므로 상자에 담아 두고, 다 세운 뒤에 채운다.
+    val summon = java.util.concurrent.atomic.AtomicReference<() -> Unit>({})
+    val single = SingleInstance.acquire { onEdt { summon.get().invoke() } }
+    if (single is SingleInstanceResult.AlreadyRunning) {
+        if (!single.notifiedFirstInstance) {
+            // 첫째에게 말을 못 걸었다. 그래도 둘이 뜨는 것보다는 낫다.
+            javax.swing.JOptionPane.showMessageDialog(
+                null,
+                "맞춤법 교정기가 이미 실행 중입니다.\n알림 영역 아이콘을 누르거나 단축키로 부르세요.",
+                "맞춤법 교정기",
+                javax.swing.JOptionPane.INFORMATION_MESSAGE,
+            )
+        }
+        exitProcess(0)
+    }
+
+    SwingUtilities.invokeLater { DesktopApp(store, single).start(summon) }
+}
+
+/**
+ * 부품 넷(단축키·떠 있는 창·돌려 붙이기·알림 영역)을 하나로 묶는 자리.
+ *
+ * 부품끼리는 서로를 모른다. 아는 것은 여기뿐이라, 무엇이 무엇을 부르는지 보려면
+ * 이 한 클래스만 읽으면 된다.
+ */
+private class DesktopApp(
+    private val store: SettingsStore,
+    private val single: SingleInstanceResult,
+) {
+    private val window = CorrectorWindow(SpellEngine(), store)
+    private val hotkeys = GlobalHotkeyManager(
+        // 단축키가 눌린 **그 순간**, 우리 창을 띄우기 전에 앞 창을 갈무리한다.
+        // 이 실에서 할 수 있는 유일하게 옳은 일이다 — 창이 뜨고 나면
+        // GetForegroundWindow 는 우리 창을 돌려준다.
+        onHotkeyThread = { paste.remember() },
+        onError = { it.printStackTrace() },
+    ) { float.toggle() }
+
+    private val paste = PasteBack(
+        hider = WindowHider.swing(window.frame),
+        // 설정의 "붙여넣기 여유" 는 **앞 창이 돌아온 것을 확인한 뒤** 더 주는 시간이다
+        // (settleMs). 설계서의 고정 대기(§3-4)를 그대로 쓰지 않는 까닭은 재 봤기
+        // 때문이다: 앞 창은 3.8~8.3ms 에 돌아오고, 고정 대기만 믿으면 느린 기계에서
+        // 자판이 허공으로 간다. 지켜보기가 본길이고 이 값은 덤이다.
+        settings = { PasteSettings(settleMs = store.get().pasteExtraDelayMs.toLong()) },
+    )
+
+    private lateinit var float: FloatingWindow
+    private var tray: TrayResult? = null
+    private val probe = Win32HotkeyProbe { hotkeys.current }
+
+    fun start(summon: java.util.concurrent.atomic.AtomicReference<() -> Unit>) {
+        window.build()
+
+        float = FloatingWindow.install(
+            frame = window.frame,
+            editor = window.input,
+            settings = PreferenceSettings(SettingsStore.defaultNode()),
+            // Enter. **일꾼 실에서** 불리고 창은 이미 숨어 있다.
+            onApply = { text -> applyAndPaste(text) },
+            onCorrectAll = { window.correctNow() },
+            onQuit = { window.shutdown() },
+        )
+        summon.set { float.summon() }
+
+        // 창은 이미 실체화돼 있다(install 이 pack 했다). 손잡이는 여기서 한 번만 읽는다 —
+        // 나중에 일꾼 실에서 읽으면 프로세스가 통째로 멎는 일이 있었다.
+        paste.ownWindow = ownWindowHandle(window.frame)
+
+        // **알림 영역을 먼저 붙인다.** 단축키 등록이 실패하면 풍선말로도 알리는데,
+        // 순서가 반대면 그때 tray 가 아직 null 이라 그 길이 통째로 죽는다. 실제로 그랬다.
+        installTray()
+        startHotkey()
+
+        // 설정이 바뀌면 여기서 갈라 나간다. 붙이는 즉시 지금 값으로 한 번 불린다.
+        store.addListener { s -> onSettings(s) }
+
+        // 처음 켠 사람에게는 창을 보여 준다. 알림 영역에만 뜨면 무엇이 켜졌는지 모른다.
+        float.summon()
+    }
+
+    // ---- Enter ----
+
+    private fun applyAndPaste(text: String) {
+        // 여기서 던지면 [FloatingWindow] 가 삼킨다(일꾼 실이 죽지 않게 감싸 놓았다).
+        // 삼켜지면 창은 숨고 글은 어디에도 안 남는다 — 그것만은 안 된다.
+        val outcome = runCatching { paste.pasteBack(text) }
+            .getOrElse { PasteOutcome.Failed("돌려 붙이지 못했습니다: ${it.message}") }
+        if (outcome is PasteOutcome.Pasted) return
+        // 못 붙였으면 고친 글은 클립보드에 있다. 그 사실을 **보여 줘야** 한다 —
+        // 숨은 창에 적어 두면 아무도 못 읽는다.
+        SwingUtilities.invokeLater {
+            float.summon()
+            window.status(outcome.message)
+        }
+    }
+
+    // ---- 단축키 ----
+
+    /**
+     * 마지막으로 **등록해 본** 조합. 쥐고 있는 조합([GlobalHotkeyManager.current])과 다르다 —
+     * 실패하면 쥔 것은 없지만 해 보기는 한 것이다. 이것을 안 적어 두면, 등록에 실패한 직후
+     * 설정 듣는 이가 "쥔 것이 없네" 하고 같은 조합을 다시 걸어 **같은 실패를 두 번** 알린다.
+     */
+    private var attempted: HotkeyCombo? = null
+
+    /**
+     * **[GlobalHotkeyManager.startAsync] 를 쓴다.** 여기는 EDT 다. 짝인 `start()` 는
+     * 빗장을 최대 5초 기다리므로 그 길로 빠지면 화면이 그대로 언다. 그 클래스가 스스로
+     * "EDT 에서 부르지 마라" 고 막대그림을 찍는 호출이기도 하다 — 띄울 때마다 stderr 에
+     * 1,451자짜리 자취가 남아 진짜 오류를 덮고 있었다.
+     */
+    private fun startHotkey() {
+        val combo = store.get().hotkey
+        attempted = combo
+        hotkeys.startAsync(combo) { result -> if (!result.ok) reportHotkey(result) }
+    }
+
+    /**
+     * 단축키를 못 잡았다는 말은 **절대 삼키지 않는다.** 삼키면 프로그램이 멀쩡히 떠
+     * 있는데 단축키만 안 먹는 상태가 되고, 사용자는 까닭을 알 길이 없다.
+     */
+    private fun reportHotkey(result: HotkeyResult) {
+        val failed = result as? HotkeyResult.Failed ?: return
+        val message = "${failed.message} (${failed.combo.display()}) — 설정에서 다른 조합을 고르세요."
+        onEdt {
+            float.summon()
+            // status() 가 아니라 stickyWarning() 이다. 사전이 다 올라오면서 상태 한 줄을
+            // "준비됐습니다." 로 덮어 버려, 단축키가 죽은 줄 모르게 하던 자리다.
+            window.stickyWarning(message)
+            (tray as? TrayResult.Installed)?.controller?.notify("단축키를 못 잡았습니다", message, error = true)
+        }
+    }
+
+    // ---- 알림 영역 ----
+
+    private fun installTray() {
+        val result = TrayController.install(
+            store = store,
+            onOpen = {
+                // 알림 영역으로 부를 때도 반드시 다시 기억한다. 안 부르면 한참 전
+                // 단축키 때 잡아 둔 **옛 창**을 그대로 겨눈 채로 남는다. 작업 표시줄이
+                // 앞 창이면 remember 가 0 으로 지워 준다.
+                paste.remember()
+                float.summon()
+            },
+            onSettings = { SettingsDialog.open(window.frame, store, probe) },
+            onQuit = { quit() },
+        )
+        tray = result
+        if (result is TrayResult.Unavailable) {
+            // 알림 영역이 없으면 `종료` 차림표가 없다. 그때만 닫기가 진짜 종료다.
+            installHideOnClose(window.frame, hasTray = false, onQuit = { quit() })
+            onEdt { window.status(result.message.replace("\n", " ")) }
+        }
+    }
+
+    // ---- 설정이 바뀌면 ----
+
+    private fun onSettings(s: DesktopSettings) {
+        float.setHideOnFocusLoss(s.hideOnFocusLoss)
+        // 같은 조합이면 건드리지 않는다. 다시 등록하면 그 찰나에 단축키가 비고,
+        // 무엇보다 change() 는 실패할 수 있는 일이다.
+        if (attempted == s.hotkey) return
+
+        attempted = s.hotkey
+        // **안 돌고 있으면 다시 띄운다.** 처음 등록이 실패하면 실이 안 뜨는데, 예전에는
+        // isRunning 일 때만 갈아 끼워서 그 경우 설정에서 다른 조합을 골라도 아무 일도
+        // 안 났다 — 실패 메시지가 "설정에서 다른 조합을 고르세요" 라고 안내하는 바로
+        // 그 길이 막혀 있었다.
+        val apply: ((HotkeyResult) -> Unit) -> Unit =
+            if (hotkeys.isRunning) { cb -> hotkeys.changeAsync(s.hotkey, cb) }
+            else { cb -> hotkeys.startAsync(s.hotkey, cb) }
+
+        apply { r ->
+            if (!r.ok) reportHotkey(r)
+            // 잡았으면 걸려 있던 경고를 걷는다. 안 걷으면 고친 뒤에도 "못 잡았습니다" 가
+            // 상태줄에 남아 사용자가 아직 안 된 줄 안다.
+            else onEdt { window.stickyWarning(null); window.status("단축키를 ${s.hotkey.display()} 로 바꿨습니다.") }
+        }
+    }
+
+    // ---- 끝내기 ----
+
+    /**
+     * 끄는 길은 이것 하나다(알림 영역의 `종료`, 또는 알림 영역이 아예 없을 때의 닫기).
+     *
+     * **종료 갈고리에서 부르지 마라.** 갈고리에서 `dispose()` 로 들어가면 한국어 IME 가
+     * 걸린 EDT 를 `invokeAndWait` 으로 기다리다 프로세스가 영영 안 죽는다. 그렇게 멎은
+     * JVM 을 이 기계에서 넷 봤다.
+     */
+    private fun quit() = onEdt {
+        (tray as? TrayResult.Installed)?.controller?.remove()
+        hotkeys.stop()          // 단축키를 놓는다. 이것을 빼먹으면 조합이 새어 나간다.
+        runCatching { probe.close() }
+        paste.close()
+        (single as? SingleInstanceResult.First)?.instance?.close()
+        float.shutdown()        // 숨기기 → window.shutdown() → dispose, 전부 EDT 에서
+        exitProcess(0)
+    }
 }
 
 /**
@@ -59,12 +298,20 @@ fun main() {
  * (가로로 벌리면 좁은 창에서 먼저 깨진다), 단추는 넉 자를 넘기지 않으며, 자세한 것은
  * 접어 두었다가 필요할 때만 편다.
  */
-class CorrectorWindow(private val engine: SpellEngine) {
+class CorrectorWindow(
+    private val engine: SpellEngine,
+    /**
+     * 설정 하나에서 갈라 나온다. 실시간 교정 스위치가 세 군데(이 창 네모칸, 알림 영역
+     * 차림표, 설정 창)에 있어서 각자 [Preferences] 를 만지면 반드시 어긋난다.
+     */
+    private val settings: SettingsStore = SettingsStore(),
+) {
 
-    private val frame = JFrame("맞춤법 교정기")
+    /** [FloatingWindow] 가 붙을 창. 이 클래스는 창을 띄우지도 숨기지도 않는다. */
+    val frame = JFrame("맞춤법 교정기")
 
     /** 원문이자 고친 글. 실시간 교정이 **이 칸을 제자리에서** 고친다. */
-    private val input = JTextArea().apply {
+    val input = JTextArea().apply {
         lineWrap = true
         wrapStyleWord = true
         font = koreanFont(14)
@@ -143,15 +390,16 @@ class CorrectorWindow(private val engine: SpellEngine) {
 
     private val correctButton = JButton("전체교정")
 
-    fun open() {
+    /**
+     * 창을 **만들기만** 한다. 띄우지 않는다.
+     *
+     * 예전에는 `open()` 이었고 끝에서 창을 띄웠다. 이제는 [FloatingWindow] 가 언제
+     * 어디에 띄울지를 정하므로(설계서 §3-1: 한 번 만들고 보이고 숨긴다) 여기서 띄우면
+     * 자리 잡기가 두 번 일어나 창이 한 번 깜빡인다. 닫기 단추도 마찬가지로
+     * [FloatingWindow] 가 받는다 — 여기서 `dispose()` 하면 전역 단축키가 같이 죽는다.
+     */
+    fun build() {
         frame.defaultCloseOperation = JFrame.DO_NOTHING_ON_CLOSE
-        frame.addWindowListener(object : WindowAdapter() {
-            override fun windowClosing(e: WindowEvent) {
-                live.detach()
-                engine.close()
-                frame.dispose()
-            }
-        })
 
         frame.contentPane.layout = BorderLayout()
         frame.contentPane.add(topBar(), BorderLayout.NORTH)
@@ -163,12 +411,45 @@ class CorrectorWindow(private val engine: SpellEngine) {
 
         frame.size = Dimension(WIDTH, HEIGHT)
         frame.minimumSize = Dimension(300, 260)
-        frame.setLocationRelativeTo(null)
-        frame.isVisible = true
-        input.requestFocusInWindow()
 
         engine.load { state -> showState(state) }
     }
+
+    /** 끝낼 때 [FloatingWindow.shutdown] 이 창을 부수기 직전에 부른다. */
+    fun shutdown() {
+        live.detach()
+        engine.close()
+    }
+
+    /** 바깥(단축키 등록 실패 따위)에서 상태 한 줄에 적을 자리. EDT 에서 불러라. */
+    fun status(message: String) {
+        say(message)
+        addDetail(message)
+    }
+
+    /**
+     * **지워지면 안 되는 경고.** 프로그램은 멀쩡해 보이는데 기능 하나가 죽어 있는 상태가
+     * 여기 들어간다 — 단축키를 못 잡은 것이 그렇다.
+     *
+     * 왜 따로 두는가: 한 번 적고 마는 [status] 로는 사라진다. 단축키 등록은 시작하자마자
+     * 끝나는데 사전은 1초쯤 뒤에 올라오고, 그때 [showState] 가 "준비됐습니다." 로 덮었다.
+     * 실제로 그랬다 — 1,224ms 에 찍은 화면에 이미 덮여 있었다. 사용자는 멀쩡해 보이는 창을
+     * 보면서 단축키만 안 먹는 까닭을 알 길이 없었다.
+     *
+     * 그래서 엔진이 다 올라와도 이 말이 이긴다. 준비됐다는 말보다 안 되는 것이 있다는
+     * 말이 중요하다. null 을 주면 걷힌다.
+     */
+    fun stickyWarning(message: String?) {
+        sticky = message
+        if (message != null) {
+            say(message)
+            addDetail(message)
+            warn(true)
+        }
+    }
+
+    /** [stickyWarning] 이 적어 둔 말. 엔진 상태가 이것을 못 덮는다. */
+    private var sticky: String? = null
 
     // ---- 화면 ----
 
@@ -244,12 +525,16 @@ class CorrectorWindow(private val engine: SpellEngine) {
     // ---- 실시간 교정 ----
 
     private fun wireLive() {
-        liveToggle.isSelected = prefs.getBoolean(LIVE_KEY, true)
-        live.enabled = liveToggle.isSelected
-        liveToggle.addActionListener {
-            live.enabled = liveToggle.isSelected
-            prefs.putBoolean(LIVE_KEY, liveToggle.isSelected)
-            say(if (liveToggle.isSelected) "실시간 교정을 켰습니다." else "실시간 교정을 껐습니다.")
+        // 네모칸은 **값을 들고 있지 않다.** 누르면 저장소에 말하고, 저장소가 다시
+        // 알려 줄 때 비로소 칸이 움직인다. 알림 영역 차림표에서 꺼도 이 칸이 같이
+        // 움직이는 까닭이 이것이다.
+        liveToggle.addActionListener { settings.setLiveCorrection(liveToggle.isSelected) }
+        settings.addListener { s ->
+            if (liveToggle.isSelected != s.liveCorrection) liveToggle.isSelected = s.liveCorrection
+            if (live.enabled != s.liveCorrection) {
+                live.enabled = s.liveCorrection
+                say(if (s.liveCorrection) "실시간 교정을 켰습니다." else "실시간 교정을 껐습니다.")
+            }
         }
         live.onReport = { report -> showReport(report) }
     }
@@ -289,7 +574,8 @@ class CorrectorWindow(private val engine: SpellEngine) {
         correctText(text)
     }
 
-    private fun correctNow() {
+    /** Ctrl+Space 와 [FloatingWindow] 의 전체교정이 함께 부른다. */
+    fun correctNow() {
         val text = input.text
         if (text.isBlank()) {
             say("고칠 글이 없습니다.")
@@ -356,10 +642,11 @@ class CorrectorWindow(private val engine: SpellEngine) {
             is EngineState.Ready -> {
                 level.text = "${state.level.label} · ${state.millis}ms"
                 when (state.level) {
-                    EngineLevel.CONTEXT -> {
-                        say("준비됐습니다.")
-                        warn(false)
-                    }
+                    // 지워지면 안 되는 경고가 걸려 있으면 그쪽이 이긴다. 준비됐다는 말보다
+                    // 안 되는 것이 있다는 말이 중요하다. [stickyWarning] 참고.
+                    EngineLevel.CONTEXT -> sticky
+                        ?.let { say(it); warn(true) }
+                        ?: run { say("준비됐습니다."); warn(false) }
                     EngineLevel.DICTIONARY -> {
                         say("언어모델을 못 열었습니다 — 띄어쓰기가 크게 떨어집니다.")
                         warn(true)
@@ -457,9 +744,8 @@ class CorrectorWindow(private val engine: SpellEngine) {
         /** 실시간 교정 내역을 몇 줄까지 들고 있을까. */
         const val DETAIL_LINES = 40
 
-        const val LIVE_KEY = "liveCorrection"
-
-        val prefs: Preferences = Preferences.userNodeForPackage(CorrectorWindow::class.java)
+        // 실시간 교정 값은 이제 [SettingsStore] 가 같은 마디(/com/spellkeyboard/desktop)의
+        // 같은 이름("liveCorrection")에 적는다. 여기서 또 읽고 쓰면 둘이 어긋난다.
 
         val WARN_BACKGROUND = Color(0xFF, 0xF3, 0xCD)
         val MUTED = Color(0x70, 0x70, 0x70)
