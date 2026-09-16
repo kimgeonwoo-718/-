@@ -106,6 +106,20 @@ class SpellEngine(
     @Volatile
     private var nbest: NBestCorrector? = null
 
+    /**
+     * 엔진의 `typoFixer` 자리에 꽂은 것. [SpellingFixer.source] 에 **사람이 친 원문**을
+     * 넣어 줘야 자모 오타 규칙이 깨어난다 — 그래서 여기 따로 들고 있는다.
+     */
+    @Volatile
+    private var spelling: SpellingFixer? = null
+
+    /**
+     * 맨 마지막에 도는 띄어쓰기 겹. 이것 하나가 **이미 띄어 쓴 글**을 맡는다 —
+     * 그 전까지는 붙여 쓴 덩어리가 없으면 띄어쓰기 기계가 통째로 안 돌았다.
+     */
+    @Volatile
+    private var tokenSpacer: TokenSpacer? = null
+
     @Volatile
     var state: EngineState = EngineState.Loading
         private set
@@ -154,8 +168,18 @@ class SpellEngine(
                 // 이것만 test 145행에서 값을 냈다: `spelling` F1 0.7500 → 1.0000(12/12),
                 // 전체 F1 0.9481 → 0.9647, `mutated` 4행 → 1행, 손상은 1/73 그대로.
                 // 나머지 여덟 갈래는 tp/fp/fn 이 한 자리도 안 움직였다.
-                engine.typoFixer = ConfusionFixer(spacer, lm)
+                // [SpellingFixer] 가 [ConfusionFixer] 를 감싸 세 갈래를 더 본다:
+                // -이/-히(51항), 굳은 꼴(뵈요→봬요, -세여→-세요), 그리고 **말뭉치가
+                // 모르는 어절에서만** 여는 자모 오타 하나. 새 test 194행에서 F1
+                // 0.8183 → 0.8702, 통째 정답 117 → 130 이고, 옛 말뭉치 290행은
+                // 한 글자도 안 달라진다.
+                val fixer = SpellingFixer(spacer, lm, ConfusionFixer(spacer, lm))
+                engine.typoFixer = fixer
+                spelling = fixer
                 nbest = NBestCorrector(engine, spacer, lm)
+                // 맨 마지막 겹. 재분절이 안 도는 글 — 이미 띄어 쓴 평범한 글 — 의
+                // 어절을 하나씩 사전에 다시 물어본다. 새 test 에서 통째 정답 +21 행.
+                tokenSpacer = TokenSpacer(spacer, lm)
             }
 
             val level = when {
@@ -220,7 +244,22 @@ class SpellEngine(
      * 재분절을 한 겹 얹는다. 아래 몸통은 사전이 덜 올라왔을 때만 도는 되돌림 길이다.
      */
     private fun correctGlued(text: String): CorrectionResult {
-        nbest?.let { return it.correctResult(text) }
+        nbest?.let { corrector ->
+            // 원문을 꽂아 준다. [SpellingFixer.typedByHand] 가 이것으로 "사람이 친
+            // 어절" 과 "띄어쓰기가 갈라 놓은 조각" 을 가른다 — 안 꽂으면 자모 오타
+            // 규칙이 조용히 쉰다(손상이 아니라 재현율로 값을 치른다).
+            spelling?.source = text
+            val engineOut = try {
+                corrector.correctResult(text)
+            } finally {
+                spelling?.source = null
+            }
+            val layer = tokenSpacer ?: return engineOut
+            // 교정 내역은 엔진이 낸 것 그대로 둔다. 이 겹은 음절을 안 건드리고
+            // 공백만 옮기므로 내역에 넣으면 같은 교정이 두 번 세어진다
+            // ([NBestCorrector.correctResult] 와 같은 태도).
+            return CorrectionResult(text, layer.correct(engineOut.text), engineOut.corrections)
+        }
 
         if (!engine.hasGluedRun(text)) return engine.correctAll(text)
 
