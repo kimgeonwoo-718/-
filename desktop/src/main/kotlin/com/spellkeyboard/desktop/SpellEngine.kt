@@ -143,10 +143,20 @@ class SpellEngine(
             // longSpacer 를 복합어 거부권으로 감싸므로, 여기서 longSpacer 를 따로 건드리면
             // 안 된다. 하나라도 없으면 nbest 는 null 로 남고 예전 길이 그대로 돈다.
             if (spacer != null && lm != null && context != null) {
-                nbest = NBestCorrector(engine, spacer, lm, context)
+                // 맞춤법이 먼저(엔진 안의 typoFixer 자리), 띄어쓰기가 나중(엔진 밖의 재분절).
+                //
+                // [ConfusionFixer] 는 사람이 늘 틀리는 혼동쌍만 골라 잡는다. 자모를 흔들어
+                // 후보를 만들고 언어모델 여백으로 고르는 길과 죽은 `Speller` 를 되살리는
+                // 길은 둘 다 재 봤고 둘 다 손해였다 — 앞의 것은 dev 전체 F1 을 0.95 에서
+                // 0.72~0.91 로 떨어뜨렸고, 뒤의 것은 test 에서 출력이 한 글자도 안 바뀌면서
+                // 맞는 글(`날씨가 개어서` → `깨어서`)을 새로 망가뜨렸다.
+                //
+                // 이것만 test 145행에서 값을 냈다: `spelling` F1 0.7500 → 1.0000(12/12),
+                // 전체 F1 0.9481 → 0.9647, `mutated` 4행 → 1행, 손상은 1/73 그대로.
+                // 나머지 여덟 갈래는 tp/fp/fn 이 한 자리도 안 움직였다.
+                engine.typoFixer = ConfusionFixer(spacer, lm)
+                nbest = NBestCorrector(engine, spacer, lm)
             }
-
-            // typoFixer 는 Kiwi 자리다. v1 에는 없다.
 
             val level = when {
                 spacer != null && lm != null -> EngineLevel.CONTEXT

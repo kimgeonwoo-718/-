@@ -72,7 +72,6 @@ class NBestCorrector(
     private val engine: CorrectionEngine,
     private val spacer: Spacer,
     private val lm: LanguageModel,
-    private val context: ContextCorrector,
     private val tuning: Tuning = Tuning(),
 ) {
 
@@ -123,6 +122,22 @@ class NBestCorrector(
          * 체언으로 끝난다)이 붙은 채로 굳는다. dev 에는 없고 실제로는 있는 말이라 2 로 둔다.
          */
         val compoundChunks: Int = 2,
+        /**
+         * 복합어 거부권([rejoinCompounds])을 쓸 최소 음절 수.
+         *
+         * **거부권이 짧은 어절에서 거꾸로 돌던 것을 막는 눈금이다.** `coverPieces` 는
+         * "아는 조각 둘, 앞 조각이 체언으로 끝남" 이면 복합어로 보는데, 그것은 사람이
+         * 공백 하나를 빠뜨렸을 때 생기는 모양이기도 하다: `오늘저녁에`(오늘+저녁에),
+         * `확인한뒤`, `수있을까`, `두대를`, `새해복`. 배포본은 엔진이 이미 바르게 갈라 놓은
+         * 이 다섯을 도로 붙여 놓았다 — A/B 조사가 센 회귀 313건 가운데 228건(73%)이
+         * 이 모양이었다.
+         *
+         * 실제로 지켜야 하는 복합명사는 전부 6음절 이상이고(`아파트관리비가` 7,
+         * `마음먹었지만` 6, `부동산중개수수료는` 9), 거꾸로 도는 것은 전부 5음절 이하다.
+         * dev·test 를 3~8 로 훑어 보면 6 이 꼭짓점이다 — 7 부터 dev 손상이 2행에서
+         * 3행으로, 8 에서 4행으로 는다.
+         */
+        val rejoinMinSyllables: Int = 6,
 
         /** Spacer 격자에서 뽑아 볼 갈래 수. 8 아래로 내리면 떨어지고, 위로는 평평하다. */
         val beam: Int = 12,
@@ -137,8 +152,6 @@ class NBestCorrector(
         val spanRadius: Int = 1,
         /** 한 번에 다시 풀 최대 음절 수. 넘으면 포기한다 — 비용도 위험도 제곱으로 는다. */
         val maxSpanSyllables: Int = 18,
-        /** 문맥 해독기에게 붙은 원문을 따로 물어볼 최대 길이. 그보다 길면 어차피 null 을 준다. */
-        val askContextUpTo: Int = 16,
     )
 
     private val vocabulary = Vocabulary(lm, spacer, tuning.compoundChunks)
@@ -213,14 +226,31 @@ class NBestCorrector(
      * 밀리지 않아서 원문과 엔진 답을 곧바로 견줄 수 있다.
      */
     private fun respace(original: String, engineOut: String): String {
+        val originalLines = original.split(NEWLINE)
+        val engineLines = engineOut.split(NEWLINE)
+        // 줄 수가 같으면 **줄마다 따로** 고른다. 아래 [plan] 은 맞춤법 교정으로 음절이
+        // 하나라도 바뀌면 자리를 맞출 수 없어 통째로 포기하는데, 글 하나에 줄이 여럿이면
+        // 엉뚱한 줄에서 난 교정 하나가 문서 전체의 재분절을 꺼 버린다 (실제로 겪었다:
+        // 한국어 산문 1,500자에서 `매인`→`메인` 하나가 847줄짜리 재분절을 통째로 껐다).
+        // 줄바꿈은 어차피 [applyCuts] 가 무조건 경계로 치므로, 줄을 갈라도 잃는 것이 없다.
+        if (originalLines.size > 1 && originalLines.size == engineLines.size) {
+            return originalLines.indices.joinToString("\n") { respaceLine(originalLines[it], engineLines[it]) }
+        }
+        return respaceLine(original, engineOut)
+    }
+
+    private fun respaceLine(original: String, engineOut: String): String {
         val plan = plan(original, engineOut) ?: return engineOut
         // 칸은 음절 열을 빈틈없이 덮고 칸의 경계는 늘 어절 경계다. 그러니 고른 답의 어절
         // 시작 자리를 모으면 그것이 곧 새 경계 집합이다 (얼린 자리도 여기에 들어 있다).
         val cuts = HashSet<Int>()
         for (i in plan.slots.indices) {
             var at = plan.slots[i].at
+            var first = true
+            // 칸의 첫머리가 어절 안쪽이면(부호를 떼어 낸 자리) 거기에 공백을 찍으면 안 된다.
             for (word in plan.chosen[i]) {
-                if (at > 0) cuts += at
+                if (at > 0 && (!first || plan.slots[i].cutAtStart)) cuts += at
+                first = false
                 at += word.length
             }
         }
@@ -282,21 +312,44 @@ class NBestCorrector(
         val locked = rejoinCompounds(stream, frozen, cuts)
 
         val words = cutsToWords(stream, cuts)
-        val spans = suspectSpans(words, frozen, locked)
+
+        // 어절을 다시 **조각**으로 나눈다. 앞뒤에 붙은 한글 아닌 글자를 떼어 놓으면
+        // `.아버지` 의 `아버지` 도 자리에 데려갈 수 있다 ([peel]).
+        //
+        // 이것이 없으면 맨 앞에 부호 한 글자만 붙어도 답이 뒤집힌다. `Spacer` 는 한글 아닌
+        // 글자가 하나라도 끼면 분석을 포기하므로 `.아버지` 는 통째로 "데려갈 수 없는 어절"
+        // 이 되고, 그러면 `아버지가|방에` 가 후보에 아예 못 오른다. 조사가 잰 값: test 145행
+        // 앞에 점 하나씩만 붙였더니 정확 일치가 111 → 108, 손상 행이 16 → 21 로 무너졌다.
+        val pieces = ArrayList<String>(words.size)
+        val realBoundary = ArrayList<Boolean>(words.size)   // 이 조각의 첫머리가 진짜 어절 경계인가
+        val wordFrom = ArrayList<Int>(words.size)           // 조각이 속한 **어절 전체**의 자리
+        val wordTo = ArrayList<Int>(words.size)
+        var scan = 0
+        for (word in words) {
+            val parts = peel(word)
+            for ((k, part) in parts.withIndex()) {
+                pieces += part
+                realBoundary += (k == 0)
+                wordFrom += scan
+                wordTo += scan + word.length
+            }
+            scan += word.length
+        }
+        val spans = suspectSpans(pieces, frozen, locked, wordFrom, wordTo)
 
         // 고칠 자리는 후보가 여럿이고 나머지는 하나다. 안 고칠 어절까지 격자에 넣는 까닭은
         // **앞뒤 어절이 문맥으로 점수에 들어가야** 하기 때문이다 — 그래야 '문장 통째로'다.
-        val slots = ArrayList<Slot>(words.size)
+        val slots = ArrayList<Slot>(pieces.size)
         var at = 0
         var w = 0
-        while (w < words.size) {
+        while (w < pieces.size) {
             val span = spans.firstOrNull { it.first == w }
             if (span == null) {
-                slots += Slot(at, listOf(listOf(words[w])), NO_MORPH)
-                at += words[w].length
+                slots += Slot(at, listOf(listOf(pieces[w])), NO_MORPH, realBoundary[w])
+                at += pieces[w].length
                 w++
             } else {
-                val incumbent = words.subList(span.first, span.last + 1).toList()
+                val incumbent = pieces.subList(span.first, span.last + 1).toList()
                 val text = incumbent.joinToString("")
                 val list = candidates(text, incumbent)
                 // 엔진 답을 0 점으로 놓은 상대값이라 칸끼리 더해도 argmax 가 안 바뀐다.
@@ -305,7 +358,7 @@ class NBestCorrector(
                 slots += Slot(at, list, FloatArray(list.size) {
                     tuning.morphWeight * (base - splitScore(list[it])) / SPACE_PENALTY -
                         tuning.grammarPenalty * grammarBreaks(list[it], forbidden)
-                })
+                }, realBoundary[span.first])
                 at += text.length
                 w = span.last + 1
             }
@@ -328,7 +381,9 @@ class NBestCorrector(
         for (end in 1..stream.length) {
             if (end != stream.length && end !in frozen) continue
             val token = stream.substring(start, end)
-            if (token.length >= 3 && token.all { it.isHangul() } && vocabulary.keepsWhole(token)) {
+            if (token.length >= tuning.rejoinMinSyllables &&
+                token.all { it.isHangul() } && vocabulary.keepsWhole(token)
+            ) {
                 for (i in start + 1 until end) { cuts -= i; locked[i] = true }
                 locked[start] = true
             }
@@ -351,7 +406,13 @@ class NBestCorrector(
      *
      * 사람이 찍은 공백은 넘지 않는다. 되붙인 복합어도 건드리지 않는다.
      */
-    private fun suspectSpans(words: List<String>, frozen: Set<Int>, locked: BooleanArray): List<IntRange> {
+    private fun suspectSpans(
+        words: List<String>,
+        frozen: Set<Int>,
+        locked: BooleanArray,
+        wordFrom: List<Int>,
+        wordTo: List<Int>,
+    ): List<IntRange> {
         val starts = IntArray(words.size)
         var at = 0
         for (i in words.indices) { starts[i] = at; at += words[i].length }
@@ -378,9 +439,57 @@ class NBestCorrector(
                 out += lo..hi
             }
         }
+        val total = if (words.isEmpty()) 0 else starts.last() + words.last().length
         return out.filter { span ->
-            (span.first..span.last).sumOf { words[it].length } in MIN_SPAN..tuning.maxSpanSyllables
+            val length = (span.first..span.last).sumOf { words[it].length }
+            if (length !in MIN_SPAN..tuning.maxSpanSyllables) return@filter false
+            // **사람이 통째로 친 어절을 엔진도 통째로 두었으면 손대지 않는다.**
+            //
+            // 그 자리는 사람과 형태소 사전이 둘 다 "이건 한 낱말이다" 라고 말한 곳이다.
+            // 그런데 자리가 그 어절 하나뿐이면 좌우로 넓힐 곳이 없어(양쪽이 다 사용자 공백)
+            // 후보가 곧 그 어절을 쪼갠 것들뿐이고, 엔진 답을 지키는 것은 [Tuning.overrideMargin]
+            // 1 nat 하나다. 흔한 이름씨 둘이면 그 정도는 쉽게 넘는다.
+            //
+            // 그래서 배포본은 **맞게 쓴 글을 쪼갰다**: 들여쓰기가 → 들여 쓰기가,
+            // 묻어나지 → 묻어 나지, 들어가셨다 → 들어 가셨다, 올라가겠습니다 → 올라 가겠습니다,
+            // 국립현대미술관이 → 국립 현대 미술관이, 자연어처리가 → 자연어 처리가,
+            // 교통유발부담금은 → 교통 유발 부담금은. 손으로 쓴 맞는 글 114행에서 손상이
+            // 21행이었는데(되돌림 길은 18행), 이 한 줄로 3행이 된다 — 남은 셋은 되돌림 길도
+            // 똑같이 망가뜨리는 예전 결함이다.
+            //
+            // 값도 치른다: `주시기바랍니다` 처럼 사람이 붙여 쓴 **두 어절**도 같이 지켜진다
+            // (되돌림 길은 이것을 `주시기 바랍니다` 로 고친다). 이 엔진에서는 못 고친 오타
+            // 하나보다 멀쩡한 글 스무 줄을 망가뜨리는 쪽이 훨씬 나쁘다고 보고 받아들였다.
+            //
+            // 붙여 쓴 긴 덩어리는 그대로 풀린다 — 엔진의 `applyLongSplit` 이 이미 쪼개
+            // 놓았으므로 자리가 어절 하나짜리가 아니다 (`아버지가방에들어가신다`,
+            // `회의자료준비상황을`).
+            if (span.first == span.last) {
+                val from = wordFrom[span.first]
+                val to = wordTo[span.first]
+                if ((from == 0 || from in frozen) && (to == total || to in frozen)) return@filter false
+            }
+            true
         }
+    }
+
+    /**
+     * 어절 앞뒤에 붙은 한글 아닌 글자를 떼어 낸다. 한글 속살이 2음절 이상일 때만 — 그보다
+     * 짧으면 떼어 봐야 자리에 쓸 수 없고, `010-1234-5678로` 의 `로` 같은 것이 혼자 떨어져
+     * 나오는 일만 생긴다.
+     */
+    private fun peel(word: String): List<String> {
+        var lo = 0
+        var hi = word.length
+        while (lo < hi && !word[lo].isHangul()) lo++
+        while (hi > lo && !word[hi - 1].isHangul()) hi--
+        if (hi - lo < 2 || (lo == 0 && hi == word.length)) return listOf(word)
+        for (i in lo until hi) if (!word[i].isHangul()) return listOf(word)   // 가운데가 섞였으면 둔다
+        val out = ArrayList<String>(3)
+        if (lo > 0) out += word.substring(0, lo)
+        out += word.substring(lo, hi)
+        if (hi < word.length) out += word.substring(hi)
+        return out
     }
 
     /**
@@ -390,15 +499,16 @@ class NBestCorrector(
         val out = LinkedHashSet<List<String>>()
         out += incumbent
         out += listOf(text)                             // 통째로 두는 갈래
-        // 문맥 해독기가 **붙은 원문 그대로** 보면 뭐라고 하는가. 엔진 안에서는 이미 갈라진
-        // 뒤에 도착하므로 이 답을 낼 기회가 없다.
+        // 여기 **있었던 것**: 문맥 해독기에게 붙은 원문을 통째로 다시 물어보는 후보.
         //
-        // 솔직히 말하면 dev 145행에서 이 후보가 이긴 적은 한 번도 없다 — 필요한 답은 이미
-        // Spacer 격자 안에 있었다. 값이 싸고(14음절 넘으면 어차피 null) 출처가 다른 의견이라
-        // 남겨 두지만, 없애도 dev 점수는 한 자리도 안 바뀐다.
-        if (text.length <= tuning.askContextUpTo) {
-            context.correct(text, LanguageModel.BOS)?.let { out += words(it) }
-        }
+        // 값이 싸다고 적어 두었는데 거짓이었다. `ContextCorrector.decode` 는 null 을 돌려줄지
+        // 정하기 **전에** 격자를 세우고 비터비를 다 돌린다. 한 번에 7.9ms 고, 수상한 자리마다
+        // 한 번씩 문다. 표본 프로파일에서 `respace` 안쪽 시간의 83.9% 가 이 한 줄이었다:
+        // 짧은 줄 4,000개(52,000자)를 고치는 데 3,967ms — 이 줄을 빼면 385ms 로 떨어진다.
+        // 붙여 쓴 한글 8,800자는 4,589ms → 237ms 다.
+        //
+        // 그러면서 값은 없다. dev 145행에서 이 후보가 이긴 적이 한 번도 없고, 빼 본 문서
+        // 43개에서 출력이 43/43 글자까지 똑같았다. 말뭉치 점수도 dev·test 모두 그대로다.
         out += kBest(text, tuning.beam)
         return out.toList()
     }
@@ -537,8 +647,14 @@ class NBestCorrector(
     /**
      * 음절 열 [at] 부터 시작하는 한 칸과, 거기에 들어갈 수 있는 분절들. 0번이 엔진의 답이다.
      * [morph] 는 후보마다의 형태소·문법 점수 — 엔진 답을 0 으로 맞춘 상대값이다.
+     * [cutAtStart] 가 false 면 이 칸의 첫머리는 어절 안쪽이라 공백을 찍으면 안 된다.
      */
-    private class Slot(val at: Int, val candidates: List<List<String>>, val morph: FloatArray)
+    private class Slot(
+        val at: Int,
+        val candidates: List<List<String>>,
+        val morph: FloatArray,
+        val cutAtStart: Boolean = true,
+    )
 
     /**
      * 후보 조합 전체를 **문장 하나씩** 채점해 가장 좋은 것을 고른다.
@@ -793,16 +909,15 @@ class NBestCorrector(
         /** 이보다 짧은 자리는 다시 갈라 봐야 나올 것이 없다 (`Spacer` 의 최소 어절이 3음절). */
         private const val MIN_SPAN = 4
 
+        /** 줄마다 따로 고르려고 가른다. [respace] 참고. */
+        private const val NEWLINE = '\n'
+
         private val NO_MORPH = FloatArray(0)
         private val AROUND_WHITESPACE = Regex("(?<=\\s)|(?=\\s)")
-        private val WHITESPACE = Regex("\\s+")
 
         private fun Char.isHangul() = this in '가'..'힣'
 
         private fun strip(text: String): String = text.filter { !it.isWhitespace() }
-
-        private fun words(text: String): List<String> =
-            text.trim().split(WHITESPACE).filter { it.isNotEmpty() }
 
         /** 경계 = 공백 뺀 음절 열에서 '바로 앞에 공백이 있던' 자리. 채점기의 정의와 같다. */
         private fun boundaries(text: String): Set<Int> {
@@ -840,7 +955,7 @@ class NBestCorrector(
             engine.spacer = spacer
             engine.speller = Speller(spacer)
             engine.context = context
-            val corrector = NBestCorrector(engine, spacer, lm, context, tuning)
+            val corrector = NBestCorrector(engine, spacer, lm, tuning)
             return { text -> corrector.correct(text) }
         }
     }
