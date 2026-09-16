@@ -56,6 +56,11 @@ val fatJar by tasks.registering(Jar::class) {
     manifest {
         attributes["Main-Class"] = "com.spellkeyboard.desktop.MainKt"
         attributes["Implementation-Title"] = "맞춤법 교정기"
+        // JNA 가 user32 를 불러 전역 단축키(RegisterHotKey)와 앞 창 확인
+        // (GetForegroundWindow)을 한다. JDK 24 부터 네이티브 호출이 제한돼 지금은 실행할
+        // 때마다 경고가 넉 줄 뜨고, **다음 판에서는 아예 막힌다** — 막히면 단축키와
+        // 돌려 붙이기가 통째로 죽는다. 미리 열어 둔다.
+        attributes["Enable-Native-Access"] = "ALL-UNNAMED"
     }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(sourceSets.main.get().output)
@@ -99,7 +104,10 @@ val packageWindows by tasks.registering(Exec::class) {
         "--main-class", "com.spellkeyboard.desktop.MainKt",
         "--dest", outDir.absolutePath,
         "--java-options", "-Xmx768m",
-        "--java-options", "-Dfile.encoding=UTF-8"
+        "--java-options", "-Dfile.encoding=UTF-8",
+        // fatJar 의 Enable-Native-Access 와 같은 까닭이다. .exe 는 매니페스트를 안 거치는
+        // 길로도 뜨므로 여기에도 적어 둔다.
+        "--java-options", "--enable-native-access=ALL-UNNAMED"
     )
     doLast {
         println("나왔다: ${outDir.absolutePath}")
