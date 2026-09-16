@@ -220,4 +220,42 @@ class LiveTailPlanTest {
         assertFalse(a.sameTarget(TailPlan(Trigger.SPACE, 0, 2, "돼요", null)))
         assertFalse(a.sameTarget(null))
     }
+
+    // ---- 조합 중 커서 따라가기 ----
+
+    /**
+     * 조합 중이면 커서를 조합 구간 끝으로 민다.
+     *
+     * 실측: 맨 JTextArea 에 윈도우 한글 IME 로 `ㄷㅗㅣ` 를 치면 doc=2, caret=1 이 된다
+     * (`ㅇ도` 가 들어가 있는데 커서는 `도` 앞). 사용자에게는 커서가 한 글자 뒤로 보인다.
+     */
+    @Test
+    fun `조합 중이면 커서를 조합 구간 끝으로 민다`() {
+        assertEquals(2, caretFollowingComposition(docLength = 2, committedLength = 1, caret = 1))
+        assertEquals(6, caretFollowingComposition(docLength = 6, committedLength = 5, caret = 5))
+    }
+
+    /** 조합이 아니면 손대지 않는다. 확정된 글에서 커서를 옮기면 사용자를 방해한다. */
+    @Test
+    fun `조합 중이 아니면 커서를 옮기지 않는다`() {
+        assertNull(caretFollowingComposition(docLength = 4, committedLength = 4, caret = 2))
+        assertNull(caretFollowingComposition(docLength = 0, committedLength = 0, caret = 0))
+    }
+
+    /** 이미 끝에 있으면 할 일이 없다. 괜히 옮기면 조합에 손을 대는 셈이다. */
+    @Test
+    fun `이미 조합 구간 끝이면 그대로 둔다`() {
+        assertNull(caretFollowingComposition(docLength = 3, committedLength = 2, caret = 3))
+    }
+
+    /**
+     * 사용자가 조합 구간 **앞**을 일부러 짚었으면 그대로 둔다.
+     *
+     * 글 가운데를 고치려고 커서를 옮겨 둔 채로 조합이 남아 있을 수 있다. 그때 끝으로
+     * 끌어다 놓으면 남의 커서를 뺏는 것이다.
+     */
+    @Test
+    fun `조합 구간 앞을 짚었으면 그대로 둔다`() {
+        assertNull(caretFollowingComposition(docLength = 10, committedLength = 9, caret = 3))
+    }
 }

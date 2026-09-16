@@ -206,3 +206,38 @@ fun caretAfterSplice(caret: Int, start: Int, end: Int, replacementLength: Int): 
         else -> start + replacementLength
     }
 }
+
+/**
+ * 조합 중에 커서가 조합 글자 **앞**에 머무는 것을 바로잡는다.
+ *
+ * ## 무엇이 문제였나
+ *
+ * 윈도우 한글 IME 로 치면 Swing 은 조합 중인 글자를 문서에 넣으면서 커서는 그 앞에 둔다.
+ * 실측(맨 `JTextArea`, 우리 코드를 하나도 안 붙인 상태):
+ *
+ *     키 ㄷ   doc=2  caret=1   text=[ㅇㄷ]
+ *     키 ㅗ   doc=2  caret=1   text=[ㅇ도]
+ *     스페이스 doc=4  caret=4   text=[ㅇ되요 ]      ← 확정되면 맞춰진다
+ *
+ * 그래서 치는 동안 커서가 **한 글자 뒤**에 보인다. 실시간 교정이 만든 것이 아니다 —
+ * 같은 시험지를 맨 `JTextArea` 에 태워도 똑같이 나온다. Swing 과 IME 사이의 일이다.
+ *
+ * ## 고치는 법과 안전한 까닭
+ *
+ * 조합 글자는 **이미 문서에 들어가 있다.** 그러니 커서를 문서 끝으로 옮기는 것은 글을
+ * 건드리는 일이 아니라 보이는 자리만 옮기는 일이다. 재 보니 조합이 깨지지 않는다 —
+ * 같은 키를 쳤을 때 나오는 글자가 `ㅇ되요 할수` 로 양쪽이 똑같았고, 커서만 따라왔다.
+ *
+ * (문서를 **고치는** 것은 다른 이야기다. 조합 중 `setText` 을 하면 조합 중이던 음절이
+ * 오프셋 0 에 확정돼 글이 깨진다. [LiveCorrector] 가 조합 중에 물러나는 까닭이 그것이고,
+ * 이 함수는 그 금기를 어기지 않는다.)
+ *
+ * @return 옮길 자리. 옮길 것이 없으면 null.
+ */
+fun caretFollowingComposition(docLength: Int, committedLength: Int, caret: Int): Int? {
+    val composing = docLength - committedLength
+    if (composing <= 0) return null        // 조합 중이 아니면 손대지 않는다
+    if (caret >= docLength) return null    // 이미 끝에 있다
+    if (caret < committedLength) return null  // 사용자가 조합 구간 앞을 일부러 짚었다
+    return docLength
+}

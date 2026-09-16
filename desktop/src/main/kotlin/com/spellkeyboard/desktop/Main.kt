@@ -2,6 +2,7 @@ package com.spellkeyboard.desktop
 
 import com.spellkeyboard.core.correct.Correction
 import com.spellkeyboard.desktop.live.LiveCorrector
+import com.spellkeyboard.desktop.live.caretFollowingComposition
 import com.spellkeyboard.desktop.live.changedSpan
 import com.spellkeyboard.desktop.live.Report
 import com.spellkeyboard.desktop.live.spellEngineTail
@@ -16,6 +17,8 @@ import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.StringSelection
 import java.awt.event.ActionEvent
+import java.awt.event.InputMethodEvent
+import java.awt.event.InputMethodListener
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
@@ -66,6 +69,22 @@ class CorrectorWindow(private val engine: SpellEngine) {
         wrapStyleWord = true
         font = koreanFont(14)
         border = EmptyBorder(6, 7, 6, 7)
+
+        // 조합 중에 커서가 글자 앞에 머무는 것을 바로잡는다. 실시간 교정과 무관한
+        // Swing·IME 문제라 교정을 꺼도 걸려 있어야 한다. 까닭은 [caretFollowingComposition].
+        addInputMethodListener(object : InputMethodListener {
+            override fun inputMethodTextChanged(event: InputMethodEvent) {
+                // 이 자리에서 옮기면 IME 가 아직 문서를 쓰는 중이다. 다음 차례로 미룬다.
+                SwingUtilities.invokeLater {
+                    val committed = inputMethodRequests?.committedTextLength ?: return@invokeLater
+                    val to = caretFollowingComposition(document.length, committed, caretPosition)
+                        ?: return@invokeLater
+                    runCatching { caretPosition = to }
+                }
+            }
+
+            override fun caretPositionChanged(event: InputMethodEvent) = Unit
+        })
     }
 
     private val live: LiveCorrector = LiveCorrector.attach(input, spellEngineTail(engine))
