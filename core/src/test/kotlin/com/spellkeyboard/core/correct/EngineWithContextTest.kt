@@ -19,6 +19,8 @@ class EngineWithContextTest {
     private fun tail(text: String): String =
         engine.correctTail(text)?.let { text.substring(0, text.length - it.deleteBefore) + it.replacement } ?: text
 
+    private fun all(text: String): String = engine.correctAll(text).text
+
     @Test
     fun `사용자가 실기기에서 잡은 문장들`() {
         assertEquals("여기 있는데요", tail("여기 있는대요"))
@@ -33,6 +35,22 @@ class EngineWithContextTest {
         assertEquals("할 수 있다", tail("할수있다"))
         assertEquals("나는 할 수 있다", tail("나는 할수있다"))
         assertEquals("오늘은 날씨가 좋아서 기분이 좋다", tail("오늘은날씨가좋아서기분이좋다"))
+    }
+
+    @Test
+    fun `조사가 붙어도 아는 낱말이면 가르지 않는다`() {
+        // 말뭉치에 '전국경제인연합회' 는 있어도 '전국경제인연합회가' 는 없다. 조사가 붙은
+        // 채로 물어보면 모르는 낱말로 보여서 긴 덩어리 분해기가 멋대로 갈랐다.
+        assertEquals("전국경제인연합회가 보고서를 냈다", all("전국경제인연합회가 보고서를 냈다"))
+        // '소비자물가지수가' 는 여기 안 적는다. 여덟 음절이라 긴 덩어리 분해기가 아예 보지
+        // 않고, 그것을 가르는 것은 문맥 디코더라 이 보호막이 닿지 않는다.
+    }
+
+    @Test
+    fun `붙여 쓴 글은 그대로 갈라야 한다`() {
+        // 위의 보호막이 갈라야 할 것까지 막으면 안 된다.
+        assertEquals("오늘은 날씨가 좋아서 기분이 좋다", all("오늘은날씨가좋아서기분이좋다"))
+        assertEquals("현재는 품절입니다", all("현재는품절입니다"))
     }
 
     @Test

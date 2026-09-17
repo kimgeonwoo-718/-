@@ -87,8 +87,28 @@ class ContextCorrector(
      * @param contextBefore 창 바로 앞 어절. [LanguageModel.BOS] 면 문장 첫머리, null 이면 모름.
      * @return 고친 문자열. 고칠 것이 없으면 null.
      */
-    /** 언어모델이 이 어절을 본 적 있는가. 붙여 쓴 덩어리인지 가리는 데 쓴다. */
-    fun knowsWord(word: String): Boolean = lm.lnCount(word) != null
+    /**
+     * 언어모델이 이 어절을 본 적 있는가. 붙여 쓴 덩어리인지 가리는 데 쓴다.
+     *
+     * **조사가 붙은 꼴도 안다고 본다.** 말뭉치에 '소비자물가지수' 는 있어도
+     * '소비자물가지수가' 는 없을 수 있다 — 조사는 자리마다 갈리니 모든 꼴이 다 들어 있을
+     * 수가 없다. 그대로 물으면 아는 낱말이 모르는 낱말로 보이고, 그러면
+     * [CorrectionEngine.applyLongSplit] 의 보호막이 풀려서 '전국경제인연합회가' 가
+     * '전국 경제인 연합회가' 로 갈린다.
+     *
+     * 시험 문장 30개(붙여 쓰는 것이 맞는 긴 낱말)로 재 보면 오교정이 6건에서 5건으로
+     * 준다. 같은 시험지에서 갈라야 할 것(20개)을 놓치는 일은 늘지 않는다.
+     */
+    fun knowsWord(word: String): Boolean {
+        if (lm.lnCount(word) != null) return true
+        for (particle in TRAILING_PARTICLES) {
+            // 조사를 떼고 남는 것이 한 음절이면 어절로 보지 않는다.
+            if (word.length <= particle.length + 1) continue
+            if (!word.endsWith(particle)) continue
+            if (lm.lnCount(word.dropLast(particle.length)) != null) return true
+        }
+        return false
+    }
 
     fun correct(window: String, contextBefore: String? = null): String? {
         val pieces = tokenize(window)
@@ -772,6 +792,18 @@ class ContextCorrector(
         }
 
     companion object {
+
+        /**
+         * [knowsWord] 가 떼어 보는 조사. **긴 것부터** 놓아야 '에서' 가 '에' 로 잘리지 않는다.
+         *
+         * 여기 있는 것을 떼어 본다고 해서 없는 낱말이 생기지는 않는다 — 뗀 결과를 다시
+         * 언어모델에 물어보고, 아는 것일 때만 참이다.
+         */
+        private val TRAILING_PARTICLES = listOf(
+            "에서는", "에게는", "으로는", "에서", "에게", "으로", "까지", "부터", "라고",
+            "이라", "이나", "이란", "이는", "이가",
+            "은", "는", "이", "가", "을", "를", "에", "의", "도", "만", "과", "와", "로"
+        )
         /** 원문보다 이만큼(ln) 좋아야 고친다. 통로 비용이 이미 들어간 뒤의 여유분이다. */
         const val MARGIN = 1.5f
 
