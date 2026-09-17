@@ -31,6 +31,7 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
+import kotlin.math.abs
 
 /**
  * 소프트 키보드 화면.
@@ -197,15 +198,19 @@ class KeyboardView @JvmOverloads constructor(
         // 짧게 누르면 **기기 안에서** 글 전체를 고친다 — 공짜고, 빠르고, 인터넷이 없어도 된다.
         // 길게 누르면 서버 AI(프리미엄). 자주 쓰는 쪽이 짧은 누르기다.
         //
-        // 글자가 "AI" 가 아니라 "전체" 인 이유: 짧게 누르는 쪽이 AI 가 아니기 때문이다.
-        // 옆의 '교정' 은 실시간 교정 켬/끔이라 이름이 겹치지 않게 '전체' 로 둔다.
+        // 글자가 "AI" 가 아니라 "ALL" 인 이유: 짧게 누르는 쪽이 AI 가 아니기 때문이다.
+        // 옆의 'LIVE' 는 실시간 교정 켬/끔이라 하는 일이 겹치지 않는다.
         aiButton = toolbarButton(
             context.getString(R.string.toolbar_correct_all),
             onPress = { listener?.onCorrectAll() },
             onLongPress = { listener?.onAiCorrect() }
         ).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, TOOLBAR_LABEL_SP)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            // 28dp 동그라미라 넘치면 줄바꿈이 되어 모양이 무너진다. 잘리는 편이 낫다.
+            maxLines = 1
+            // 읽어 주는 이름은 우리말로 둔다. 화면에 쓰인 글자는 짧아야 해서 영문이다.
+            contentDescription = context.getString(R.string.toolbar_correct_all_desc)
         }
         // 클립보드는 글꼴 기호로 삼성과 같은 모양이 안 나온다 — '▤' 는 줄 친 네모라 표에
         // 가깝다. 벡터로 그린 아이콘을 배경에 얹는다(styleClipboardButton).
@@ -216,8 +221,10 @@ class KeyboardView @JvmOverloads constructor(
         correctionButton = toolbarButton(context.getString(R.string.toolbar_correction)) {
             listener?.onToggleAutoCorrect()
         }.apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, TOOLBAR_LABEL_SP)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            maxLines = 1
+            contentDescription = context.getString(R.string.toolbar_correction_desc)
         }
         // 번역 입력줄 열기/닫기. 열려 있으면 '교정' 처럼 강조색.
         translateButton = toolbarButton(
@@ -684,7 +691,7 @@ class KeyboardView @JvmOverloads constructor(
         card.addView(label, android.widget.FrameLayout.LayoutParams(
             LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT
         ))
-        attachKeyTouch(card, onPress = {
+        attachPanelTouch(card, onPress = {
             listener?.onClipboardPaste(text)
             hideClipboard()
         })
@@ -695,7 +702,7 @@ class KeyboardView @JvmOverloads constructor(
             setTextColor(theme.status)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             background = circle(theme.background)
-            attachKeyTouch(this, onPress = { listener?.onClipboardDelete(text) })
+            attachPanelTouch(this, onPress = { listener?.onClipboardDelete(text) })
         }
         card.addView(delete, android.widget.FrameLayout.LayoutParams(dp(24), dp(24)).apply {
             gravity = Gravity.TOP or Gravity.END
@@ -780,7 +787,7 @@ class KeyboardView @JvmOverloads constructor(
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
                         contentDescription = emoji
                     }
-                    attachKeyTouch(cell, onPress = { listener?.onEmoji(emoji) })
+                    attachPanelTouch(cell, onPress = { listener?.onEmoji(emoji) })
                     row.addView(cell, LayoutParams(0, dp(EMOJI_CELL_DP), 1f))
                 }
                 repeat(EMOJI_COLUMNS - line.size) { row.addView(View(context), LayoutParams(0, dp(EMOJI_CELL_DP), 1f)) }
@@ -1316,8 +1323,68 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     /**
-     * 자판 밖의 키(도구 줄, 이모티콘 칸, 클립보드 칸)는 뷰마다 리스너를 단다. 이쪽은
-     * 키가 드문드문 있어서 "가까운 것을 누른 것으로 친다" 가 오히려 해롭다.
+     * **넘겨 보는 목록 안의 칸**(이모티콘, 클립보드 카드)을 손가락에 붙인다.
+     *
+     * [attachKeyTouch] 를 쓰면 안 된다. 그쪽은 [charTouch] 라 **손가락이 닿는 순간**
+     * 입력하는데, 목록에서는 그게 곧 버그다 — 목록을 넘기려고 손을 대는 순간 손 닿은
+     * 칸이 입력돼 버린다. ScrollView 가 스크롤을 알아채고 취소를 보내 주기는 하지만
+     * 그때는 이미 들어간 뒤다.
+     *
+     * 그래서 여기서는 **손을 뗄 때** 입력하고, 그 전에 손가락이 터치 슬롭을 넘게
+     * 움직였으면 넘기려던 것으로 보고 포기한다. 목록은 자판처럼 빨리 칠 일이 없으니
+     * 손 뗄 때 입력해도 굼뜨게 느껴지지 않는다.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun attachPanelTouch(view: View, onPress: () -> Unit) =
+        attachTouch(view, panelTouch(view, onPress))
+
+    private fun panelTouch(key: View, onPress: () -> Unit): KeyTouch =
+        object : KeyTouch {
+            // 안드로이드가 "누른 것" 과 "끈 것" 을 가르는 그 값을 그대로 쓴다.
+            // insideView 의 여유(슬롭 3배)와는 목적이 다르므로 곱하지 않는다.
+            private val slop = ViewConfiguration.get(key.context).scaledTouchSlop
+            private var startX = 0f
+            private var startY = 0f
+            private var cancelled = false
+
+            override fun down(x: Float, y: Float) {
+                flushHeldSpace()
+                cancelled = false
+                startX = x
+                startY = y
+                key.isPressed = true
+            }
+
+            override fun move(x: Float, y: Float, inside: Boolean) {
+                if (cancelled) return
+                if (!inside || abs(x - startX) > slop || abs(y - startY) > slop) cancel()
+            }
+
+            override fun up() {
+                key.isPressed = false
+                if (!cancelled) {
+                    // 떨림은 자판과 같게 준다. 다만 **정말 입력할 때만** — 넘기는 동안
+                    // 손 닿는 칸마다 울리면 목록이 시끄러워진다.
+                    key.performHapticFeedback(
+                        HapticFeedbackConstants.KEYBOARD_TAP,
+                        HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                    )
+                    onPress()
+                }
+                cancelled = false
+            }
+
+            override fun cancel() {
+                key.isPressed = false
+                cancelled = true
+            }
+        }
+
+    /**
+     * 자판 밖의 키(도구 줄)는 뷰마다 리스너를 단다. 이쪽은 키가 드문드문 있어서
+     * "가까운 것을 누른 것으로 친다" 가 오히려 해롭다.
+     *
+     * **넘겨 보는 목록에는 쓰지 마라 — [attachPanelTouch] 가 따로 있다.**
      */
     @SuppressLint("ClickableViewAccessibility")
     private fun attachKeyTouch(view: View, onPress: () -> Unit) {
@@ -1590,6 +1657,12 @@ class KeyboardView @JvmOverloads constructor(
 
         const val TRANSLATE_HEIGHT_DP = 40
         const val TOOLBAR_BUTTON_DP = 28
+
+        /**
+         * 도구 줄의 글자 단추 크기. 28dp 동그라미에 'LIVE' 네 글자가 들어가는 한계다.
+         * 더 키우면 넘치고, 옆의 '번역' 과도 크기가 안 맞는다.
+         */
+        const val TOOLBAR_LABEL_SP = 10f
 
         /** 그림 아이콘이 동그라미 안에서 차지하는 크기. 옆의 글꼴 기호들과 눈높이를 맞춘 값이다. */
         const val TOOLBAR_ICON_DP = 16
