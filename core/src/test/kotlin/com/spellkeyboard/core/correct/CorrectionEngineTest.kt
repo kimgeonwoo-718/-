@@ -116,6 +116,27 @@ class CorrectionEngineTest {
     }
 
     @Test
+    fun `의존명사 둥 을 띄운다`() {
+        assertEquals("듣는 둥 마는 둥", fix("듣는둥마는둥"))
+        assertEquals("자는 둥 마는 둥", fix("자는둥마는둥"))
+        assertEquals("갈 둥 말 둥", fix("갈둥말둥"))
+        // '하다'가 뒤에 붙는 꼴. 그 밖의 말이 뒤에 붙는 것("...말둥고민했다")은 규칙이
+        // 아니라 디코더가 뗀다 — 이 시험은 규칙만 켜 놓고 돌기 때문에 여기서는 안 다룬다.
+        assertEquals("먹는 둥 마는 둥 했다", fix("먹는둥마는둥했다"))
+        // 이미 띄어져 있으면 그대로. 규칙이 같은 자리를 다시 만나도 결과가 같아야 한다.
+        assertEquals("듣는 둥 마는 둥", fix("듣는 둥 마는 둥"))
+    }
+
+    @Test
+    fun `둥 으로 끝나도 짝이 아니면 건드리지 않는다`() {
+        // 이 규칙이 좁은 이유다 — '둥'으로 끝나는 낱말이 잇달아 두 번 나오는 일은
+        // 관용구 말고는 없다. 짝을 요구하지 않으면 아래가 다 깨진다.
+        assertUntouched("산둥반도에 갔다")
+        assertUntouched("안둥그렇다")
+        assertUntouched("둥그렇게 앉았다")
+    }
+
+    @Test
     fun `홀로 떨어진 조사를 앞말에 붙인다`() {
         assertEquals("학교에서 만나자", fix("학교 에서 만나자"))
         assertEquals("나는 간다", fix("나 는 간다"))
