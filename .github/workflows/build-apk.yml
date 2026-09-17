@@ -173,7 +173,11 @@ jobs:
 
           if gh release view "$tag" >/dev/null 2>&1; then
             upload gh release upload "$tag" "${files[@]}" --clobber
-            gh release edit "$tag" --title "$title" --notes "$notes"
+            # **--draft=false 를 반드시 준다.** 파일 올리는 도중에 끊긴 릴리스는 초안으로
+            # 남는데, 초안은 태그가 만들어지지 않아 밖에서 404 다. 그대로 두면 다음 빌드가
+            # 그 초안을 찾아 파일만 덮어쓰고 "성공" 으로 끝나서, 빌드는 초록인데 링크는
+            # 계속 없는 상태가 이어진다. 2026-09-17 에 그렇게 한참을 헤맸다.
+            gh release edit "$tag" --title "$title" --notes "$notes" --draft=false --prerelease
           else
             upload gh release create "$tag" "${files[@]}" \
               --target "$GITHUB_SHA" \
