@@ -148,25 +148,34 @@ jobs:
             tag="apk-latest"
             title="맞춤법 키보드 (최신 빌드)"
             extra="--prerelease"
-            # 굴러가는 릴리스라 이전 것을 태그까지 지우고 다시 만든다. 깃허브 API 가
-            # 가끔 500 을 내는데, 그러면 지워지지 않은 채로 만들기가 "이미 있다" 로
-            # 실패해서 다 만들어 놓은 APK 를 못 올린다. 몇 번 다시 해 본다.
-            for attempt in 1 2 3; do
-              if ! gh release view "$tag" >/dev/null 2>&1; then break; fi
-              if gh release delete "$tag" --yes --cleanup-tag; then break; fi
-              echo "릴리스 삭제 실패 ($attempt/3). 5초 뒤 다시."
-              sleep 5
-            done
           fi
 
-          # 그래도 남아 있으면 파일만 갈아 끼운다. 태그는 옛 커밋을 가리키게 되지만,
-          # 받는 사람에게 중요한 것은 링크에 걸린 APK 가 최신인지다.
+          # **릴리스를 지우지 않는다.** 예전에는 태그까지 지우고 다시 만들었는데, 지우기는
+          # 되고 만들기에서 멈추면 링크가 통째로 사라진다. 2026-09-17 에 그렇게 30분 넘게
+          # 404 가 났다 — 받는 사람에게는 "APK 가 없어졌다" 로 보인다.
+          #
+          # 파일만 덮어쓰면 그 창이 아예 없다. 태그는 옛 커밋을 가리키게 되지만, 받는
+          # 사람에게 중요한 것은 링크에 걸린 APK 가 최신인지다. 커밋 번호는 아래 notes 에
+          # 적히므로 어느 빌드인지도 알 수 있다.
+
+          # 멈추면 **실패로 만든다.** 매달려 있으면 빌드가 끝나지도 실패하지도 않아서
+          # 무엇이 잘못됐는지 보이지 않는다. 빨간불은 고칠 수 있지만 매달린 것은 알아채지도
+          # 못한다. 130MB 를 올리는 데 5분이면 넉넉하다(평소 40초).
+          upload() {
+            for attempt in 1 2 3; do
+              if timeout 300 "$@"; then return 0; fi
+              echo "::warning::릴리스 올리기 실패/시간초과 ($attempt/3). 20초 뒤 다시."
+              sleep 20
+            done
+            echo "::error::릴리스에 APK 를 올리지 못했다. APK 자체는 이 실행의 Artifacts 에 있다."
+            return 1
+          }
+
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "릴리스가 남아 있어 파일만 덮어쓴다."
-            gh release upload "$tag" "${files[@]}" --clobber
+            upload gh release upload "$tag" "${files[@]}" --clobber
             gh release edit "$tag" --title "$title" --notes "$notes"
           else
-            gh release create "$tag" "${files[@]}" \
+            upload gh release create "$tag" "${files[@]}" \
               --target "$GITHUB_SHA" \
               --title "$title" \
               $extra \
