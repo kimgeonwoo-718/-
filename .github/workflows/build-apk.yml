@@ -196,9 +196,16 @@ jobs:
             gh release edit "$tag" --title "$title" --notes "$notes" --draft=false --prerelease
             upload gh release upload "$tag" "${files[@]}" --clobber
           else
-            upload gh release create "$tag" "${files[@]}" \
+            # **만들기와 올리기를 가른다.** `gh release create` 에 파일을 같이 주면 초안으로
+            # 만든 뒤 올리고 나서야 게시하는데, 올리기가 막히면 초안인 채로 남아 밖에서
+            # 404 다. 2026-09-17 에 그렇게 초안만 여러 개 쌓였다.
+            #
+            # 파일 없이 먼저 만들면 게시는 바로 끝난다. 링크는 그 순간부터 살아 있고,
+            # 파일은 그 뒤에 붙는다. 올리기가 실패해도 링크가 사라지지는 않는다.
+            gh release create "$tag" \
               --target "$GITHUB_SHA" \
               --title "$title" \
               $extra \
               --notes "$notes"
+            upload gh release upload "$tag" "${files[@]}" --clobber
           fi
