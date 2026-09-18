@@ -134,10 +134,93 @@ class NBestCorrector(
          *
          * 실제로 지켜야 하는 복합명사는 전부 6음절 이상이고(`아파트관리비가` 7,
          * `마음먹었지만` 6, `부동산중개수수료는` 9), 거꾸로 도는 것은 전부 5음절 이하다.
-         * dev·test 를 3~8 로 훑어 보면 6 이 꼭짓점이다 — 7 부터 dev 손상이 2행에서
-         * 3행으로, 8 에서 4행으로 는다.
+         *
+         * **6 에서 8 로 올렸다.** 6 일 때 이 거부권은 `구매감사합니다`(7)·`주시기바랍니다`(7)
+         * 처럼 사람이 실제로 저지르는 붙임 오류까지 도로 붙여 굳혔다. 2,557행에서
+         * 6 → 8 은 해로운 억제를 55건에서 30건으로 줄이고 손상은 29행에서 35행으로
+         * 는다(그 6행은 전부 `아파트관리비`·`근로자퇴직급여보장법` 같은 긴 복합명사다).
+         *
+         * 값은 `아파트관리비를`(7) 이다. **[Vocabulary.keepsWhole] 로는 못 살린다** — 재 봤다.
+         * `keepsWhole` 은 `아파트관리비를` 과 `구매감사합니다` 를 둘 다 참으로 읽어서,
+         * 그것으로 거부권을 주면 이 일의 본줄기가 통째로 죽는다(2,557행에서 통째 정답
+         * 1,737 → 1,725, 사용자 문장이 다시 안 고쳐진다). 음절 수가 지금으로서는
+         * 둘을 가르는 유일한 눈금이다.
          */
-        val rejoinMinSyllables: Int = 6,
+        val rejoinMinSyllables: Int = 8,
+        /**
+         * 복합어로 덮을 때 **둘째 조각부터는 체언으로 시작해야** 하는가.
+         *
+         * [Vocabulary.coverPieces] 는 원래 앞 조각이 체언으로 *끝나는가* 만 봤다. 그것만으로는
+         * 붙여 쓴 문장이 새어 들어온다: `구매감사합니다` = `구매`(체언으로 끝남) + `감사합니다`,
+         * `배송지연이` = `배송` + `지연이`. 둘 다 "아는 조각 둘"이라 복합어로 지켜졌다.
+         *
+         * 복합명사는 명사를 이어 붙인 것이므로 **뒤 조각도 체언으로 시작한다**
+         * (`개인정보보호`+`위원회는`, `아파트`+`관리비가`). 붙여 쓴 어절 둘은 뒤 조각이
+         * 용언이거나 어미로 시작한다(`감사합니다`, `주세요`, `드리겠습니다`).
+         *
+         * 이 한 줄만으로 2,557행에서 **해로운 억제가 152자리에서 55자리로** 떨어진다
+         * (맨엔진이 띄운 자리를 우리가 지웠고 정답에도 그 자리가 있던 경우). 값은 손상
+         * 18행 → 29행이고, 그 11행은 전부 `아파트관리비`·`품질관리팀` 같은 명사 무더기다.
+         */
+        val coverStartsNominal: Boolean = true,
+        /**
+         * 사람이 통째로 친 어절을 엔진도 통째로 둔 자리를 **아예 안 볼 것인가(null),
+         * 아니면 이만큼 이겨야 뒤집게 할 것인가.**
+         *
+         * null 은 예전의 하드 거부권이다 — 그 자리는 후보 격자에 오르지도 못한다.
+         * 숫자를 넣으면 자리는 살아 있고, **조각 하나를 더 만들 때마다** 이만큼을 더 이겨야
+         * 한다(두 조각 16, 세 조각 32). 벽을 눈금으로 바꾼 것이다. 조각 수에 비례해야 한다 —
+         * 부끄러운 손상은 하나같이 세 조각짜리였다(`국립 현대 미술관이`, `교통 유발 부담금은`,
+         * `건강검진 결과 표가`).
+         *
+         * 2,557행에서 훑은 값 (F1 / 통째 정답 / 손상. 맨엔진 .9258 / 1523 / 62,
+         * 예전 배포본 .9401 / 1680 / 18):
+         * ```
+         *  없음(벽) .9458 1717 22    20 .9469 1727 22    16 .9480 1737 22
+         *  14       .9488 1743 25    12 .9501 1754 29    10 .9510 1762 30
+         *  8        .9521 1769 43
+         * ```
+         * **16 에서 멈췄다.** 20→16 은 정답 10행이 공짜다(손상 그대로 22). 16→10 은 정답
+         * 25행을 더 주지만 손상 8행을 치르는데, 그 8행이 전부 고유명사·법률용어를 세 조각으로
+         * 부순 것이다 — `국립 현대 미술관이`(3행), `건강검진 결과표가`(3행), `통합 테스트가`,
+         * `이겨 내겠습니다`. 사용자가 이미 한 번 항의한 갈래라 값이 싸지 않다고 보았다.
+         * 사용자 문장은 16 이나 10 이나 똑같이 고친다.
+         */
+        val wholeWordMargin: Float? = 16f,
+        /**
+         * **말뭉치가 아는 어절**도 다시 볼 자리로 삼을 최소 음절 수 (null 이면 안 본다).
+         *
+         * [suspectSpans] 는 원래 "언어모델이 모르는 어절" 둘레만 다시 풀었다. 그것이 마지막
+         * 벽이다 — `배송지연이`·`시일내에` 는 말뭉치에 **붙은 채로 올라 있어서** 수상한
+         * 자리로 뽑히지도 않는다. 낱말 모형은 길이 편향이 있어 붙은 꼴을 늘 한 번은 봤다.
+         *
+         * **끈 채로 둔다.** 5 로 켜 봤더니 2,557행에서 통째 정답 +10행에 손상 +3행이고,
+         * 정작 노리던 `배송지연이` 는 그래도 안 고쳐진다. 자리는 생기지만 후보
+         * `배송 지연이` 가 통째보다 3.63 nat 밖에 못 이겨서 [wholeWordMargin] 을 못 넘는다.
+         * 눈금을 3 아래로 내리면 닿지만 그때 손상이 22행에서 60행 너머로 뛴다 —
+         * 맨엔진의 62행과 맞먹는다. 값어치가 없어 닫아 두고, 다음 사람이 다시 재 보라고
+         * 손잡이만 남겨 둔다.
+         */
+        val seedKnownFrom: Int? = null,
+        /**
+         * [wholeWordMargin] 을 열었을 때, **형태소 사전조차 한 어절로 읽는** 어절에는
+         * 눈금 대신 예전의 하드 거부권을 그대로 둘 것인가.
+         *
+         * 잰 값: `spacer.space` 가 null 을 돌려주는 어절은 `올라가겠습니다`·`들어가신다`·
+         * `묻어나지`·`들여쓰기가`·`깊어지면서`·`온다더라` — 전부 합성동사·파생어다.
+         * 반대로 고쳐야 하는 붙임 오류는 `구매감사합니다`·`배송지연이`·`오늘저녁에`·
+         * `기분좋았습니다` 처럼 하나같이 사전이 어디든 가르고 싶어한다. 이 한 줄이
+         * "가르면 부끄러운 자리" 를 눈금과 무관하게 지킨다.
+         */
+        val hardVetoWhenMorphWhole: Boolean = true,
+        /**
+         * 「체언 + 드리다」·「체언 + 스럽다」를 한 낱말로 지킬 것인가. [derivedHonorific] 참고.
+         *
+         * 끄면 `안내드리겠습니다` 가 `안내 드리겠습니다` 로 갈린다. 2,557행에서 켜고 끈 값:
+         * 손상 35행 → 22행, 통째 정답 1,705 → 1,717. **예전 배포본이 망가뜨리던 6행
+         * (`보고드렸습니다`·`연락드려요`·`보고드리겠습니다` …)도 이것으로 되살아난다.**
+         */
+        val derivedHonorificRule: Boolean = true,
 
         /** Spacer 격자에서 뽑아 볼 갈래 수. 8 아래로 내리면 떨어지고, 위로는 평평하다. */
         val beam: Int = 12,
@@ -154,7 +237,7 @@ class NBestCorrector(
         val maxSpanSyllables: Int = 18,
     )
 
-    private val vocabulary = Vocabulary(lm, spacer, tuning.compoundChunks)
+    private val vocabulary = Vocabulary(lm, spacer, tuning.compoundChunks, tuning.coverStartsNominal)
     private val rescorer = Rescorer(lm, tuning)
 
     /**
@@ -343,21 +426,28 @@ class NBestCorrector(
         var at = 0
         var w = 0
         while (w < pieces.size) {
-            val span = spans.firstOrNull { it.first == w }
-            if (span == null) {
+            val suspect = spans.firstOrNull { it.range.first == w }
+            if (suspect == null) {
                 slots += Slot(at, listOf(listOf(pieces[w])), NO_MORPH, realBoundary[w])
                 at += pieces[w].length
                 w++
             } else {
+                val span = suspect.range
                 val incumbent = pieces.subList(span.first, span.last + 1).toList()
                 val text = incumbent.joinToString("")
                 val list = candidates(text, incumbent)
                 // 엔진 답을 0 점으로 놓은 상대값이라 칸끼리 더해도 argmax 가 안 바뀐다.
                 val base = splitScore(incumbent)
                 val forbidden = boundCuts(incumbent)
+                // 사람이 통째로 친 어절을 가르려면 **조각 하나를 더 만들 때마다** 이만큼
+                // 더 이겨야 한다. 한 칸 더 나누는 것은 그만큼 더 센 주장이라서다 —
+                // 실제로 부끄러운 손상은 전부 세 조각짜리였다(`교통 유발 부담금은`,
+                // `전원 공급 장치가`, `건강검진 결과 표가`). 두 조각은 16, 세 조각은 32 다.
+                val perPiece = if (suspect.wholeWord) tuning.wholeWordMargin ?: 0f else 0f
                 slots += Slot(at, list, FloatArray(list.size) {
                     tuning.morphWeight * (base - splitScore(list[it])) / SPACE_PENALTY -
-                        tuning.grammarPenalty * grammarBreaks(list[it], forbidden)
+                        tuning.grammarPenalty * grammarBreaks(list[it], forbidden) -
+                        perPiece * maxOf(0, list[it].size - incumbent.size)
                 }, realBoundary[span.first])
                 at += text.length
                 w = span.last + 1
@@ -381,8 +471,17 @@ class NBestCorrector(
         for (end in 1..stream.length) {
             if (end != stream.length && end !in frozen) continue
             val token = stream.substring(start, end)
-            if (token.length >= tuning.rejoinMinSyllables &&
-                token.all { it.isHangul() } && vocabulary.keepsWhole(token)
+            // 「체언 + 드리다」는 음절 수와 무관하게 되붙인다. 이 갈래는 우리 재분절이 아니라
+            // **엔진이** 만든다 — `spacer.space("공유드립니다")` 가 `공유 드립니다` 다.
+            // 그래서 [grammarBreaks] 로는 못 막고 여기서 도로 붙여야 한다.
+            // [COMPOUND_VERB_STEMS] 도 음절 수와 무관하게 되붙인다. 「체언 + 드리다」와
+            // 같은 사정이다 — `마음 먹었지만` 은 **엔진이** 만든다(맨 엔진만 돌려도 나온다).
+            // 6음절이라 되붙임 문턱(8)에 안 걸리고, hasGluedRun 이 거짓이라 재분절도 안
+            // 도는 자리라, 여기서 도로 붙이는 것 말고는 손댈 데가 없다.
+            if (token.all { it.isHangul() } &&
+                (token.length >= tuning.rejoinMinSyllables && vocabulary.keepsWhole(token) ||
+                    isDerivedHonorific(token) ||
+                    COMPOUND_VERB_STEMS.any { token.startsWith(it) })
             ) {
                 for (i in start + 1 until end) { cuts -= i; locked[i] = true }
                 locked[start] = true
@@ -412,7 +511,7 @@ class NBestCorrector(
         locked: BooleanArray,
         wordFrom: List<Int>,
         wordTo: List<Int>,
-    ): List<IntRange> {
+    ): List<Suspect> {
         val starts = IntArray(words.size)
         var at = 0
         for (i in words.indices) { starts[i] = at; at += words[i].length }
@@ -423,7 +522,9 @@ class NBestCorrector(
         val out = ArrayList<IntRange>()
         for (i in words.indices) {
             if (locked[starts[i]] || !words[i].all { it.isHangul() }) continue
-            if (vocabulary.isWord(words[i])) continue
+            if (vocabulary.isWord(words[i]) &&
+                words[i].length < (tuning.seedKnownFrom ?: Int.MAX_VALUE)
+            ) continue
             var lo = i
             var hi = i
             while (hi - lo + 1 < 2 * tuning.spanRadius + 1) {
@@ -443,34 +544,58 @@ class NBestCorrector(
         return out.filter { span ->
             val length = (span.first..span.last).sumOf { words[it].length }
             if (length !in MIN_SPAN..tuning.maxSpanSyllables) return@filter false
-            // **사람이 통째로 친 어절을 엔진도 통째로 두었으면 손대지 않는다.**
-            //
-            // 그 자리는 사람과 형태소 사전이 둘 다 "이건 한 낱말이다" 라고 말한 곳이다.
-            // 그런데 자리가 그 어절 하나뿐이면 좌우로 넓힐 곳이 없어(양쪽이 다 사용자 공백)
-            // 후보가 곧 그 어절을 쪼갠 것들뿐이고, 엔진 답을 지키는 것은 [Tuning.overrideMargin]
-            // 1 nat 하나다. 흔한 이름씨 둘이면 그 정도는 쉽게 넘는다.
-            //
-            // 그래서 배포본은 **맞게 쓴 글을 쪼갰다**: 들여쓰기가 → 들여 쓰기가,
-            // 묻어나지 → 묻어 나지, 들어가셨다 → 들어 가셨다, 올라가겠습니다 → 올라 가겠습니다,
-            // 국립현대미술관이 → 국립 현대 미술관이, 자연어처리가 → 자연어 처리가,
-            // 교통유발부담금은 → 교통 유발 부담금은. 손으로 쓴 맞는 글 114행에서 손상이
-            // 21행이었는데(되돌림 길은 18행), 이 한 줄로 3행이 된다 — 남은 셋은 되돌림 길도
-            // 똑같이 망가뜨리는 예전 결함이다.
-            //
-            // 값도 치른다: `주시기바랍니다` 처럼 사람이 붙여 쓴 **두 어절**도 같이 지켜진다
-            // (되돌림 길은 이것을 `주시기 바랍니다` 로 고친다). 이 엔진에서는 못 고친 오타
-            // 하나보다 멀쩡한 글 스무 줄을 망가뜨리는 쪽이 훨씬 나쁘다고 보고 받아들였다.
-            //
-            // 붙여 쓴 긴 덩어리는 그대로 풀린다 — 엔진의 `applyLongSplit` 이 이미 쪼개
-            // 놓았으므로 자리가 어절 하나짜리가 아니다 (`아버지가방에들어가신다`,
-            // `회의자료준비상황을`).
-            if (span.first == span.last) {
-                val from = wordFrom[span.first]
-                val to = wordTo[span.first]
-                if ((from == 0 || from in frozen) && (to == total || to in frozen)) return@filter false
-            }
             true
-        }
+        }.map { span ->
+            // **사람도 엔진도 한 낱말로 둔 어절인가.**
+            //
+            // 자리가 그 어절 하나뿐이면 좌우로 넓힐 곳이 없어(양쪽이 다 사용자 공백) 후보가
+            // 곧 그 어절을 쪼갠 것들뿐이고, 엔진 답을 지키는 것은 [Tuning.overrideMargin]
+            // 1 nat 하나다. 흔한 이름씨 둘이면 그 정도는 쉽게 넘는다. 그래서 예전에는
+            // 이런 자리를 **통째로 버렸다**(하드 거부권).
+            //
+            // 그것이 너무 넓었다. `올라가겠습니다`·`들여쓰기가`·`묻어나지` 는 지켜지지만
+            // `구매감사합니다`·`발송해드리겠습니다`·`오늘저녁에` 처럼 사람이 실제로 저지르는
+            // 붙임 오류도 똑같이 지켜졌다 — 평범한 업무 글에 "고칠 것이 없었습니다" 가
+            // 나오던 까닭이 이 한 줄이다. 2,557행에서 해로운 억제 152건 가운데 이 자리가
+            // 가장 큰 덩어리였다.
+            //
+            // 이제 **벽 대신 눈금**이다([Tuning.wholeWordMargin] = 16 nat). 부끄러운 쪽 —
+            // 형태소 사전조차 한 어절로 읽는 합성동사·파생어 — 은 눈금과 무관하게
+            // 그대로 막는다([Tuning.hardVetoWhenMorphWhole]).
+            val whole = span.first == span.last &&
+                (wordFrom[span.first].let { it == 0 || it in frozen }) &&
+                (wordTo[span.first].let { it == total || it in frozen })
+            // 형태소 사전조차 한 어절로 읽는가. [Tuning.hardVetoWhenMorphWhole] 참고.
+            val morphWhole = whole && tuning.hardVetoWhenMorphWhole && morphReadsWhole(words[span.first])
+            Suspect(span, whole, morphWhole)
+        }.filter { (tuning.wholeWordMargin != null && !it.morphWhole) || !it.wholeWord }
+    }
+
+    /** 다시 볼 자리 하나. [wholeWord] 면 사람도 엔진도 한 낱말로 본 어절이다. */
+    private class Suspect(val range: IntRange, val wholeWord: Boolean, val morphWhole: Boolean = false)
+
+    /**
+     * 형태소 사전도 이 어절을 **한 낱말로 읽는가.** [Tuning.hardVetoWhenMorphWhole] 의 판정이다.
+     *
+     * 두 가지를 한 낱말로 친다.
+     * 1. 사전이 가를 데를 못 찾는 어절 — `올라가겠습니다`, `들어가신다`, `묻어나지`,
+     *    `들여쓰기가`, `깊어지면서`, `온다더라`. 전부 합성동사·파생어다.
+     * 2. 사전이 「체언 + 드리다」 로만 읽는 어절 — `인사드렸습니다`, `안내드리겠습니다`,
+     *    `공유드립니다`. [derivedHonorific] 이 말하듯 이것도 한 낱말이다.
+     *
+     * 2번이 없으면 [grammarBreaks] 가 `인사 드렸습니다` 를 막은 뒤 점수기가 **그 다음으로
+     * 나쁜 답**을 고른다: `인 사드렸습니다`. 금지는 자리째 해야지 후보 하나만 해서는 안 된다.
+     */
+    private fun morphReadsWhole(word: String): Boolean {
+        if (COMPOUND_VERB_STEMS.any { word.startsWith(it) }) return true
+        val split = spacer.space(word) ?: return true
+        return split == word || isDerivedHonorific(word)
+    }
+
+    /** 사전이 이 어절을 「체언 + 드리다」 딱 둘로만 읽는가. [derivedHonorific] 참고. */
+    private fun isDerivedHonorific(word: String): Boolean {
+        val parts = (spacer.space(word) ?: return false).split(' ')
+        return parts.size == 2 && derivedHonorific(parts[0], parts[1])
     }
 
     /**
@@ -637,7 +762,32 @@ class NBestCorrector(
             if (at < forbidden.size && forbidden[at]) n++
         }
         for (i in 1 until pieces.size) if (pieces[i].length == 1 && spacer.couldBeBound(pieces[i])) n++
+        for (i in 1 until pieces.size) if (derivedHonorific(pieces[i - 1], pieces[i])) n++
         return n
+    }
+
+    /**
+     * 「체언 + 드리다」를 가르는 자리인가. 가르면 안 되는 자리다.
+     *
+     * `드리다` 는 두 가지로 쓰인다.
+     * - **접미사** — 체언에 붙어 한 낱말을 만든다: `말씀드리다`, `안내드리다`, `보고드리다`,
+     *   `공유드리다`, `회신드리다`. 사전에 오른 파생어라 **붙여 쓴다.**
+     * - **보조 용언** — `-아/-어/-여` 뒤에 온다: `발송해 드리다`, `보내 드리다`.
+     *   한글맞춤법 47항이라 **띄어 쓰는 것이 원칙이다.**
+     *
+     * 앞 조각의 끝 품사 하나로 갈린다. 이 규칙이 없으면 [Tuning.wholeWordMargin] 을 열었을 때
+     * 새로 생기는 손상 41행 가운데 30행이 전부 이 모양이었다 —
+     * `안내드리겠습니다` → `안내 드리겠습니다`. 그러면서 사용자 문장의
+     * `발송해 드리겠습니다` 는 `발송해` 가 어미로 끝나므로 그대로 열려 있다.
+     *
+     * `-스럽다` 도 같은 접미사라 같이 본다 ([DERIVED_SUFFIX]).
+     */
+    private fun derivedHonorific(left: String, right: String): Boolean {
+        if (!tuning.derivedHonorificRule) return false
+        if (DERIVED_SUFFIX.none { right.startsWith(it) }) return false
+        if (left in NOUN_READ_AS_VERB) return true
+        val tail = spacer.edgeTags(left)?.second ?: return false
+        return spacer.isNominalTag(tail)
     }
 
     // ==================================================================================
@@ -734,6 +884,7 @@ class NBestCorrector(
         private val lm: LanguageModel,
         private val spacer: Spacer,
         private val chunks: Int,
+        private val startsNominal: Boolean = false,
     ) {
 
         private val cache = HashMap<String, Boolean>()
@@ -776,6 +927,22 @@ class NBestCorrector(
             return spacer.isNominalTag(tail)
         }
 
+        /**
+         * 뒤 조각이 **체언으로 시작하는가.** [Tuning.coverStartsNominal] 이 켜졌을 때만 본다.
+         * 조사를 뗀 꼴도 같이 본다 — `위원회는` 은 통째로는 분석이 안 될 수 있어도
+         * `위원회` 는 체언이다.
+         */
+        private fun startsNominalChunk(chunk: String): Boolean {
+            val head = spacer.edgeTags(chunk)?.first
+            if (head != null && spacer.isNominalTag(head)) return true
+            for (j in JOSA) if (chunk.length > j.length + 1 && chunk.endsWith(j)) {
+                val stem = chunk.dropLast(j.length)
+                val h = spacer.edgeTags(stem)?.first ?: continue
+                if (spacer.isNominalTag(h)) return true
+            }
+            return false
+        }
+
         /** w 를 LM 이 아는 조각으로 덮는 최소 조각 수. 못 덮으면 [UNCOVERABLE]. */
         private fun coverPieces(w: String): Int {
             val n = w.length
@@ -787,6 +954,7 @@ class NBestCorrector(
                     val chunk = w.substring(j, i)
                     if (!known(chunk)) continue
                     if (i < n && !endsNominal(chunk)) continue
+                    if (startsNominal && j > 0 && !startsNominalChunk(chunk)) continue
                     dp[i] = dp[j] + 1
                 }
             }
@@ -911,6 +1079,39 @@ class NBestCorrector(
 
         /** 줄마다 따로 고르려고 가른다. [respace] 참고. */
         private const val NEWLINE = '\n'
+
+        /**
+         * 체언에 붙어 한 낱말을 만드는 접미사들의 활용 머리. [derivedHonorific] 참고.
+         *
+         * `-드리다`(말씀드리다, 안내드리다)와 `-스럽다`(고급스럽다, 자연스럽다) 둘 다
+         * 접미사라 **언제나 붙여 쓴다.** 앞말이 체언일 때만 본다 — `발송해 드리다` 처럼
+         * `-아/-어` 뒤에 오면 그때는 보조 용언이라 47항대로 띄는 것이 원칙이다.
+         */
+        private val DERIVED_SUFFIX =
+            listOf("드리", "드립", "드려", "드렸", "드릴", "드림", "스럽", "스러")
+
+        /**
+         * 형태소 사전이 **용언으로 읽어 버리는 한자어 명사.** `edgeTags("보고")` 가
+         * `(VV, EC)` 다 — `보/VV + 고/EC` 로 읽는다. 그래서 `보고드렸습니다` 가
+         * [derivedHonorific] 에 안 걸리고 `보고 드렸습니다` 로 갈렸다 (잰 값 4행).
+         * `TokenSpacer` 머리말도 같은 자리를 짚어 놓았다.
+         */
+        private val NOUN_READ_AS_VERB = setOf("보고")
+
+        /**
+         * 사전에 없는 합성용언. **가르면 틀린 한국어가 되는데** 사전이 가를 데를 찾아
+         * 버리는 것들이라 [morphReadsWhole] 의 판정을 못 탄다.
+         *
+         * 목록을 넓히지 않았다. 합성용언·합성형용사 후보 28개(힘쓰다·애쓰다·본받다·
+         * 앞장서다·빛나다·손잡다·탈바꿈하다·뒤돌아보다·끼어들다·그럴듯하다·쓸데없다·
+         * 남다르다·뜻깊다·머지않다 …)를 실제로 돌려 봤더니 **갈라지는 것은 하나뿐**이었다.
+         * 나머지는 사전이 이미 한 낱말로 읽거나 눈금이 막고 있어 넣을 자리가 없었다.
+         * 짐작으로 채우면 정작 갈라야 할 것까지 굳는다.
+         *
+         * 활용형이 다 걸리게 어간으로 적는다 — `마음먹었지만` 만 갈라지고 `마음먹고`·
+         * `마음먹은` 은 이미 안 갈라지는데, 음절 수에 달린 우연이라 믿을 것이 못 된다.
+         */
+        private val COMPOUND_VERB_STEMS = listOf("마음먹", "맘먹")
 
         private val NO_MORPH = FloatArray(0)
         private val AROUND_WHITESPACE = Regex("(?<=\\s)|(?=\\s)")
