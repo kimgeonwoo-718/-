@@ -333,7 +333,7 @@ class CorrectionEngine(
     private fun applyLongSplit(text: String, sink: MutableList<Correction>): String {
         val long = longSpacer ?: LongSpacer { (this.spacer ?: return@LongSpacer null).spaceLong(it) }
         return mapWords(text) { word ->
-            if (word.length <= GLUED_RUN_SYLLABLES) return@mapWords word
+            if (word.length <= MIN_SPLIT_SYLLABLES) return@mapWords word
             // 형태소 사전은 **어절**을 받는다. 끝에 붙은 마침표 하나가 분석을 통째로
             // 실패시켜서, 부호를 떼고 넘긴 뒤 도로 붙인다. 이걸 안 했더니 마지막 조각이
             // 늘 안 풀렸다 — 문장 끝이라 부호가 거의 항상 붙어 있기 때문이다.
@@ -341,8 +341,12 @@ class CorrectionEngine(
             if (start < 0) return@mapWords word
             val end = word.indexOfLast { it in HANGUL_SYLLABLES } + 1
             val core = word.substring(start, end)
-            val floor = if (context?.knowsWord(core) == false) GLUED_RUN_SYLLABLES else LONG_WORD_SYLLABLES
-            if (core.length <= floor) return@mapWords word
+            if (core.length <= MIN_SPLIT_SYLLABLES) return@mapWords word
+            // 말뭉치가 아는 어절은 길어도 그대로 둔다. 흔한 말을 가르는 것이 제일 나쁘다.
+            if (context?.knowsWord(core) != false && core.length <= LONG_WORD_SYLLABLES) {
+                return@mapWords word
+            }
+            if (!looksGlued(core)) return@mapWords word
 
             val spaced = analyse(LONG_KEY + core) { long.space(core) ?: core }
             if (spaced == core) return@mapWords word
@@ -350,6 +354,34 @@ class CorrectionEngine(
             sink += Correction(word, whole, "띄어쓰기")
             whole
         }
+    }
+
+    /**
+     * 이 어절이 **붙여 쓴 덩어리로 보이는가.**
+     *
+     * 예전에는 길이만 봤다(여덟 음절 넘으면 가른다). 그런데 길이는 이 질문의 답이 아니다 —
+     * '교육과학기술부가'(8)는 지켜야 하고 '리뷰이벤트시에만'(8)은 갈라야 한다. 길이로는
+     * 둘이 같아서, 문지방을 내리면 갈라야 할 것을 얻는 만큼 지켜야 할 것을 잃었다
+     * (시험지 50문장에서 되살림 +1, 오교정 +3).
+     *
+     * 형태소 분석 비용이 그 둘을 가른다. **한 낱말로 자연스러울수록 낮고, 억지로 분석해야
+     * 할수록 높다.** 실제로 재 보면:
+     *
+     *     지켜야 할 것                   갈라야 할 것
+     *     교육과학기술부가   1,946        리뷰이벤트시에만    4,296
+     *     소비자물가지수가   2,364        본체는기본이고      5,848
+     *     국세청홈택스에서   2,516        현재는품절입니다    9,653
+     *     사회복지사자격증을 3,679        오늘은날씨가좋아서  9,958
+     *
+     * 길이가 아니라 이것으로 거른다. 덕분에 짧아도 억지스러우면 갈라 주고, 길어도
+     * 자연스러우면 지킨다.
+     *
+     * 분석이 아예 안 되는 것([Spacer.UNANALYZABLE])은 비용이 매우 크게 나오므로
+     * 자연히 "가른다" 쪽이다 — 그게 맞다. 붙여 쓴 긴 글이 대개 그렇다.
+     */
+    private fun looksGlued(core: String): Boolean {
+        val cost = spacer?.cost(core) ?: return true
+        return cost > FORCED_ANALYSIS_COST
     }
 
     /**
@@ -446,6 +478,29 @@ class CorrectionEngine(
          * **언어모델이 아는 어절은 이 문지방을 안 탄다.** 흔한 말은 길어도 그대로 둔다.
          */
         internal const val GLUED_RUN_SYLLABLES = 8
+
+        /**
+         * 긴 덩어리 분해기가 쳐다보는 최소 길이. 이보다 짧으면 비용을 재지도 않는다 —
+         * 값만 들고, 네 음절짜리를 가를 일은 거의 없다.
+         */
+        private const val MIN_SPLIT_SYLLABLES = 5
+
+        /**
+         * 이 위로 억지스러우면 붙여 쓴 덩어리로 본다. [looksGlued] 참고.
+         *
+         * `tools/localcheck/measure-spacing.sh` 로 훑은 값 (오교정/30, 되살림/20):
+         *
+         *     2500   6, 20      '국세청홈택스에서'(2,516) 이 갈린다
+         *     3000   5, 20
+         *     3500   5, 20      ← 여기
+         *     4000   5, 20
+         *     4500   5, 19      '리뷰이벤트시에만'(4,296) 을 놓친다
+         *     5000   5, 19
+         *
+         * 3000~4000 이 다 같으므로 가운데를 고른다. 양쪽 끝에 붙이면 어느 쪽이든 낱말
+         * 하나가 값을 조금만 넘겨도 결과가 뒤집힌다.
+         */
+        private const val FORCED_ANALYSIS_COST = 3500
 
         private val WHITESPACE = Regex("\\s+")
 
