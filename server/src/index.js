@@ -185,7 +185,20 @@ async function correct(request, env, url, fetchImpl, now) {
   }
 
   // 구독자는 횟수가 아니라 글자 수로 센다 — 요금이 글자 수에 붙기 때문이다.
-  const charsKey = 'chars:' + installId;
+  //
+  // **한도는 결제 하나에 하나다.** 설치 ID 로 세면 앱을 지웠다 깔거나 같은 구글 계정을
+  // 여러 폰에 넣는 것만으로 한도가 새로 난다. 그러면 구독 하나로 다섯이 쓸 때 원가는
+  // 다섯 배인데 받는 돈은 그대로다 — 한 사람이 꽉 써서 남는 것이 690원뿐이라 둘만
+  // 나눠 써도 바로 적자다.
+  //
+  // 구매 토큰으로 세면 몇 대에 깔든 합쳐서 하루치 하나다. 본인이 폰 두 대에 깔면 둘이
+  // 나눠 쓰게 되는데, 그게 맞는 동작이다.
+  //
+  // 토큰을 그대로 열쇠로 쓰지 않고 해시한다. 열쇠는 로그나 덤프에 섞여 나오기 쉽고,
+  // 구매 토큰은 그 자체가 구독 증명이라 새면 남이 쓸 수 있다.
+  //
+  // 시험용 설치 ID([isTestSubscriber])는 구매 토큰이 없다. 그때는 설치 ID 로 센다.
+  const charsKey = 'chars:' + (purchaseToken ? await sha256Hex(purchaseToken) : installId);
   const charge = chargeFor(safeUserLength(body));
   let usage = decideChars(await used(env.DB, charsKey, day), charge, limit);
   if (!usage.allowed) return withQuota(fail(402, 'sub_daily_limit'), usage, limit, plan, unit);

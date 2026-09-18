@@ -141,6 +141,49 @@ function paidGenerate(chars) {
   return generate({ 'x-purchase-token': 'paid-token' }, JSON.stringify({ contents: [{ parts: [{ text }] }] }));
 }
 
+test('같은 구독이면 폰이 달라도 한도를 같이 쓴다', async () => {
+  // 한도를 설치 ID 로 세면 앱을 지웠다 깔거나 같은 구글 계정을 여러 폰에 넣는 것만으로
+  // 한도가 새로 난다. 그러면 구독 하나로 다섯이 쓸 때 원가는 다섯 배인데 받는 돈은
+  // 그대로다 — 한 사람이 꽉 써서 남는 것이 690원뿐이라 둘만 나눠 써도 적자다.
+  const { pem } = await testKeyPair();
+  const e = env({
+    TEST_INSTALL_IDS: '',
+    PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }),
+    SUB_DAILY_CHARS: '1000',
+  });
+  const deps = { fetch: upstream({ activeToken: 'paid-token', echo: true }).fetchImpl, now: () => NOON_KST };
+  const fromPhone = (installId, chars) =>
+    handle(
+      new Request(GENERATE, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'cf-connecting-ip': '1.2.3.4',
+          'x-install-id': installId,
+          'x-purchase-token': 'paid-token',
+        },
+        body: JSON.stringify({ contents: [{ parts: [{ text: '가'.repeat(chars) }] }] }),
+      }),
+      e,
+      deps
+    );
+
+  // 첫 폰이 600 자를 쓴다.
+  const first = await fromPhone('11111111-1111-4111-8111-111111111111', 600);
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get('x-quota-remaining'), '400');
+
+  // **설치 ID 가 다른 둘째 폰**이 이어서 쓴다. 같은 구독이므로 남은 것은 400 이어야 한다.
+  const second = await fromPhone('22222222-2222-4222-8222-222222222222', 300);
+  assert.equal(second.status, 200);
+  assert.equal(second.headers.get('x-quota-remaining'), '100');
+
+  // 합쳐서 900 을 썼으니 200 자짜리는 안 들어간다.
+  const over = await fromPhone('33333333-3333-4333-8333-333333333333', 200);
+  assert.equal(over.status, 402);
+  assert.equal((await over.json()).error.message, 'sub_daily_limit');
+});
+
 test('구독자는 횟수 대신 글자 수로 센다 — 확인은 Play 에 한 번만 물어본다', async () => {
   const { pem } = await testKeyPair();
   const e = env({
