@@ -39,6 +39,8 @@
     <string name="paywall_premium_translate">AI 번역</string>
     <string name="ai_busy">이미 교정하는 중입니다</string>
     <string name="ai_no_connection">입력란과 연결되지 않았습니다</string>
+    <!-- 비밀번호·이메일 칸처럼 글을 밖으로 내보내면 안 되는 곳에서 서버 기능을 눌렀을 때. -->
+    <string name="sensitive_field_blocked">이 입력란의 글은 밖으로 보내지 않습니다</string>
     <string name="ai_no_key">이 빌드에는 AI 서버 주소가 없어 AI 교정을 쓸 수 없습니다.</string>
     <string name="ai_timeout">응답이 없어 그만뒀습니다. 네트워크를 확인해 주세요.</string>
     <string name="ai_empty">교정할 글이 없습니다</string>

@@ -87,6 +87,15 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      */
     private var fieldCorrectable = true
 
+    /**
+     * 이 입력란의 글을 **기기 밖으로 내보내도 되는가.**
+     *
+     * [fieldCorrectable] 보다 엄격하다. 기기 안에서 도는 교정은 아무것도 남기지 않지만,
+     * 서버로 보내는 것은 글이 남의 컴퓨터를 거친다는 뜻이다. 그 둘은 같은 문지방을
+     * 쓸 수 없다.
+     */
+    private var fieldSendable = true
+
     /** 우리가 마지막으로 편집한 시각. 우리가 일으킨 커서 알림을 가려내는 데 쓴다. */
     @Volatile
     private var lastEditAt = 0L
@@ -248,6 +257,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         punctuationIndex = -1
         syncAutomata()
         fieldCorrectable = isCorrectableField(info)
+        fieldSendable = isSendableField(info)
         session.correctionEnabled = Prefs.autoCorrectEnabled(this) && fieldCorrectable
         keyboard?.setAutoCorrectOn(Prefs.autoCorrectEnabled(this))
     }
@@ -264,8 +274,11 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 비밀번호를 고쳐 주는 것은 도움이 아니라 사고다.
         // 다만 자동 교정 스위치와는 묶지 않는다 — 그건 실시간 교정만 끄는 스위치다.
         keyboard?.setCorrectAllAvailable(fieldCorrectable)
+        // **번역도 같이 감춘다.** 번역을 길게 누르면 입력란의 글이 통째로 서버로 간다.
+        // 예전에는 AI 동그라미만 감춰서, 비밀번호 칸에서도 번역은 그대로 눌렸다.
+        keyboard?.setTranslateAvailable(fieldSendable)
         // 서버 예열은 서버가 있을 때만. 길게 누르는 쪽(프리미엄 AI)이 쓸 것이다.
-        if (Prefs.aiAvailable() && fieldCorrectable) warmUpAi()
+        if (Prefs.aiAvailable() && fieldSendable) warmUpAi()
     }
 
     override fun onFinishInput() {
@@ -829,6 +842,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      * 이 길로 옮긴다 — AI 교정 버튼이 하는 일과 같은 모양이다.
      */
     override fun onTranslateField() {
+        if (!fieldSendable) {
+            notify(getString(R.string.sensitive_field_blocked))
+            return
+        }
         if (polishing || aiBusy) {
             notify(getString(R.string.ai_busy))
             return
@@ -964,6 +981,12 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onAiCorrect() {
+        // 단추를 감추는 것만 믿지 않는다. 감추기는 화면의 일이고, 이 줄은 글이 기기 밖으로
+        // 나가는 마지막 문이다. 문은 문대로 잠가 둔다.
+        if (!fieldSendable) {
+            notify(getString(R.string.sensitive_field_blocked))
+            return
+        }
         if (translating) {
             notify(getString(R.string.translate_blocks_ai))
             return
@@ -1163,6 +1186,25 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      * 멀쩡한 입력란에서 교정이 통째로 꺼졌다. 그 플래그는 "추천 단어를 띄우지 말라"는
      * 뜻이지 "맞춤법을 고치지 말라"는 뜻이 아니고, 한국어 앱들이 습관적으로 켜 둔다.
      */
+    /**
+     * 이 입력란의 글을 서버로 보내도 되는가.
+     *
+     * 교정해도 되는 칸이어야 하고([isCorrectableField]), 그 위에 앱이 **"이 입력은
+     * 학습하거나 저장하지 마라"** 고 표시하지 않아야 한다.
+     *
+     * 그 표시(`NO_PERSONALIZED_LEARNING`)를 실시간 교정까지 막는 데에는 쓰지 않는다.
+     * 기기 안 교정은 아무것도 남기지 않으므로 그 표시가 말리는 일을 애초에 하지 않고,
+     * 한국어 앱들이 이런 플래그를 습관적으로 켜 두어서 막으면 멀쩡한 칸에서 교정이
+     * 통째로 꺼진다. 막아야 할 것은 **글이 남의 컴퓨터로 가는 것**이다.
+     */
+    private fun isSendableField(info: EditorInfo?): Boolean {
+        if (!isCorrectableField(info)) return false
+        // inputType 이 아니라 imeOptions 에 실려 온다. 상수는 컴파일 때 값으로 박히므로
+        // 옛 안드로이드에서도 그냥 0 과 비교하는 셈이라 안전하다.
+        val options = info?.imeOptions ?: return false
+        return options and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING == 0
+    }
+
     private fun isCorrectableField(info: EditorInfo?): Boolean {
         if (info == null) return false
         val type = info.inputType

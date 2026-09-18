@@ -579,6 +579,14 @@ class KeyboardView @JvmOverloads constructor(
         aiButton.isVisible = available
     }
 
+    /**
+     * 번역 동그라미를 내놓을지. 길게 누르면 입력란의 글이 통째로 서버로 가므로,
+     * 비밀번호 같은 칸에서는 아예 보이지 않아야 한다.
+     */
+    fun setTranslateAvailable(available: Boolean) {
+        translateButton.isVisible = available
+    }
+
     fun setMode(newMode: KeyboardMode) {
         if (mode == newMode) return
         mode = newMode
