@@ -710,7 +710,7 @@ class ContextCorrector(
             val tagAtJunction = spacer?.tagAt(whole, junction)
             val optional =
                 // 명사|명사: 언어모델이 두 조각을 잇달아 충분히 봤을 때만 띄운다.
-                (nounJunction(before, after) && (lm.lnBigramCount(before, after) ?: 0f) < NOUN_SPLIT_MIN_LN) ||
+                (nounJunction(before, after) && !nounSplitWorthIt(before, after)) ||
                     // '-아/-어' 뒤의 용언: 합성동사거나 보조용언.
                     (endsWithAEo(before) && tagAtJunction != null && spacer?.isVerbTag(tagAtJunction) == true) ||
                     // 조사·어미로도 읽히는 한 음절('어', '오')을 조각으로 떼어 내지 않는다.
@@ -723,10 +723,45 @@ class ContextCorrector(
         return if (out.size < 2) null else out.joinToString(" ")
     }
 
-    /** '-아/-어' 꼴로 끝나는가: 받침 없이 ㅏ·ㅓ 계열 모음으로 끝난다 (아, 어, 해, 봐, 줘, 겨, 려…). */
+    /**
+     * 명사|명사 자리를 사전이 나눈 대로 둘 것인가.
+     *
+     * 합성어('고속도로')를 지키려고 기본은 "도로 붙인다" 다. 근거가 둘 중 하나는 있어야
+     * 나눈 채로 둔다.
+     *
+     * - **두 조각이 잇달아 쓰인 것을 봤다**([NOUN_SPLIT_MIN_LN]). 가장 센 근거다.
+     * - **두 조각이 저마다 흔한 낱말이다**([NOUN_SPLIT_MIN_PIECE_LN]). 말뭉치가 6천만
+     *   어절뿐이라 멀쩡한 짝도 대부분 안 나온다 — '오늘 날씨가' 조차 없다. 그래서
+     *   연쇄만 요구하면 '오늘날씨가'·'지금통화'·'감기조심해'가 영영 안 풀린다.
+     */
+    private fun nounSplitWorthIt(before: String, after: String): Boolean {
+        if ((lm.lnBigramCount(before, after) ?: 0f) >= NOUN_SPLIT_MIN_LN) return true
+        val left = lm.lnCount(before) ?: return false
+        val right = lm.lnCount(after) ?: return false
+        return left >= NOUN_SPLIT_MIN_PIECE_LN && right >= NOUN_SPLIT_MIN_PIECE_LN
+    }
+
+    /**
+     * **보조적 연결어미 '-아/-어'** 로 끝나는가 (좋아, 들어, 해, 봐, 줘, 남아…).
+     *
+     * 이게 참이면 뒤에 오는 용언은 보조용언이거나 합성동사의 뒷말이라, 띄어도 붙여도
+     * 맞는 자리다 — 그래서 사전이 나눈 것을 도로 붙인다.
+     *
+     * 예전에는 **마지막 음절의 모양만** 봤다(받침 없이 ㅏ·ㅓ 계열). 그게 너무 헐거웠다.
+     * '비가'·'내가'(체언+조사), '받아서'·'먹었어'(연결·종결어미)가 죄다 걸려서,
+     * 사전이 제대로 나눈 '비가 왔어'·'받아서 미안'·'먹었어 고마워'를 도로 붙이고
+     * 있었다. 셋을 더 본다.
+     *
+     * - **어미로 끝나야 한다.** '비가'는 조사(JKS)로 끝난다.
+     * - **'-아서/-어서'는 아니다.** 이 어미 뒤에는 보조용언이 오지 않는다.
+     * - **'-았어/-었어'도 아니다.** 앞 음절 받침이 ㅆ 이면 지난 일을 말하는 종결어미다.
+     */
     private fun endsWithAEo(text: String): Boolean {
         val (_, jung, jong) = Hangul.decompose(text.last()) ?: return false
-        return jong == 0 && Hangul.JUNGSEONG[jung] in A_EO_VOWELS
+        if (jong != 0 || Hangul.JUNGSEONG[jung] !in A_EO_VOWELS) return false
+        if (text.last() == '서') return false
+        if (text.last() == '어' && text.length >= 2 && Hangul.jongseongOf(text[text.length - 2]) == 'ㅆ') return false
+        return tagsOf(text)?.second?.startsWith("E") == true
     }
 
     /** [Spacer.cost] 를 기억해 두고 돌려준다. 사전이 없으면 null. */
@@ -827,6 +862,9 @@ class ContextCorrector(
         /** 명사|명사 자리를 띄우려면 두 조각의 연쇄 빈도가 이만큼은 돼야 한다. ln(33). */
         const val NOUN_SPLIT_MIN_LN = 3.5f
 
+        /** 연쇄를 못 봤을 때, 두 조각이 저마다 이만큼은 흔해야 나눈 채로 둔다. */
+        const val NOUN_SPLIT_MIN_PIECE_LN = 6.0f
+
         /**
          * 없던 띄어쓰기를 넣는 비용. 나뉜 조각이 모두 아는 어절이어야 하므로 싸게 둔다.
          *
@@ -911,7 +949,18 @@ class ContextCorrector(
 
         /** 이 태그로 끝나면 어절이 끝난 것이다. 조사 전부와 관형사(MM), 관형형 어미(ETM). */
         private val BOUNDARY_TAILS =
-            setOf("JKS", "JKC", "JKG", "JKO", "JKB", "JKV", "JKQ", "JX", "JC", "MM", "ETM")
+            setOf(
+                "JKS", "JKC", "JKG", "JKO", "JKB", "JKV", "JKQ", "JX", "JC", "MM", "ETM",
+                // 어미로 끝난 어절도 거기서 끝난다 — 연결어미('먹어서|미안'), 종결어미
+                // ('먹었어|고마워'). 어미 뒤에 올 수 있는 것은 보조사뿐이다.
+                "EC", "EF",
+                // 어미로 끝난 어절도 거기서 끝난다 — 연결어미('먹어서|미안'), 종결어미
+                // ('먹었어|고마워'). 어미 뒤에 올 수 있는 것은 보조사뿐이고, 딴 낱말이
+                // 이어 붙을 수는 없다.
+                //
+                // '돌아|가다'처럼 '-아/-어' 뒤에 용언이 붙는 합성동사·보조용언은 아래
+                // [endsWithAEo] 금지가 따로 막는다.
+            )
 
         /** 이 아래로 자연스러우면 벌점을 다 문다. 한 낱말들의 중앙값이 -1331 쯤이다. */
         const val WELL_FORMED_FIRM_COST = 0
@@ -924,7 +973,7 @@ class ContextCorrector(
          *
          * 모르는 말은 한 낱말이라는 증거가 형태소 분석 하나뿐이라 약하다. 그래서 덜 지킨다.
          */
-        const val UNSEEN_WELL_FORMED_FACTOR = 0.6f
+        const val UNSEEN_WELL_FORMED_FACTOR = 0.4f
 
         const val MAX_TOKEN_SYLLABLES = 14
         const val MAX_FREE_SYLLABLES = 8
