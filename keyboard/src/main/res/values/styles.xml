@@ -130,48 +130,23 @@
         <item name="android:textSize">12sp</item>
     </style>
 
-    <!-- 사용법 줄. 머리를 누르면 몸이 펴진다. -->
-    <style name="GuideItem">
+    <!-- 사용법 그림 밑의 '손가락으로 하는 것' 줄. -->
+    <style name="GestureName">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:orientation">vertical</item>
-    </style>
-
-    <style name="GuideHead">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:minHeight">52dp</item>
-        <item name="android:orientation">horizontal</item>
-        <item name="android:gravity">center_vertical</item>
-        <item name="android:clickable">true</item>
-        <item name="android:focusable">true</item>
-        <item name="android:paddingVertical">6dp</item>
-    </style>
-
-    <style name="GuideHeadText">
-        <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_weight">1</item>
-        <item name="android:layout_marginEnd">12dp</item>
+        <item name="android:layout_marginTop">14dp</item>
         <item name="android:textColor">@color/toss_text</item>
-        <item name="android:textSize">16sp</item>
+        <item name="android:textSize">15sp</item>
         <item name="android:textStyle">bold</item>
     </style>
 
-    <style name="GuideChevron">
-        <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:textColor">@color/toss_text3</item>
-        <item name="android:textSize">14sp</item>
-    </style>
-
-    <style name="GuideBody">
+    <style name="GestureDesc">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:paddingBottom">16dp</item>
+        <item name="android:layout_marginTop">3dp</item>
         <item name="android:textColor">@color/toss_text2</item>
         <item name="android:textSize">14sp</item>
-        <item name="android:lineSpacingExtra">5dp</item>
-        <item name="android:visibility">gone</item>
+        <item name="android:lineSpacingExtra">4dp</item>
     </style>
+
 </resources>

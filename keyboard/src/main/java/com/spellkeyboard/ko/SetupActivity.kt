@@ -7,10 +7,8 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
-import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.CompoundButton
-import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -29,6 +27,7 @@ import androidx.core.view.isVisible
  * 마는 것이 아래에 온다. API 키나 모델 이름 같은 내부 사정은 보여 주지 않는다.
  *
  * 사용법이 써 보기 바로 밑인 이유: 쳐 보다가 "이건 뭐지" 싶을 때 눈이 가는 자리다.
+ * 그 칸은 [ToolbarGuideView] 가 알아서 그리고 눌린 것을 가리키므로 여기서 묶을 것이 없다.
  */
 class SetupActivity : AppCompatActivity() {
 
@@ -66,7 +65,6 @@ class SetupActivity : AppCompatActivity() {
         }
 
         bindSetup()
-        bindGuide()
         bindCorrection()
         bindKeyboard()
     }
@@ -122,33 +120,6 @@ class SetupActivity : AppCompatActivity() {
             pill.setText(R.string.setup_open)
             pill.setBackgroundResource(R.drawable.bg_button_secondary)
             pill.setTextColor(ContextCompat.getColor(this, R.color.toss_text))
-        }
-    }
-
-    // --- 사용법 ---------------------------------------------------------------
-
-    /**
-     * 사용법 줄을 접었다 폈다 하게 만든다.
-     *
-     * **줄마다 id 를 달지 않는다.** 열한 줄에 id 를 서른셋 달아 놓으면 줄을 하나
-     * 더할 때마다 이 파일도 같이 고쳐야 한다. 생김새가 모두 같으니 자리로 찾는다 —
-     * 줄 안에서 첫째가 머리, 둘째가 몸, (있다면) 셋째가 구분선이다.
-     *
-     * 펼친 상태는 기억하지 않는다. 한 번 읽고 마는 글이라 다음에 열었을 때 열한 줄이
-     * 펼쳐져 있으면 성가시기만 하다.
-     */
-    private fun bindGuide() {
-        val list = findViewById<LinearLayout>(R.id.guide_list) ?: return
-        for (index in 0 until list.childCount) {
-            val item = list.getChildAt(index) as? ViewGroup ?: continue
-            val head = item.getChildAt(0) as? ViewGroup ?: continue
-            val chevron = head.getChildAt(1) as? TextView ?: continue
-            val body = item.getChildAt(1) ?: continue
-            head.setOnClickListener {
-                val opening = !body.isVisible
-                body.isVisible = opening
-                chevron.setText(if (opening) R.string.guide_opened else R.string.guide_closed)
-            }
         }
     }
 
