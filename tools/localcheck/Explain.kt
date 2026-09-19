@@ -13,6 +13,12 @@ fun main(args: Array<String>) {
     val context = ContextCorrector(lm, spacer)
     val engine = CorrectionEngine().apply { this.spacer = spacer; this.context = context }
 
+    // 한 음절 조각을 조사·어미로 볼 것이냐가 '잘해결됐어' 류를 가른다. 사전 판정과
+    // 어절 빈도를 나란히 찍는다 — SINGLE_WORD_MIN_LN 을 정할 때 본 표다.
+    println("한 음절: " + "잘더다안나가서어오는을이과와도만은".map {
+        it + "=" + spacer.couldBeBound(it.toString()) + "/" +
+            (lm.lnCount(it.toString())?.let { c -> "%.1f".format(c) } ?: "모름")
+    }.joinToString(" "))
     for (line in File(args[0]).readLines().filter { it.isNotBlank() }) {
         println("═".repeat(70))
         println("입력: $line")

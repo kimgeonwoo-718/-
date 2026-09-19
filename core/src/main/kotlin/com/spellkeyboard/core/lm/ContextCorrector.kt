@@ -714,7 +714,7 @@ class ContextCorrector(
                     // '-아/-어' 뒤의 용언: 합성동사거나 보조용언.
                     (endsWithAEo(before) && tagAtJunction != null && spacer?.isVerbTag(tagAtJunction) == true) ||
                     // 조사·어미로도 읽히는 한 음절('어', '오')을 조각으로 떼어 내지 않는다.
-                    (before.length == 1 && couldBeBound(before)) || (after.length == 1 && couldBeBound(after)) ||
+                    boundOnlyPiece(before) || boundOnlyPiece(after) ||
                     // 체언 뒤의 '받다·당하다·시키다·드리다' 는 한 낱말('발급받았다').
                     (ATTACHABLE_VERBS.any { after.startsWith(it) } && endsNominal(before))
             if (optional) out[out.size - 1] = before + after else out += after
@@ -722,6 +722,19 @@ class ContextCorrector(
         }
         return if (out.size < 2) null else out.joinToString(" ")
     }
+
+    /**
+     * 한 음절짜리 조각을 "조사·어미일 뿐" 으로 보아 도로 붙일 것인가.
+     *
+     * 형태소 사전은 '잘'·'더'·'다'·'안'을 조사나 어미로도 읽는다. 그런데 이것들은 부사로
+     * **홀로 서는 일이 훨씬 잦다.** 사전 말만 듣고 도로 붙이면 '잘해결됐어'·'딱좋은'·
+     * '더자고'·'밥을다'가 영영 안 풀린다 — 도로 붙이는 순간 "사전이 나눴다" 는 사실이
+     * 사라져서 디코더는 그 덩어리를 드문 한 낱말로 보게 된다.
+     *
+     * 그래서 말뭉치에 **어절로** 얼마나 나왔는지를 같이 본다([SINGLE_WORD_MIN_LN]).
+     */
+    private fun boundOnlyPiece(piece: String): Boolean =
+        piece.length == 1 && couldBeBound(piece) && (lm.lnCount(piece) ?: 0f) < SINGLE_WORD_MIN_LN
 
     /**
      * 명사|명사 자리를 사전이 나눈 대로 둘 것인가.
@@ -864,6 +877,20 @@ class ContextCorrector(
 
         /** 연쇄를 못 봤을 때, 두 조각이 저마다 이만큼은 흔해야 나눈 채로 둔다. */
         const val NOUN_SPLIT_MIN_PIECE_LN = 6.0f
+
+        /**
+         * 한 음절짜리 조각이 이만큼 흔하면 조사·어미가 아니라 낱말로 본다.
+         *
+         * 말뭉치에서 **어절로** 몇 번 나왔나를 센 값이다. 가르는 선이 여기 있다.
+         *
+         *     부사·대명사   잘 11.3  더 12.1  다 11.4  안 11.1
+         *     조사·어미     는 8.8  은 8.6  도 8.6  과 8.4  을 9.4  와 9.1
+         *     그 사이       서 10.4  나 9.8  어 9.8  오 9.6  가 9.6
+         *
+         * 11 로 두면 위 넷만 낱말로 친다. 9 까지 내리면 구어체 복원이 0.5%p 더 오르지만
+         * '서'·'어'까지 낱말이 되면서 격식체 오교정이 하나 는다.
+         */
+        const val SINGLE_WORD_MIN_LN = 11f
 
         /**
          * 없던 띄어쓰기를 넣는 비용. 나뉜 조각이 모두 아는 어절이어야 하므로 싸게 둔다.
