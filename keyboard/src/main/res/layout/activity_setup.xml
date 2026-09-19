@@ -96,6 +96,125 @@
                 android:textSize="16sp" />
         </LinearLayout>
 
+        <!--
+          사용법. 방금 써 본 바로 밑에 둔다 — 쳐 보다가 "이건 뭐지" 싶을 때 눈이 가는
+          자리가 거기다. 열한 줄을 다 펼쳐 두면 설정이 글 벽이 되므로 누를 때만 펴진다.
+          줄 하나가 곧 기능 하나라, 기능이 늘면 줄을 더한다.
+        -->
+        <LinearLayout style="@style/Card">
+            <TextView style="@style/CardTitle" android:text="@string/section_guide" />
+            <TextView
+                style="@style/RowSub"
+                android:layout_marginTop="6dp"
+                android:text="@string/guide_intro" />
+
+            <LinearLayout
+                android:id="@+id/guide_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="vertical">
+
+            <LinearLayout style="@style/GuideItem">
+                <LinearLayout style="@style/GuideHead">
+                    <TextView style="@style/GuideHeadText" android:text="@string/guide_toolbar_title" />
+                    <TextView style="@style/GuideChevron" android:text="@string/guide_closed" />
+                </LinearLayout>
+                <TextView style="@style/GuideBody" android:text="@string/guide_toolbar_body" />
+                <View style="@style/Divider" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/GuideItem">
+                <LinearLayout style="@style/GuideHead">
+                    <TextView style="@style/GuideHeadText" android:text="@string/guide_all_title" />
+                    <TextView style="@style/GuideChevron" android:text="@string/guide_closed" />
+                </LinearLayout>
+                <TextView style="@style/GuideBody" android:text="@string/guide_all_body" />
+                <View style="@style/Divider" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/GuideItem">
+                <LinearLayout style="@style/GuideHead">
+                    <TextView style="@style/GuideHeadText" android:text="@string/guide_live_title" />
+                    <TextView style="@style/GuideChevron" android:text="@string/guide_closed" />
+                </LinearLayout>
+                <TextView style="@style/GuideBody" android:text="@string/guide_live_body" />
+                <View style="@style/Divider" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/GuideItem">
+                <LinearLayout style="@style/GuideHead">
+                    <TextView style="@style/GuideHeadText" android:text="@string/guide_translate_title" />
+                    <TextView style="@style/GuideChevron" android:text="@string/guide_closed" />
+                </LinearLayout>
+                <TextView style="@style/GuideBody" android:text="@string/guide_translate_body" />
+                <View style="@style/Divider" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/GuideItem">
+                <LinearLayout style="@style/GuideHead">
+                    <TextView style="@style/GuideHeadText" android:text="@string/guide_space_title" />
+                    <TextView style="@style/GuideChevron" android:text="@string/guide_closed" />
+                </LinearLayout>
+                <TextView style="@style/GuideBody" android:text="@string/guide_space_body" />
+                <View style="@style/Divider" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/GuideItem">
+                <LinearLayout style="@style/GuideHead">
+                    <TextView style="@style/GuideHeadText" android:text="@string/guide_longpress_title" />
+                    <TextView style="@style/GuideChevron" android:text="@string/guide_closed" />
+                </LinearLayout>
+                <TextView style="@style/GuideBody" android:text="@string/guide_longpress_body" />
+                <View style="@style/Divider" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/GuideItem">
+                <LinearLayout style="@style/GuideHead">
+                    <TextView style="@style/GuideHeadText" android:text="@string/guide_cheonjiin_title" />
+                    <TextView style="@style/GuideChevron" android:text="@string/guide_closed" />
+                </LinearLayout>
+                <TextView style="@style/GuideBody" android:text="@string/guide_cheonjiin_body" />
+                <View style="@style/Divider" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/GuideItem">
+                <LinearLayout style="@style/GuideHead">
+                    <TextView style="@style/GuideHeadText" android:text="@string/guide_clipboard_title" />
+                    <TextView style="@style/GuideChevron" android:text="@string/guide_closed" />
+                </LinearLayout>
+                <TextView style="@style/GuideBody" android:text="@string/guide_clipboard_body" />
+                <View style="@style/Divider" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/GuideItem">
+                <LinearLayout style="@style/GuideHead">
+                    <TextView style="@style/GuideHeadText" android:text="@string/guide_emoji_title" />
+                    <TextView style="@style/GuideChevron" android:text="@string/guide_closed" />
+                </LinearLayout>
+                <TextView style="@style/GuideBody" android:text="@string/guide_emoji_body" />
+                <View style="@style/Divider" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/GuideItem">
+                <LinearLayout style="@style/GuideHead">
+                    <TextView style="@style/GuideHeadText" android:text="@string/guide_look_title" />
+                    <TextView style="@style/GuideChevron" android:text="@string/guide_closed" />
+                </LinearLayout>
+                <TextView style="@style/GuideBody" android:text="@string/guide_look_body" />
+                <View style="@style/Divider" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/GuideItem">
+                <LinearLayout style="@style/GuideHead">
+                    <TextView style="@style/GuideHeadText" android:text="@string/guide_privacy_title" />
+                    <TextView style="@style/GuideChevron" android:text="@string/guide_closed" />
+                </LinearLayout>
+                <TextView style="@style/GuideBody" android:text="@string/guide_privacy_body" />
+            </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+
         <!-- 교정 -->
         <LinearLayout style="@style/Card">
             <TextView style="@style/CardTitle" android:text="@string/section_correction" />
