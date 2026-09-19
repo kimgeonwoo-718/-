@@ -137,6 +137,111 @@ class CorrectionEngineTest {
     }
 
     @Test
+    fun `관형형 뒤의 의존명사들을 띄운다`() {
+        assertEquals("갈 거야", fix("갈거야"))
+        assertEquals("할 거예요", fix("할거예요"))
+        assertEquals("먹을 게 없어", fix("먹을게없어"))
+        assertEquals("어떻게 된 건지", fix("어떻게 된건지"))
+        assertEquals("갈 데가 없다", fix("갈데가 없다"))
+        assertEquals("아는 만큼 보인다", fix("아는만큼 보인다"))
+        assertEquals("갔을 뿐이다", fix("갔을뿐이다"))
+        assertEquals("생각한 바가 있다", fix("생각한바가 있다"))
+        assertEquals("입은 채로 잤다", fix("입은채로 잤다"))
+        assertEquals("아는 척도 안 한다", fix("아는척도 안 한다"))
+        assertEquals("그럴 리가 없다", fix("그럴리가 없다"))
+        assertEquals("다칠 뻔했다", fix("다칠뻔했다"))
+        assertEquals("볼 만한 영화", fix("볼만한 영화"))
+        assertEquals("가는 중이야", fix("가는중이야"))
+        assertEquals("올 듯 말 듯", fix("올듯말듯"))
+        assertEquals("되는 대로 하자", fix("되는대로 하자"))
+        assertEquals("온 지 얼마 안 됐다", fix("온지 얼마 안 됐다"))
+    }
+
+    @Test
+    fun `의존명사처럼 생겼지만 아닌 자리는 건드리지 않는다`() {
+        // '-는데'(어미)와 의존명사 '데'는 **조사를 받을 수 있느냐**로 갈린다.
+        assertUntouched("노력했는데도 안 됐다")
+        assertUntouched("그런데도 계속했다")
+        // 조사 '만큼'·'뿐'은 체언에 붙여 쓴다.
+        assertUntouched("돈만큼 중요한 것")
+        assertUntouched("사람뿐이었다")
+        // '-ㄹ게'(어미)는 뒤가 서술어가 아니라 갈리지 않는다.
+        assertUntouched("내가 할게요")
+        // '리'로 끝나는 용언.
+        assertUntouched("빨리 가자")
+        assertUntouched("격주로 열리는 행사")
+        // '만' 은 조사이기도 하다.
+        assertUntouched("일만 하고 살았다")
+        // '대로' 도 조사이기도 하다.
+        assertUntouched("절대로 안 된다")
+        // '건'으로 끝나는 명사.
+        assertUntouched("다음 안건지 확인해 주세요")
+        // '무한대' 는 한 낱말이다.
+        assertUntouched("무한대로 늘어난다")
+    }
+
+    @Test
+    fun `부정의 못 과 안 을 띄운다`() {
+        assertEquals("못 받아", fix("못받아"))
+        assertEquals("못 갔어", fix("못갔어"))
+        assertEquals("안 가져왔어", fix("안가져왔어"))
+        assertEquals("안 먹어", fix("안먹어"))
+    }
+
+    @Test
+    fun `못 하다 와 안 이 낱말의 일부인 자리는 건드리지 않는다`() {
+        // '못하다' 는 한 낱말이다. 활용형을 통째로 빼지 않으면 격식체가 무너진다.
+        assertUntouched("이해하지 못했다")
+        assertUntouched("알지 못합니다")
+        assertUntouched("못된 짓을 했다")
+        assertUntouched("연못이 얼었다")
+        // '안-' 으로 시작하는 낱말은 아주 많다.
+        assertUntouched("안내를 받았다")
+        assertUntouched("안경을 잃어버렸다")
+        assertUntouched("안녕히 계세요")
+    }
+
+    @Test
+    fun `부사 좀 을 띄운다`() {
+        assertEquals("이것 좀 봐", fix("이것좀 봐"))
+        assertEquals("문 좀 닫아", fix("문 좀닫아"))
+        assertUntouched("좀도둑이 들었다")
+    }
+
+    @Test
+    fun `보조용언 고 싶다 와 지 마 를 띄운다`() {
+        assertEquals("보고 싶다", fix("보고싶다"))
+        assertEquals("걱정하지 마", fix("걱정하지마"))
+        assertEquals("가지 마라", fix("가지마라"))
+    }
+
+    @Test
+    fun `수관형사와 단위 의존명사를 띄운다`() {
+        assertEquals("세 개만", fix("세개만"))
+        assertEquals("두 번 다시", fix("두번 다시"))
+        assertEquals("다섯 시까지", fix("다섯시까지"))
+        assertEquals("이십 분 정도", fix("이십분 정도"))
+        assertEquals("삼십 분 뒤", fix("삼십분 뒤"))
+        assertEquals("백 원짜리", fix("백원짜리"))
+        assertEquals("몇 시쯤", fix("몇시쯤"))
+        assertEquals("열 명쯤", fix("열명쯤"))
+    }
+
+    @Test
+    fun `수관형사로 보이지만 낱말 속인 자리는 건드리지 않는다`() {
+        // 이것 하나가 없으면 격식체가 통째로 무너진다.
+        assertUntouched("확인해 주십시오")
+        assertUntouched("말씀하십시오")
+        // 수관형사는 어절 첫머리에서만 본다.
+        assertUntouched("천장이 높다")
+        assertUntouched("백분율을 구했다")
+        // 한 낱말로 굳은 것들.
+        assertUntouched("두통이 심하다")
+        assertUntouched("세계 여행")
+        assertUntouched("열대 지방")
+    }
+
+    @Test
     fun `홀로 떨어진 조사를 앞말에 붙인다`() {
         assertEquals("학교에서 만나자", fix("학교 에서 만나자"))
         assertEquals("나는 간다", fix("나 는 간다"))

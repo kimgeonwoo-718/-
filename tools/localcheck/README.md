@@ -10,10 +10,11 @@
 
 | | 무엇을 | 얼마나 |
 |---|---|---|
-| `test-core.sh` | 코어 단위 시험 228개 | 1초 |
+| `test-core.sh` | 코어 단위 시험 240개 | 1초 |
 | `typecheck-keyboard.sh` | 키보드 모듈 코틀린 타입 검사 | 30초 |
 | `try.sh` | **진짜 엔진에 글을 넣어 보고 결과를 본다** | 40초 |
-| `measure-spacing.sh` | **띄어쓰기 고침이 이득인지 손해인지 잰다** | 40초 |
+| `measure-spacing.sh` | **띄어쓰기 고침이 이득인지 손해인지 잰다** (회귀 그물) | 40초 |
+| `eval-spacing.sh` | **띄어쓰기 품질을 네 잣대로 잰다** (자) | 2~6분 |
 
 `try.sh` 는 "실기기에서 이 말이 안 고쳐진다" 는 제보를 재현할 때 쓴다. 단위 시험은
 규칙만 켜 놓고 돌지만 이쪽은 사전과 언어모델까지 올린다 — 그래서 결과가 다를 수 있고,
@@ -41,6 +42,35 @@ Kiwi 는 안 올라간다(안드로이드용 AAR 이라). 공백을 아예 안 �
 
 시험지는 `tools/localcheck/spacing/` 에 있다(50문장). 한계도 거기 적어 뒀다 — 회귀를 잡는
 그물이지 정확도를 재는 자가 아니다.
+
+## `eval-spacing.sh`
+
+`measure-spacing.sh` 가 50문장짜리 **회귀 그물**이라면 이쪽은 **자**다. 얼마나 좋은지를 잰다.
+
+    tools/localcheck/eval-spacing.sh                  붙어 있는 구어체 230문장
+    EVAL_SHOW=40 tools/localcheck/eval-spacing.sh     틀린 것을 찍는다
+    EVAL_LIMIT=400 SPELL_EVAL_FILES=a.tsv,b.tsv ...   격식체까지
+
+네 가지를 따로 잰다. **하나만 보고 고치면 나머지가 조용히 나빠진다.**
+
+1. **멀쩡한 글 건드림** — 제일 중요하다. 이걸 올리는 변경은 나머지를 아무리 올려도 손해다.
+2. **공백 하나 복원** — 실시간 교정이 실제로 만나는 입력.
+3. **절반 지움** — 급히 친 글. 경계 정밀도/재현율/F1.
+4. **전부 지움** — 전체교정이 만나는 최악.
+
+시험지는 둘이다.
+
+- `spacing/chat.txt` (저장소에 있다) — 이 키보드에 실제로 칠 법한 구어체 230문장.
+  **보조용언은 붙여 쓴 꼴을 정답으로 뒀다**(한글 맞춤법 제47항 허용). 사람들이 그렇게
+  치고, 엔진이 손대지 않는 것이 맞기 때문이다. 원칙대로 띄어 쓴 꼴을 정답으로 두면
+  "둘 다 맞는 것" 을 틀렸다고 세게 된다.
+- `SPELL_EVAL_FILES` — 말뭉치 밖 격식체(KorNLI). 이 컨테이너에서 받을 수 있다:
+
+      curl -fsSL -O https://raw.githubusercontent.com/kakaobrain/kor-nlu-datasets/master/KorNLI/xnli.dev.ko.tsv
+      curl -fsSL -O https://raw.githubusercontent.com/kakaobrain/kor-nlu-datasets/master/KorNLI/xnli.test.ko.tsv
+
+Kiwi 는 여기 없다(안드로이드 AAR). 3·4번은 실기기보다 나쁘게 나온다 — **견주는 데 쓰지,
+실기기 성능이라고 읽지 마라.**
 
 ## 어떻게 되는가
 
