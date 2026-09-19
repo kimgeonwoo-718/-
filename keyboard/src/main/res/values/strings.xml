@@ -137,15 +137,6 @@
     <string name="guide_settings_name">설정</string>
     <string name="guide_settings_desc">지금 보고 있는 이 화면을 열어요.</string>
 
-    <!-- 가리킬 단추가 없는 것들. 손가락으로 하는 동작이라 그림 밑에 따로 적는다. -->
-    <string name="guide_gestures">손가락으로 하는 것</string>
-    <string name="guide_gesture_space">스페이스 꾹 누르고 좌우로 끌기</string>
-    <string name="guide_gesture_space_desc">커서가 한 글자씩 움직여요. 글 가운데 오타를 고칠 때 손으로 콕 집는 것보다 정확해요.</string>
-    <string name="guide_gesture_long">자음 길게 누르기</string>
-    <string name="guide_gesture_long_desc">쌍자음이 바로 나와요. ㄱ → ㄲ, ㅅ → ㅆ 처럼요. 숫자를 길게 누르면 그 자리의 기호가 들어가요.</string>
-    <string name="guide_gesture_undo">고쳐진 직후 ⌫</string>
-    <string name="guide_gesture_undo_desc">글자가 지워지는 대신 교정이 되돌아가요. 고친 게 마음에 안 들 때 쓰세요.</string>
-
     <plurals name="correct_all_done">
         <item quantity="other">%d곳을 고쳤어요</item>
     </plurals>
