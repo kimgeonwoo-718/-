@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  결제 화면. 챗GPT Plus 업그레이드 화면의 구조를 따른다 — 동그란 뒤로 가기, 큰 제목
-  (요금제 이름만 파랗게), 무료|프리미엄 알약, 기능 비교표(✓ / — / 숫자), "구독 복원",
-  검은 알약 버튼, 갱신 안내 한 줄.
+  결제 화면. 동그란 뒤로 가기, 큰 제목 "프리미엄", 무료와 프리미엄을 나란히 놓은
+  비교표(✓ / ✗ / 숫자), "구독 복원", 검은 알약 버튼, 갱신 안내 한 줄.
 
-  비교표의 줄들은 PaywallActivity 가 코드로 채운다. 숫자는 서버 한도에서 계산되므로
-  여기 박아 두면 어긋난다. 제목의 파란 글자도 코드에서 칠한다.
+  예전에는 제목 밑에 무료|프리미엄 알약이 있어서 눌러 볼 수 있었는데, 눌러도 아래
+  버튼 글자만 바뀌었다. 고를 것이 없는 화면에 고르는 척하는 부품은 없느니만 못해서
+  뺐다 — 비교는 표가 하고, 이 화면의 일은 "프리미엄이 무엇인가" 하나다.
+
+  비교표의 줄들은 PaywallActivity 가 코드로 채운다. 횟수는 서버 한도에서 계산되므로
+  여기 박아 두면 어긋난다.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -42,12 +45,22 @@
                 android:textSize="24sp" />
 
             <TextView
-                android:id="@+id/paywall_title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="28dp"
-                android:textColor="@color/toss_text"
-                android:textSize="34sp"
+                android:text="@string/paywall_title_app"
+                android:textColor="@color/toss_text3"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/paywall_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:includeFontPadding="false"
+                android:text="@string/paywall_title_plan"
+                android:textColor="@color/toss_blue"
+                android:textSize="44sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -57,42 +70,6 @@
                 android:text="@string/paywall_headline"
                 android:textColor="@color/toss_text2"
                 android:textSize="16sp" />
-
-            <!-- 무료 | 프리미엄 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="52dp"
-                android:layout_marginTop="22dp"
-                android:background="@drawable/bg_plan_segment"
-                android:orientation="horizontal"
-                android:padding="2dp">
-                <TextView
-                    android:id="@+id/paywall_seg_free"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_plan_segment_item"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:gravity="center"
-                    android:text="@string/paywall_col_free"
-                    android:textColor="@color/toss_text"
-                    android:textSize="17sp"
-                    android:textStyle="bold" />
-                <TextView
-                    android:id="@+id/paywall_seg_premium"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_plan_segment_item"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:gravity="center"
-                    android:text="@string/paywall_col_premium"
-                    android:textColor="@color/toss_text"
-                    android:textSize="17sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
 
             <!-- 기능 비교표 -->
             <LinearLayout

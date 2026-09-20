@@ -51,4 +51,6 @@
     <color name="toss_blue_light">#E8F3FF</color>
     <color name="toss_switch_off">#D1D6DB</color>
     <color name="toss_green">#00B26B</color>
+    <!-- 결제 화면 비교표의 ✗. 무료에 없는 것이 한눈에 보여야 한다. -->
+    <color name="toss_red">#F04452</color>
 </resources>

@@ -536,7 +536,7 @@ class GeminiCorrectorTest {
     @Test
     fun `프리미엄 하루 한도를 다 쓰면 내일을 안내한다`() {
         val explained = GeminiCorrector.explain("sub_daily_limit")
-        assertContains(explained, "2만 자")
+        assertContains(explained, "1만 자")
         assertContains(explained, "내일")
     }
 

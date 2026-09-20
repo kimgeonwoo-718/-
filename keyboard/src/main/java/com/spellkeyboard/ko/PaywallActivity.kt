@@ -2,9 +2,6 @@ package com.spellkeyboard.ko
 
 import android.graphics.Typeface
 import android.os.Bundle
-import android.text.SpannableStringBuilder
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
@@ -16,28 +13,26 @@ import java.util.Locale
 /**
  * 결제 화면.
  *
- * 설정의 "프리미엄" 버튼이 여기로 온다. 챗GPT Plus 업그레이드 화면의 구조를 따른다 —
- * 무료와 프리미엄을 표로 나란히 놓아 무엇을 얼마에 사는지 먼저 보여주고, 그 다음에
- * 결제창이다. 결제 자체는 [BillingManager] 가 Google Play 에 맡긴다.
+ * 설정의 "프리미엄" 버튼이 여기로 온다. 무료와 프리미엄을 표로 나란히 놓아 무엇을
+ * 얼마에 사는지 먼저 보여주고, 그 다음에 결제창이다. 결제 자체는 [BillingManager] 가
+ * Google Play 에 맡긴다.
  *
- * 비교표는 코드로 채운다. 숫자는 서버 한도([DAILY_CHARS])에서 나오므로 레이아웃에 박아
- * 두면 한도를 바꿀 때 어긋난다.
+ * 표의 칸은 **✓ 아니면 ✗** 다. 둘 다 되는 것은 양쪽 ✓, 무료에 없는 것은 무료 쪽 ✗.
+ * 예전에는 "기본 번역"/"AI 번역"처럼 글자로 된 칸이 있었는데, 무엇이 되고 안 되는지가
+ * 한눈에 안 들어왔다. 횟수 줄만 숫자다 — 그것도 무료 쪽은 ✗ 다.
+ *
+ * 횟수는 서버 한도([DAILY_CHARS])에서 계산한다. 레이아웃에 박아 두면 한도를 바꿀 때
+ * 어긋난다.
  */
 class PaywallActivity : AppCompatActivity() {
 
     private var billing: BillingManager? = null
-    private var premiumSelected = true
-
-    private lateinit var segFree: TextView
-    private lateinit var segPremium: TextView
-    private lateinit var cta: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_paywall)
 
         findViewById<View>(R.id.paywall_back).setOnClickListener { finish() }
-        paintTitle(findViewById(R.id.paywall_title))
 
         val status = findViewById<TextView>(R.id.paywall_status)
         billing = BillingManager(this) { message ->
@@ -50,16 +45,7 @@ class PaywallActivity : AppCompatActivity() {
             }
         }.also { it.start() }
 
-        segFree = findViewById(R.id.paywall_seg_free)
-        segPremium = findViewById(R.id.paywall_seg_premium)
-        cta = findViewById(R.id.paywall_cta)
-        segFree.setOnClickListener { selectPlan(premium = false) }
-        segPremium.setOnClickListener { selectPlan(premium = true) }
-        selectPlan(premium = true)
-
-        cta.setOnClickListener {
-            if (premiumSelected) billing?.subscribe(this) else finish()
-        }
+        findViewById<View>(R.id.paywall_cta).setOnClickListener { billing?.subscribe(this) }
         // 다른 기기에서 결제했거나 재설치한 사람. start() 가 Play 에 구매를 다시 물어본다.
         findViewById<View>(R.id.paywall_restore).setOnClickListener { billing?.start() }
 
@@ -72,50 +58,42 @@ class PaywallActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    /** "맞춤법 키보드 프리미엄" — 요금제 이름만 파랗게. */
-    private fun paintTitle(title: TextView) {
-        val app = getString(R.string.paywall_title_app)
-        val plan = getString(R.string.paywall_title_plan)
-        val text = SpannableStringBuilder("$app $plan")
-        text.setSpan(
-            ForegroundColorSpan(ContextCompat.getColor(this, R.color.toss_blue)),
-            app.length + 1,
-            text.length,
-            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-        )
-        title.text = text
-    }
+    /** 표의 한 줄. [free]·[premium] 은 [CHECK], [CROSS], 아니면 그대로 보여 줄 글자. */
+    private class Row(val label: String, val free: String, val premium: String)
 
-    /** 위의 알약과 아래 버튼이 같은 것을 가리키게 한다. */
-    private fun selectPlan(premium: Boolean) {
-        premiumSelected = premium
-        segFree.isSelected = !premium
-        segPremium.isSelected = premium
-        cta.setText(if (premium) R.string.paywall_cta_upgrade else R.string.paywall_cta_free)
-    }
-
-    /** 무료와 프리미엄을 한 줄씩. 칸은 ✓, —, 또는 숫자. */
     private fun fillTable(table: LinearLayout) {
         table.removeAllViews()
-        rows().forEach { (label, free, premium) ->
-            table.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                minimumHeight = dp(60)
-                addView(TextView(context).apply {
-                    text = label
-                    setTextColor(ContextCompat.getColor(context, R.color.toss_text))
-                    textSize = 16f
-                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                addView(cell(free, premium = false), LinearLayout.LayoutParams(dp(64), LinearLayout.LayoutParams.WRAP_CONTENT))
-                addView(cell(premium, premium = true), LinearLayout.LayoutParams(dp(64), LinearLayout.LayoutParams.WRAP_CONTENT))
-            })
-        }
+        for (row in features()) table.addView(rowView(row))
+        table.addView(subheader(getString(R.string.paywall_quota_header, String.format(Locale.KOREA, "%,d", DAILY_CHARS))))
+        for (row in quotaRows()) table.addView(rowView(row))
+    }
+
+    private fun rowView(row: Row): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dp(56)
+        addView(TextView(context).apply {
+            text = row.label
+            setTextColor(ContextCompat.getColor(context, R.color.toss_text))
+            textSize = 15f
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        addView(cell(row.free, premium = false), LinearLayout.LayoutParams(dp(64), LinearLayout.LayoutParams.WRAP_CONTENT))
+        addView(cell(row.premium, premium = true), LinearLayout.LayoutParams(dp(64), LinearLayout.LayoutParams.WRAP_CONTENT))
+    }
+
+    /** 표 가운데 끼는 작은 제목. 횟수 줄들이 무엇을 기준으로 한 숫자인지 말해 준다. */
+    private fun subheader(text: String): View = TextView(this).apply {
+        this.text = text
+        setTextColor(ContextCompat.getColor(context, R.color.toss_text3))
+        textSize = 13f
+        setPadding(0, dp(14), 0, dp(2))
     }
 
     /**
-     * 표의 한 칸. 무료 쪽 ✓ 는 회색, 프리미엄 쪽 ✓ 는 파랑 — 챗GPT 와 같다. — 는 회색.
-     * 숫자는 글자 그대로.
+     * 표의 한 칸.
+     *
+     * ✓ 는 무료 쪽 회색, 프리미엄 쪽 파랑. ✗ 는 빨강 — 무료에 없는 것이 한눈에 보여야
+     * 한다. 숫자는 프리미엄 쪽에만 오므로 파랗고 굵게.
      */
     private fun cell(value: String, premium: Boolean): TextView = TextView(this).apply {
         gravity = Gravity.CENTER
@@ -126,45 +104,53 @@ class PaywallActivity : AppCompatActivity() {
                 setTypeface(typeface, Typeface.BOLD)
                 setTextColor(ContextCompat.getColor(context, if (premium) R.color.toss_blue else R.color.toss_text3))
             }
-            DASH -> {
-                textSize = 18f
-                setTextColor(ContextCompat.getColor(context, R.color.toss_text3))
+            CROSS -> {
+                textSize = 20f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(ContextCompat.getColor(context, R.color.toss_red))
             }
             else -> {
-                textSize = 14f
-                setTypeface(typeface, if (premium) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(ContextCompat.getColor(context, if (premium) R.color.toss_blue else R.color.toss_text2))
+                textSize = 15f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(ContextCompat.getColor(context, R.color.toss_blue))
             }
         }
     }
 
-    private fun rows(): List<Triple<String, String, String>> {
-        // 무료 칸은 전부 — 다. AI 는 프리미엄에만 있다.
-        fun premiumTimes(chars: Int) =
+    /** 위 네 줄은 둘 다 된다. 아래 두 줄이 프리미엄이다. */
+    private fun features(): List<Row> = listOf(
+        Row(getString(R.string.paywall_row_realtime), CHECK, CHECK),
+        Row(getString(R.string.paywall_row_correct_all), CHECK, CHECK),
+        Row(getString(R.string.paywall_row_device_translate), CHECK, CHECK),
+        Row(getString(R.string.paywall_row_keyboard), CHECK, CHECK),
+        Row(getString(R.string.paywall_row_ai), CROSS, CHECK),
+        Row(getString(R.string.paywall_row_ai_translate), CROSS, CHECK)
+    )
+
+    /** 하루 한도로 몇 번인가. 무료는 AI 를 아예 못 쓰니 ✗ 다. */
+    private fun quotaRows(): List<Row> {
+        fun times(chars: Int) =
             getString(R.string.paywall_times, String.format(Locale.KOREA, "%,d", DAILY_CHARS / chars))
         return listOf(
-            Triple(getString(R.string.paywall_row_realtime), CHECK, CHECK),
-            Triple(getString(R.string.paywall_row_keyboard), CHECK, CHECK),
-            Triple(
-                getString(R.string.paywall_row_translate),
-                getString(R.string.paywall_free_translate),
-                getString(R.string.paywall_premium_translate)
-            ),
-            Triple(getString(R.string.paywall_row_ai), getString(R.string.paywall_free_ai), getString(R.string.paywall_premium_ai)),
-            Triple(getString(R.string.paywall_row_100), DASH, premiumTimes(100)),
-            Triple(getString(R.string.paywall_row_500), DASH, premiumTimes(500)),
-            Triple(getString(R.string.paywall_row_2000), DASH, premiumTimes(2_000))
+            Row(getString(R.string.paywall_row_100), CROSS, times(100)),
+            Row(getString(R.string.paywall_row_500), CROSS, times(500)),
+            Row(getString(R.string.paywall_row_2000), CROSS, times(2_000))
         )
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        /** 서버의 SUB_DAILY_CHARS 와 같아야 한다. 서버가 실제 한도이고 이건 안내다. */
-        const val DAILY_CHARS = 20_000
+        /**
+         * 서버의 SUB_DAILY_CHARS 와 같아야 한다. 서버가 실제 한도이고 이건 안내다.
+         *
+         * 1만 자인 이유는 server/src/quota.js 머리말에 있다 — 어떻게 쓰든 구독 하나가
+         * 적자를 못 내는 선이다.
+         */
+        const val DAILY_CHARS = 10_000
 
         private const val CHECK = "✓"
-        private const val DASH = "—"
+        private const val CROSS = "✗"
         private const val CLOSE_AFTER_MS = 1500L
     }
 }

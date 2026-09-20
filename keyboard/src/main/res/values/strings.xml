@@ -34,9 +34,6 @@
     <string name="translate_blocks_ai">번역 중에는 AI 교정을 쓸 수 없어요</string>
     <string name="translate_ai_failed">자연스러운 번역 실패: %1$s</string>
     <string name="translate_premium_only">자연스러운 번역은 프리미엄 기능이에요. 번역 동그라미를 짧게 누르면 기기 번역을 쓸 수 있어요</string>
-    <string name="paywall_row_translate">현지인처럼 자연스러운 번역</string>
-    <string name="paywall_free_translate">기본 번역</string>
-    <string name="paywall_premium_translate">AI 번역</string>
     <string name="ai_busy">이미 교정하는 중입니다</string>
     <string name="ai_no_connection">입력란과 연결되지 않았습니다</string>
     <!-- 비밀번호·이메일 칸처럼 글을 밖으로 내보내면 안 되는 곳에서 서버 기능을 눌렀을 때. -->
@@ -77,18 +74,23 @@
     <string name="paywall_col_features">주요 기능</string>
     <string name="paywall_col_free">무료</string>
     <string name="paywall_col_premium">프리미엄</string>
+    <!--
+      비교표. 칸은 ✓ 아니면 ✗ 다 — 글자로 된 칸("기본 번역"/"AI 번역")은 뺐다. 둘 다 되는
+      것은 양쪽 ✓, 무료에 없는 것은 무료 쪽 ✗. 횟수 줄은 서버 한도에서 코드가 계산한다.
+    -->
     <string name="paywall_row_realtime">실시간 맞춤법·띄어쓰기 교정</string>
-    <string name="paywall_row_keyboard">천지인 · 배경 사진 · 다크 모드</string>
+    <string name="paywall_row_correct_all">글 전체 교정 (기기 안)</string>
+    <string name="paywall_row_device_translate">기기 안 번역 (영어·일본어·중국어)</string>
+    <string name="paywall_row_keyboard">천지인 · 배경 사진 · 다크 모드 · 클립보드</string>
     <string name="paywall_row_ai">AI 전체 교정 (정확도 100%)</string>
-    <string name="paywall_free_ai">—</string>
-    <string name="paywall_premium_ai">AI 교정·번역</string>
+    <string name="paywall_row_ai_translate">AI 번역 (현지인처럼 자연스럽게)</string>
+    <string name="paywall_quota_header">하루 AI 한도 %1$s자면</string>
     <string name="paywall_row_100">카톡 한 줄 (100자) 기준</string>
     <string name="paywall_row_500">긴 문자 (500자) 기준</string>
     <string name="paywall_row_2000">긴 글 (2,000자) 기준</string>
     <string name="paywall_times">%1$s번</string>
     <string name="paywall_restore">구독 복원</string>
     <string name="paywall_cta_upgrade">₩2,990에 업그레이드하세요</string>
-    <string name="paywall_cta_free">무료로 계속 쓰기</string>
     <string name="paywall_footer">매월 자동 갱신됩니다. 언제든지 취소할 수 있습니다.</string>
     <string name="billing_failed">결제를 시작하지 못했어요: %1$s</string>
     <string name="billing_product_missing">Play 스토어에서 설치한 앱에서만 결제할 수 있어요.</string>
