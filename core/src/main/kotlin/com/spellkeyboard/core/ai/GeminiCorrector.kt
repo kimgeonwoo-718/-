@@ -506,7 +506,7 @@ class GeminiCorrector(
                     "AI 전체 교정은 프리미엄 기능이에요. 실시간 교정은 그대로 무제한으로 쓸 수 있어요."
 
                 "sub_daily_limit" in lower ->
-                    "오늘 프리미엄 한도(1만 자)를 다 썼습니다. 내일 다시 쓸 수 있어요."
+                    "오늘 AI 한도를 다 썼습니다. 내일 다시 쓸 수 있어요."
 
                 "server_not_configured" in lower ->
                     "AI 서버가 아직 준비되지 않았습니다."

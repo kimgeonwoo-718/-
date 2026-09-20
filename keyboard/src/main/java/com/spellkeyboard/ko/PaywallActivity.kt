@@ -8,7 +8,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import java.util.Locale
 
 /**
  * 결제 화면.
@@ -19,10 +18,11 @@ import java.util.Locale
  *
  * 표의 칸은 **✓ 아니면 ✗** 다. 둘 다 되는 것은 양쪽 ✓, 무료에 없는 것은 무료 쪽 ✗.
  * 예전에는 "기본 번역"/"AI 번역"처럼 글자로 된 칸이 있었는데, 무엇이 되고 안 되는지가
- * 한눈에 안 들어왔다. 횟수 줄만 숫자다 — 그것도 무료 쪽은 ✗ 다.
+ * 한눈에 안 들어왔다.
  *
- * 횟수는 서버 한도([DAILY_CHARS])에서 계산한다. 레이아웃에 박아 두면 한도를 바꿀 때
- * 어긋난다.
+ * **하루 한도 숫자는 안 보여 준다.** 한때 "카톡 한 줄 기준 100번" 같은 줄이 있었는데,
+ * 파는 건 "AI 를 쓸 수 있다" 지 글자 수가 아니다. 숫자가 보이면 아껴 쓰게 되고, 실제로
+ * 닿는 사람도 거의 없다. 한도는 서버가 지키고, 닿으면 그때 서버가 알려 준다.
  */
 class PaywallActivity : AppCompatActivity() {
 
@@ -58,43 +58,38 @@ class PaywallActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    /** 표의 한 줄. [free]·[premium] 은 [CHECK], [CROSS], 아니면 그대로 보여 줄 글자. */
-    private class Row(val label: String, val free: String, val premium: String)
+    /** 표의 한 줄. [sub] 는 이름 밑에 작게 붙는 설명 — AI 줄에 무엇이 AI 인지 적는다. */
+    private class Row(val label: String, val free: String, val premium: String, val sub: String? = null)
 
     private fun fillTable(table: LinearLayout) {
         table.removeAllViews()
-        for (row in features()) table.addView(rowView(row))
-        table.addView(subheader(getString(R.string.paywall_quota_header, String.format(Locale.KOREA, "%,d", DAILY_CHARS))))
-        for (row in quotaRows()) table.addView(rowView(row))
+        for (row in rows()) table.addView(rowView(row))
     }
 
     private fun rowView(row: Row): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         minimumHeight = dp(56)
-        addView(TextView(context).apply {
-            text = row.label
-            setTextColor(ContextCompat.getColor(context, R.color.toss_text))
-            textSize = 15f
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), dp(8), dp(8))
+            addView(TextView(context).apply {
+                text = row.label
+                setTextColor(ContextCompat.getColor(context, R.color.toss_text))
+                textSize = 15f
+            })
+            if (row.sub != null) addView(TextView(context).apply {
+                text = row.sub
+                setTextColor(ContextCompat.getColor(context, R.color.toss_text3))
+                textSize = 12f
+                setPadding(0, dp(2), 0, 0)
+            })
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         addView(cell(row.free, premium = false), LinearLayout.LayoutParams(dp(64), LinearLayout.LayoutParams.WRAP_CONTENT))
         addView(cell(row.premium, premium = true), LinearLayout.LayoutParams(dp(64), LinearLayout.LayoutParams.WRAP_CONTENT))
     }
 
-    /** 표 가운데 끼는 작은 제목. 횟수 줄들이 무엇을 기준으로 한 숫자인지 말해 준다. */
-    private fun subheader(text: String): View = TextView(this).apply {
-        this.text = text
-        setTextColor(ContextCompat.getColor(context, R.color.toss_text3))
-        textSize = 13f
-        setPadding(0, dp(14), 0, dp(2))
-    }
-
-    /**
-     * 표의 한 칸.
-     *
-     * ✓ 는 무료 쪽 회색, 프리미엄 쪽 파랑. ✗ 는 빨강 — 무료에 없는 것이 한눈에 보여야
-     * 한다. 숫자는 프리미엄 쪽에만 오므로 파랗고 굵게.
-     */
+    /** 표의 한 칸. ✓ 는 무료 쪽 회색, 프리미엄 쪽 파랑. ✗ 는 빨강 — 무료에 없는 것이 한눈에 보여야 한다. */
     private fun cell(value: String, premium: Boolean): TextView = TextView(this).apply {
         gravity = Gravity.CENTER
         text = value
@@ -104,51 +99,26 @@ class PaywallActivity : AppCompatActivity() {
                 setTypeface(typeface, Typeface.BOLD)
                 setTextColor(ContextCompat.getColor(context, if (premium) R.color.toss_blue else R.color.toss_text3))
             }
-            CROSS -> {
+            else -> {
                 textSize = 20f
                 setTypeface(typeface, Typeface.BOLD)
                 setTextColor(ContextCompat.getColor(context, R.color.toss_red))
             }
-            else -> {
-                textSize = 15f
-                setTypeface(typeface, Typeface.BOLD)
-                setTextColor(ContextCompat.getColor(context, R.color.toss_blue))
-            }
         }
     }
 
-    /** 위 네 줄은 둘 다 된다. 아래 두 줄이 프리미엄이다. */
-    private fun features(): List<Row> = listOf(
+    /** 위 네 줄은 둘 다 된다. 마지막 줄이 프리미엄이다. */
+    private fun rows(): List<Row> = listOf(
         Row(getString(R.string.paywall_row_realtime), CHECK, CHECK),
         Row(getString(R.string.paywall_row_correct_all), CHECK, CHECK),
         Row(getString(R.string.paywall_row_device_translate), CHECK, CHECK),
         Row(getString(R.string.paywall_row_keyboard), CHECK, CHECK),
-        Row(getString(R.string.paywall_row_ai), CROSS, CHECK),
-        Row(getString(R.string.paywall_row_ai_translate), CROSS, CHECK)
+        Row(getString(R.string.paywall_row_ai), CROSS, CHECK, getString(R.string.paywall_row_ai_sub))
     )
-
-    /** 하루 한도로 몇 번인가. 무료는 AI 를 아예 못 쓰니 ✗ 다. */
-    private fun quotaRows(): List<Row> {
-        fun times(chars: Int) =
-            getString(R.string.paywall_times, String.format(Locale.KOREA, "%,d", DAILY_CHARS / chars))
-        return listOf(
-            Row(getString(R.string.paywall_row_100), CROSS, times(100)),
-            Row(getString(R.string.paywall_row_500), CROSS, times(500)),
-            Row(getString(R.string.paywall_row_2000), CROSS, times(2_000))
-        )
-    }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        /**
-         * 서버의 SUB_DAILY_CHARS 와 같아야 한다. 서버가 실제 한도이고 이건 안내다.
-         *
-         * 1만 자인 이유는 server/src/quota.js 머리말에 있다 — 어떻게 쓰든 구독 하나가
-         * 적자를 못 내는 선이다.
-         */
-        const val DAILY_CHARS = 10_000
-
         private const val CHECK = "✓"
         private const val CROSS = "✗"
         private const val CLOSE_AFTER_MS = 1500L

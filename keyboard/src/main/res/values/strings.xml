@@ -76,19 +76,15 @@
     <string name="paywall_col_premium">프리미엄</string>
     <!--
       비교표. 칸은 ✓ 아니면 ✗ 다 — 글자로 된 칸("기본 번역"/"AI 번역")은 뺐다. 둘 다 되는
-      것은 양쪽 ✓, 무료에 없는 것은 무료 쪽 ✗. 횟수 줄은 서버 한도에서 코드가 계산한다.
+      것은 양쪽 ✓, 무료에 없는 것은 무료 쪽 ✗. 하루 한도 숫자는 여기 안 적는다 — 파는 건
+      "AI 를 쓸 수 있다" 지 글자 수가 아니다.
     -->
     <string name="paywall_row_realtime">실시간 맞춤법·띄어쓰기 교정</string>
     <string name="paywall_row_correct_all">글 전체 교정 (기기 안)</string>
     <string name="paywall_row_device_translate">기기 안 번역 (영어·일본어·중국어)</string>
     <string name="paywall_row_keyboard">천지인 · 배경 사진 · 다크 모드 · 클립보드</string>
-    <string name="paywall_row_ai">AI 전체 교정 (정확도 100%)</string>
-    <string name="paywall_row_ai_translate">AI 번역 (현지인처럼 자연스럽게)</string>
-    <string name="paywall_quota_header">하루 AI 한도 %1$s자면</string>
-    <string name="paywall_row_100">카톡 한 줄 (100자) 기준</string>
-    <string name="paywall_row_500">긴 문자 (500자) 기준</string>
-    <string name="paywall_row_2000">긴 글 (2,000자) 기준</string>
-    <string name="paywall_times">%1$s번</string>
+    <string name="paywall_row_ai">AI 기능 사용 가능</string>
+    <string name="paywall_row_ai_sub">AI 전체 교정 (정확도 100%) · AI 번역 (현지인처럼 자연스럽게)</string>
     <string name="paywall_restore">구독 복원</string>
     <string name="paywall_cta_upgrade">₩2,990에 업그레이드하세요</string>
     <string name="paywall_footer">매월 자동 갱신됩니다. 언제든지 취소할 수 있습니다.</string>

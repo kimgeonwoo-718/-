@@ -32,7 +32,8 @@ PLAY_PACKAGE = "com.spellkeyboard.ko"
 # 가장 나쁘게 써도(50자씩 200번) 월 2,100원이라 실수령 2,691원 안에 든다. 셈은
 # src/quota.js 머리말에 있다. 보통 사용자(하루 5천 자)는 이 한도를 못 느낀다.
 #
-# 앱의 안내 숫자(PaywallActivity.DAILY_CHARS, GeminiCorrector 의 한도 문구)도 같이 맞춰라.
+# 앱은 이 숫자를 사용자에게 보여 주지 않는다(결제 화면에도, 한도 초과 문구에도). 파는 건
+# "AI 를 쓸 수 있다" 지 글자 수가 아니라서다. 그러니 여기만 바꾸면 된다.
 SUB_DAILY_CHARS = "10000"
 # 어느 쪽 모델로 갈 것인가: "gemini" 또는 "openai".
 #
