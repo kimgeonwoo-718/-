@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 결제 화면의 값 칸. 파란 바탕에 흰 글씨 — 화면에서 제일 먼저 눈에 들어와야 한다. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/toss_blue" />
+    <corners android:radius="22dp" />
+</shape>

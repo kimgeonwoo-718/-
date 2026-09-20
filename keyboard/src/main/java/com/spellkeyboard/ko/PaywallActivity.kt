@@ -107,13 +107,14 @@ class PaywallActivity : AppCompatActivity() {
         }
     }
 
-    /** 위 네 줄은 둘 다 된다. 마지막 줄이 프리미엄이다. */
+    /** 위 네 줄은 둘 다 된다. 아래 두 줄(AI 교정·AI 번역)이 프리미엄이다 — 따로 설명한다. */
     private fun rows(): List<Row> = listOf(
         Row(getString(R.string.paywall_row_realtime), CHECK, CHECK),
         Row(getString(R.string.paywall_row_correct_all), CHECK, CHECK),
         Row(getString(R.string.paywall_row_device_translate), CHECK, CHECK),
         Row(getString(R.string.paywall_row_keyboard), CHECK, CHECK),
-        Row(getString(R.string.paywall_row_ai), CROSS, CHECK, getString(R.string.paywall_row_ai_sub))
+        Row(getString(R.string.paywall_row_ai), CROSS, CHECK, getString(R.string.paywall_row_ai_sub)),
+        Row(getString(R.string.paywall_row_ai_translate), CROSS, CHECK, getString(R.string.paywall_row_ai_translate_sub))
     )
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
