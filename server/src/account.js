@@ -22,9 +22,9 @@
  *
  * ## 신원 증명은 여기 없다
  *
- * 기기 토큰을 **어떻게 받아 가느냐**(연결 코드냐 소셜 로그인이냐)는 이 파일 밖의 일이다.
- * 어느 쪽을 고르든 끝은 같다 — 기기가 토큰을 들고 다니고, 그 토큰이 계정을 가리킨다.
- * 그래서 여기를 먼저 지어 두면 나중에 한 겹만 얹으면 된다. docs/ACCOUNTS.md 참고.
+ * 기기 토큰을 **어떻게 받아 가느냐**는 이 파일 밖의 일이다(지금은 구글 로그인,
+ * [google.js]). 여기는 그 뒤부터 — 기기가 토큰을 들고 다니고, 그 토큰이 계정을 가리킨다.
+ * docs/ACCOUNTS.md 참고.
  */
 
 /** 기기 토큰 길이(바이트). 32 바이트면 찍어 맞히는 것은 생각할 필요가 없다. */
@@ -124,4 +124,57 @@ export async function revokeDevice(db, deviceToken) {
   if (!validDeviceToken(deviceToken)) return false;
   await db.prepare('DELETE FROM devices WHERE token_hash = ?').bind(await sha256Hex(deviceToken)).run();
   return true;
+}
+
+/**
+ * 이 구글 계정의 우리 계정을 찾고, 없으면 만든다.
+ *
+ * 열쇠는 `sub` 의 해시다([google.js] 참고). 이메일은 안 쓴다 — 사람이 이메일을 바꿔도
+ * `sub` 는 그대로고, 우리는 "같은 사람인가" 만 알면 된다.
+ */
+export async function accountForGoogle(db, subHash, nowMs) {
+  const found = await db
+    .prepare('SELECT id FROM accounts WHERE google_sub_hash = ?')
+    .bind(subHash)
+    .first();
+  if (found) {
+    await db.prepare('UPDATE accounts SET updated_at = ? WHERE id = ?').bind(nowMs, found.id).run();
+    return found.id;
+  }
+  const id = randomToken(16);
+  await db
+    .prepare(
+      'INSERT INTO accounts (id, google_sub_hash, store, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+    )
+    .bind(id, subHash, 'play', nowMs, nowMs)
+    .run();
+  return id;
+}
+
+/**
+ * 구매를 이 계정에 붙인다.
+ *
+ * **이미 다른 계정에 붙어 있으면 옮긴다.** 구매 토큰을 들고 있다는 것 자체가 그 구매의
+ * 증거이므로, 지금 그것을 내미는 쪽이 임자다. 옮기면 옛 계정에 붙은 기기들은 무료로
+ * 떨어진다 — 그게 맞다. 한 결제가 계정 둘을 동시에 먹여 살리면 "결제 하나에 한도 하나" 가
+ * 깨진다.
+ */
+export async function attachPurchase(db, accountId, purchaseToken, nowMs, store = 'play') {
+  await db
+    .prepare('UPDATE accounts SET purchase_token = NULL, updated_at = ? WHERE purchase_token = ? AND id != ?')
+    .bind(nowMs, purchaseToken, accountId)
+    .run();
+  await db
+    .prepare('UPDATE accounts SET purchase_token = ?, store = ?, updated_at = ? WHERE id = ?')
+    .bind(purchaseToken, store, nowMs, accountId)
+    .run();
+}
+
+/** 이 계정이 가진 구매. 없으면 빈 문자열. */
+export async function purchaseOfAccount(db, accountId) {
+  const row = await db
+    .prepare('SELECT purchase_token FROM accounts WHERE id = ?')
+    .bind(accountId)
+    .first();
+  return row?.purchase_token ?? '';
 }

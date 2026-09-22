@@ -15,7 +15,18 @@
  * 경로도 구글과 똑같이 둬서 앱은 호스트만 바꾸면 된다.
  */
 import { kstDay, validInstallId, chargeFor, decideChars, DEFAULT_SUB_DAILY_CHARS } from './quota.js';
-import { purchaseForDevice, sha256Hex, validDeviceToken } from './account.js';
+import {
+  accountForGoogle,
+  attachPurchase,
+  deviceCount,
+  issueDevice,
+  purchaseForDevice,
+  purchaseOfAccount,
+  revokeDevice,
+  sha256Hex,
+  validDeviceToken,
+} from './account.js';
+import { allowedClientIds, fetchJwks, verifyIdToken } from './google.js';
 import { fetchAccessToken, verifySubscription } from './play.js';
 import { cacheGet, cacheSet } from './cache.js';
 import {
@@ -139,7 +150,13 @@ export async function handle(request, env, deps = {}) {
   if (request.method === 'GET' && url.pathname === '/stats') {
     return json(200, { days: await tokenStats(env.DB) });
   }
-  // 기기가 켤 때 한 번 묻는다. 돈이 안 드는 길이라 한도도 안 깎는다.
+  // 계정 쪽 길들. 돈이 안 드는 길이라 한도도 안 깎는다.
+  if (request.method === 'POST' && url.pathname === '/v1/account/signin') {
+    return signIn(request, env, fetchImpl, now);
+  }
+  if (request.method === 'POST' && url.pathname === '/v1/account/signout') {
+    return signOut(request, env);
+  }
   if (request.method === 'POST' && url.pathname === '/v1/account/subscription') {
     return subscriptionOf(request, env, fetchImpl, now);
   }
@@ -148,6 +165,74 @@ export async function handle(request, env, deps = {}) {
     return correct(request, env, url, fetchImpl, now);
   }
   return fail(404, 'not_found');
+}
+
+/**
+ * 구글 로그인으로 들어와 **기기 토큰**을 받아 간다. 계정 쪽의 유일한 입구다.
+ *
+ * 안드로이드는 구매 토큰을 같이 보낸다 — 그러면 그 구매가 이 계정에 붙는다.
+ * 윈도우·아이폰은 로그인만 한다 — 이미 붙어 있는 구매를 찾아 쓴다.
+ *
+ * 돌려주는 것은 기기 토큰과 지금 구독 상태뿐이다. **구매 토큰은 절대 안 내보낸다.**
+ */
+async function signIn(request, env, fetchImpl, now) {
+  const nowMs = now();
+  const clientIds = allowedClientIds(env);
+  if (clientIds.length === 0) return fail(503, 'google_not_configured');
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return fail(400, 'bad_request');
+  }
+
+  let keys;
+  try {
+    keys = await fetchJwks({ cacheGet, cacheSet, db: env.DB, fetchImpl, nowMs });
+  } catch {
+    return fail(503, 'google_unreachable');
+  }
+
+  const subHash = await verifyIdToken({ idToken: body?.idToken, clientIds, keys, nowMs });
+  // 왜 틀렸는지는 알려 주지 않는다 — 찍어 보는 쪽에 단서를 주지 않으려고.
+  if (!subHash) return fail(401, 'bad_id_token');
+
+  const accountId = await accountForGoogle(env.DB, subHash, nowMs);
+
+  // 구매를 들고 왔으면 Play 에 확인한 뒤에만 붙인다.
+  //
+  // **이건 보안 경계가 아니다.** 접근을 막는 것은 교정할 때마다 다시 하는 확인이라,
+  // 엉터리 토큰이 붙어 있어도 구독자가 되지는 않는다. 여기서 거르는 이유는 둘이다 —
+  // 쓰레기를 표에 안 쌓으려고, 그리고 붙이기가 **옛 계정에서 떼어 오는 동작**이라
+  // 살아 있지도 않은 토큰으로 남의 자리를 흔들 여지를 아예 없애려고.
+  const purchaseToken = typeof body?.purchaseToken === 'string' ? body.purchaseToken : '';
+  if (purchaseToken && (await isSubscriber(env, purchaseToken, fetchImpl, nowMs))) {
+    await attachPurchase(env.DB, accountId, purchaseToken, nowMs);
+  }
+
+  // 기기를 무한정 붙이게 두면 로그인 하나로 여럿이 나눠 쓴다. 한도는 어차피 구매
+  // 하나에 하나라 손해는 안 나지만, 쓸 일 없는 기기가 쌓이는 것을 막는다.
+  if ((await deviceCount(env.DB, accountId)) >= MAX_DEVICES) return fail(409, 'too_many_devices');
+
+  const deviceToken = await issueDevice(env.DB, accountId, labelOf(body?.label), nowMs);
+  const active = await isSubscriber(env, await purchaseOfAccount(env.DB, accountId), fetchImpl, nowMs);
+  return json(200, { deviceToken, plan: active ? 'subscriber' : 'free' });
+}
+
+/** 기기가 스스로 연결을 끊는다. 사용자가 "이 기기 빼기" 를 눌렀을 때. */
+async function signOut(request, env) {
+  const device = request.headers.get('x-device-token') ?? '';
+  if (!validDeviceToken(device)) return fail(400, 'invalid_device_token');
+  await revokeDevice(env.DB, device);
+  return json(200, { ok: true });
+}
+
+/** 기기가 붙인 이름. 사용자가 보낸 글자라 길이를 자르고 그대로는 안 믿는다. */
+function labelOf(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().slice(0, 40);
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 /**
@@ -186,6 +271,9 @@ async function subscriptionOf(request, env, fetchImpl, now) {
   const active = await isSubscriber(env, found.purchaseToken, fetchImpl, nowMs);
   return json(200, { plan: active ? 'subscriber' : 'free' });
 }
+
+/** 계정 하나에 붙일 수 있는 기기 수. 로그인 하나로 여럿이 나눠 쓰는 것을 막는다. */
+const MAX_DEVICES = 5;
 
 async function correct(request, env, url, fetchImpl, now) {
   const installId = request.headers.get('x-install-id') ?? '';

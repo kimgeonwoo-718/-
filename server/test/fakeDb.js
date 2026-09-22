@@ -32,6 +32,14 @@ export function fakeDb() {
                 for (const [id, row] of accounts) if (row.purchase_token === args[0]) return { id };
                 return null;
               }
+              if (sql.startsWith('SELECT id FROM accounts WHERE google_sub_hash')) {
+                for (const [id, row] of accounts) if (row.google_sub_hash === args[0]) return { id };
+                return null;
+              }
+              if (sql.startsWith('SELECT purchase_token FROM accounts WHERE id')) {
+                const row = accounts.get(args[0]);
+                return row ? { purchase_token: row.purchase_token ?? null } : null;
+              }
               if (sql.startsWith('SELECT a.purchase_token')) {
                 const device = devices.get(args[0]);
                 if (!device) return null;
@@ -85,9 +93,30 @@ export function fakeDb() {
                 for (const k of [...usage.keys()]) if (k.split('|')[1] < args[0]) usage.delete(k);
                 return;
               }
-              if (sql.startsWith('INSERT INTO accounts')) {
+              if (sql.startsWith('INSERT INTO accounts (id, purchase_token')) {
                 const [id, purchase_token, store, created_at, updated_at] = args;
                 accounts.set(id, { purchase_token, store, created_at, updated_at });
+                return;
+              }
+              if (sql.startsWith('INSERT INTO accounts (id, google_sub_hash')) {
+                const [id, google_sub_hash, store, created_at, updated_at] = args;
+                accounts.set(id, { google_sub_hash, purchase_token: null, store, created_at, updated_at });
+                return;
+              }
+              if (sql.startsWith('UPDATE accounts SET purchase_token = NULL')) {
+                const [nowMs, purchaseToken, keepId] = args;
+                for (const [id, row] of accounts) {
+                  if (row.purchase_token === purchaseToken && id !== keepId) {
+                    row.purchase_token = null;
+                    row.updated_at = nowMs;
+                  }
+                }
+                return;
+              }
+              if (sql.startsWith('UPDATE accounts SET purchase_token = ?')) {
+                const [purchase_token, store, nowMs, id] = args;
+                const row = accounts.get(id);
+                if (row) Object.assign(row, { purchase_token, store, updated_at: nowMs });
                 return;
               }
               if (sql.startsWith('UPDATE accounts SET updated_at')) {
