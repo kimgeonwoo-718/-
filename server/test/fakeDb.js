@@ -1,11 +1,13 @@
 /**
- * D1 흉내. index.js 가 실제로 쓰는 문장 여섯 개만 알아듣는다.
+ * D1 흉내. 서버가 실제로 쓰는 문장만 알아듣는다.
  * 모르는 SQL 이 오면 죽는다 — 서버 쪽 쿼리가 바뀌면 여기서 바로 드러나게.
  */
 export function fakeDb() {
   const usage = new Map();
   const cache = new Map();
   const tokens = new Map();
+  const accounts = new Map();  // id -> { purchase_token, store, created_at, updated_at }
+  const devices = new Map();   // token_hash -> { account_id, label, created_at, seen_at }
 
   const key = (id, day) => `${id}|${day}`;
 
@@ -13,6 +15,8 @@ export function fakeDb() {
     usage,
     cache,
     tokens,
+    accounts,
+    devices,
     prepare(sql) {
       // D1 은 bind 없이도 first/all/run 을 부를 수 있다 (인자 없는 문장).
       const bound = (args) => ({
@@ -23,6 +27,22 @@ export function fakeDb() {
               }
               if (sql.startsWith('SELECT value')) {
                 return cache.get(args[0]) ?? null;
+              }
+              if (sql.startsWith('SELECT id FROM accounts WHERE purchase_token')) {
+                for (const [id, row] of accounts) if (row.purchase_token === args[0]) return { id };
+                return null;
+              }
+              if (sql.startsWith('SELECT a.purchase_token')) {
+                const device = devices.get(args[0]);
+                if (!device) return null;
+                const account = accounts.get(device.account_id);
+                if (!account) return null;
+                return { purchase_token: account.purchase_token, account_id: device.account_id };
+              }
+              if (sql.startsWith('SELECT COUNT(*) AS n FROM devices')) {
+                let n = 0;
+                for (const d of devices.values()) if (d.account_id === args[0]) n++;
+                return { n };
               }
               throw new Error(`fakeDb: unexpected first(): ${sql}`);
             },
@@ -63,6 +83,30 @@ export function fakeDb() {
               }
               if (sql.startsWith('DELETE FROM usage')) {
                 for (const k of [...usage.keys()]) if (k.split('|')[1] < args[0]) usage.delete(k);
+                return;
+              }
+              if (sql.startsWith('INSERT INTO accounts')) {
+                const [id, purchase_token, store, created_at, updated_at] = args;
+                accounts.set(id, { purchase_token, store, created_at, updated_at });
+                return;
+              }
+              if (sql.startsWith('UPDATE accounts SET updated_at')) {
+                const row = accounts.get(args[1]);
+                if (row) row.updated_at = args[0];
+                return;
+              }
+              if (sql.startsWith('INSERT INTO devices')) {
+                const [token_hash, account_id, label, created_at, seen_at] = args;
+                devices.set(token_hash, { account_id, label, created_at, seen_at });
+                return;
+              }
+              if (sql.startsWith('UPDATE devices SET seen_at')) {
+                const row = devices.get(args[1]);
+                if (row) row.seen_at = args[0];
+                return;
+              }
+              if (sql.startsWith('DELETE FROM devices')) {
+                devices.delete(args[0]);
                 return;
               }
               if (sql.startsWith('DELETE FROM cache')) {

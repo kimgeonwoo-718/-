@@ -15,6 +15,7 @@
  * 경로도 구글과 똑같이 둬서 앱은 호스트만 바꾸면 된다.
  */
 import { kstDay, validInstallId, chargeFor, decideChars, DEFAULT_SUB_DAILY_CHARS } from './quota.js';
+import { purchaseForDevice, sha256Hex, validDeviceToken } from './account.js';
 import { fetchAccessToken, verifySubscription } from './play.js';
 import { cacheGet, cacheSet } from './cache.js';
 import {
@@ -138,11 +139,52 @@ export async function handle(request, env, deps = {}) {
   if (request.method === 'GET' && url.pathname === '/stats') {
     return json(200, { days: await tokenStats(env.DB) });
   }
+  // 기기가 켤 때 한 번 묻는다. 돈이 안 드는 길이라 한도도 안 깎는다.
+  if (request.method === 'POST' && url.pathname === '/v1/account/subscription') {
+    return subscriptionOf(request, env, fetchImpl, now);
+  }
   const isGenerate = /^\/v1beta\/models\/[^/]+:generateContent$/.test(url.pathname);
   if (request.method === 'POST' && isGenerate) {
     return correct(request, env, url, fetchImpl, now);
   }
   return fail(404, 'not_found');
+}
+
+/**
+ * 이 요청이 어느 구매에 딸린 것인가.
+ *
+ * 스토어가 있는 기기는 구매 토큰을 그대로 싣는다. 스토어가 없는 기기(윈도우)나 다른
+ * 스토어를 쓰는 기기(아이폰)는 서버가 발급한 기기 토큰을 싣고, 그것을 계정을 거쳐
+ * 구매 토큰으로 푼다.
+ *
+ * **구매 토큰 쪽이 먼저다.** 둘 다 실려 오면 스토어에 직접 물어볼 수 있는 쪽을 믿는다.
+ */
+async function identify(env, request, nowMs) {
+  const direct = request.headers.get('x-purchase-token') ?? '';
+  if (direct) return direct;
+
+  const device = request.headers.get('x-device-token') ?? '';
+  if (!validDeviceToken(device)) return '';
+  const found = await purchaseForDevice(env.DB, device, nowMs);
+  return found?.purchaseToken ?? '';
+}
+
+/**
+ * 기기 토큰 하나로 "지금 구독 중인가" 만 답한다.
+ *
+ * 윈도우·아이폰이 켤 때 한 번 물어 화면을 정하는 데 쓴다. **구매 토큰은 절대 내보내지
+ * 않는다** — 그 자체가 구독 증명이라, 내려보내는 순간 그게 새는 통로가 된다.
+ */
+async function subscriptionOf(request, env, fetchImpl, now) {
+  const device = request.headers.get('x-device-token') ?? '';
+  if (!validDeviceToken(device)) return fail(400, 'invalid_device_token');
+
+  const nowMs = now();
+  const found = await purchaseForDevice(env.DB, device, nowMs);
+  if (!found) return fail(404, 'device_not_linked');
+
+  const active = await isSubscriber(env, found.purchaseToken, fetchImpl, nowMs);
+  return json(200, { plan: active ? 'subscriber' : 'free' });
 }
 
 async function correct(request, env, url, fetchImpl, now) {
@@ -162,7 +204,10 @@ async function correct(request, env, url, fetchImpl, now) {
 
   const nowMs = now();
   const day = kstDay(nowMs);
-  const purchaseToken = request.headers.get('x-purchase-token') ?? '';
+  // 구매 토큰은 **스토어가 있는 기기**(안드로이드)만 들고 있다. 윈도우에는 스토어가
+  // 아예 없고 아이폰은 스토어가 달라서, 그쪽은 서버가 발급한 기기 토큰을 들고 온다.
+  // 기기 토큰은 계정을 거쳐 **같은 구매 토큰**으로 풀리므로, 어디서 쓰든 한도는 하나다.
+  const purchaseToken = await identify(env, request, nowMs);
   const subscriber =
     isTestSubscriber(env, installId) || (await isSubscriber(env, purchaseToken, fetchImpl, nowMs));
   const plan = subscriber ? 'subscriber' : 'free';
@@ -515,11 +560,6 @@ async function sweep(env) {
   await env.DB.prepare('DELETE FROM usage WHERE day < ?').bind(kstDay(nowMs - 2 * 86_400_000)).run();
   await env.DB.prepare('DELETE FROM cache WHERE expires_at < ?').bind(nowMs).run();
   await env.DB.prepare('DELETE FROM tokens WHERE day < ?').bind(kstDay(nowMs - 90 * 86_400_000)).run();
-}
-
-async function sha256Hex(text) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // --- 응답 -----------------------------------------------------------------------
