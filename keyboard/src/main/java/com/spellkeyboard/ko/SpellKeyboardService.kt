@@ -100,10 +100,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     @Volatile
     private var lastEditAt = 0L
 
-    /** 모델 목록을 이미 받아 뒀는가. 키보드가 뜰 때마다 다시 받을 이유는 없다. */
-    @Volatile
-    private var aiWarmed = false
-
     // --- 번역 모드 -------------------------------------------------------------
     //
     // 켜져 있으면 모든 키 입력이 앱 입력란 대신 [translateBuffer] 로 간다 ([editor] 가 그걸
@@ -277,8 +273,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // **번역도 같이 감춘다.** 번역을 길게 누르면 입력란의 글이 통째로 서버로 간다.
         // 예전에는 AI 동그라미만 감춰서, 비밀번호 칸에서도 번역은 그대로 눌렸다.
         keyboard?.setTranslateAvailable(fieldSendable)
-        // 서버 예열은 서버가 있을 때만. 길게 누르는 쪽(프리미엄 AI)이 쓸 것이다.
-        if (Prefs.aiAvailable() && fieldSendable) warmUpAi()
+        // 예전에는 여기서 서버를 한 번 두드려 모델 목록을 미리 받았다. 뺐다 —
+        // 아래 [corrector] 주석에 이유를 적어 뒀다.
     }
 
     override fun onFinishInput() {
@@ -1106,30 +1102,26 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     /**
-     * 모델 목록을 미리 받아 둔다.
-     *
-     * 붐비는 모델을 만났을 때 곧장 한가한 쪽으로 옮기려면 후보를 알고 있어야 하는데,
-     * 그걸 버튼 누른 뒤에 받으면 왕복이 그대로 대기 시간이 된다. 키보드가 뜰 때
-     * 미리 받아 두면 정작 누르는 순간에는 공짜다. 실패해도 그냥 넘어간다 —
-     * 목록이 없으면 지금 모델로 그대로 시도할 뿐이다.
-     */
-    private fun warmUpAi() {
-        if (aiWarmed) return
-        aiWarmed = true
-        Thread {
-            runCatching { corrector().prefetchModels() }
-        }.apply {
-            isDaemon = true
-            priority = Thread.MIN_PRIORITY
-            start()
-        }
-    }
-
-    /**
      * 설정이 그대로면 만들어 둔 것을 다시 쓴다.
      *
      * 언제나 중계 서버로 간다. 모델 이름은 기본값에서 시작하고, 거절당하면 교정기가
      * 스스로 갈아탄다 — 그 결과는 이 객체 안에 남아 다음 요청부터 바로 쓰인다.
+     *
+     * ## 키보드가 뜰 때 서버를 미리 두드리지 않는다
+     *
+     * 예전에는 [GeminiCorrector.prefetchModels] 를 백그라운드로 불러 모델 목록을 받아
+     * 뒀다. 두 가지가 겹쳐 뺐다.
+     *
+     * 1. **값어치가 없다.** 받아 온 이름은 요청 주소에 실려 나가는데, 중계 서버는 그걸
+     *    읽지 않는다 — 어느 모델로 갈지는 서버가 정한다(`server/src/index.js`). 이미
+     *    깔린 APK 들이 저마다 다른 이름을 들고 있어서 그렇게 만들었다.
+     * 2. **무료 사용자까지 두드렸다.** 조건이 "서버 주소가 있나" 뿐이라 AI 를 평생 못 쓰는
+     *    사람도 키보드가 새로 뜰 때마다 한 번씩 쳤다. DAU 10 만이면 하루 30 만 요청인데
+     *    그중 쓸모 있는 것은 2 만뿐이고, Cloudflare 무료 등급은 하루 10 만이다.
+     *    **쓸모없는 요청 때문에 돈 낸 사람이 막히는 그림**이라 그냥 끊었다.
+     *
+     * 모델 갈아타기 자체는 그대로 산다. 교정하다 거절당하면 [GeminiCorrector] 가 그때
+     * 목록을 받아 옮긴다(`candidates()`). 그 한 왕복은 실제로 옮겨야 할 때만 든다.
      */
     @Synchronized
     private fun corrector(): GeminiCorrector {

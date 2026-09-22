@@ -6,9 +6,12 @@ plugins {
 /**
  * AI 중계 서버 주소.
  *
- * 앱에는 Gemini 키가 없다. 사용자가 자기 키를 넣지 않으면 이 서버로 보내고, 서버가
- * 키를 붙여 구글로 넘긴다. CI 변수 `AI_SERVER_URL` 이나 로컬 `gradle.properties` 의
- * `aiServerUrl` 에서 읽는다. 비어 있으면 앱은 사용자가 직접 넣은 키로만 AI 교정을 한다.
+ * 앱에는 Gemini 키가 없다. 앱은 구글 대신 이 서버로 보내고, 서버가 키를 붙여 넘긴다.
+ * CI 변수 `AI_SERVER_URL` 이나 로컬 `gradle.properties` 의 `aiServerUrl` 에서 읽는다.
+ * 비어 있으면 AI 기능이 통째로 꺼진다(`Prefs.aiAvailable`).
+ *
+ * 사용자가 자기 키를 넣는 칸은 2026-09-12 에 없앴다. 일반 사용자에게 "구글에서 키를
+ * 발급받아 오라" 고 할 수는 없다. 그 시절 이야기가 주석에 남아 있어서 지운다.
  */
 val aiServerUrl: String = run {
     val raw = System.getenv("AI_SERVER_URL")
