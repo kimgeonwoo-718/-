@@ -127,6 +127,10 @@ class FloatingWindow private constructor(
 
     override fun editorText(): String = editor.text ?: ""
 
+    override fun clearEditor() {
+        editor.text = ""
+    }
+
     override fun windowSize(): Rect {
         val w = if (frame.width > 0) frame.width else frame.preferredSize.width
         val h = if (frame.height > 0) frame.height else frame.preferredSize.height

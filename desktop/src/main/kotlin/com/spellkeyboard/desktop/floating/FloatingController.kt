@@ -18,6 +18,16 @@ interface FloatingHost {
     fun focusEditor()
 
     fun editorText(): String
+
+    /**
+     * 글칸을 비운다. Enter 로 넘긴 **뒤에** 부른다.
+     *
+     * 안 비우면 다음에 창을 불렀을 때 넘긴 글이 그대로 남아 있고, 거기에 이어 쳐서
+     * 다시 Enter 를 누르면 **옛 글까지 통째로 한 번 더 들어간다.** 실제로 그랬다 —
+     * 두 번 시험하니 받는 창에 `GUMAE KAMSA` 가 두 벌 쌓였다.
+     */
+    fun clearEditor()
+
     fun windowSize(): Rect
     fun windowBounds(): Rect?
     fun screens(): List<ScreenBox>
@@ -153,6 +163,10 @@ class FloatingController(
             // 나중에 누가 숨기기와 함께 글칸을 비우는 짓을 해도 안전하다.
             val text = host.editorText()
             hide(HideReason.APPLY)
+            // 넘긴 글은 글칸에서 지운다. 안 지우면 다음에 불렀을 때 그대로 남아 두 번
+            // 들어간다([FloatingHost.clearEditor] 참고). 못 넣었을 때 글을 잃지 않는 것은
+            // 받는 쪽 몫이다 — 실패하면 창을 다시 띄우면서 글을 도로 넣어 준다.
+            host.clearEditor()
             // 숨긴 **뒤에** 넘긴다. 받는 쪽은 앞 창이 돌아오기를 기다렸다가 Ctrl+V 를
             // 보내야 하는데, 우리가 아직 떠 있으면 그 기다림이 통째로 헛돈다.
             onApply(text)

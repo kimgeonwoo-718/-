@@ -146,7 +146,14 @@ private class DesktopApp(
             onCorrectAll = { window.correctNow() },
             onQuit = { window.shutdown() },
         )
-        summon.set { float.summon() }
+        // **여기서도 remember() 를 불러야 한다.** 창을 부르는 길은 셋인데(단축키·알림 영역·
+        // 두 번째 실행) 예전에는 앞의 둘만 앞 창을 갈무리했다. 두 번째 실행으로 부르면
+        // 기억해 둔 창이 없거나 한참 전 것이라, 치고 Enter 를 눌러도 글이 아무 데도
+        // 안 들어갔다. 부르는 길이 늘면 이것도 같이 늘어야 한다.
+        summon.set {
+            paste.remember()
+            float.summon()
+        }
 
         // 창은 이미 실체화돼 있다(install 이 pack 했다). 손잡이는 여기서 한 번만 읽는다 —
         // 나중에 일꾼 실에서 읽으면 프로세스가 통째로 멎는 일이 있었다.
@@ -174,8 +181,13 @@ private class DesktopApp(
         if (outcome is PasteOutcome.Pasted) return
         // 못 붙였으면 고친 글은 클립보드에 있다. 그 사실을 **보여 줘야** 한다 —
         // 숨은 창에 적어 두면 아무도 못 읽는다.
+        //
+        // 글도 글칸에 도로 넣는다. Enter 를 누른 자리에서 글칸을 비우는데, 못 넣었는데
+        // 비우기까지 하면 사용자가 쓴 글이 화면에서 사라진다. 클립보드에 있다고 해서
+        // 없어져도 되는 것은 아니다.
         SwingUtilities.invokeLater {
             float.summon()
+            window.input.text = text
             window.status(outcome.message)
         }
     }

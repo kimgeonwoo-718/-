@@ -55,6 +55,15 @@ class FloatingControllerTest {
         }
 
         override fun editorText(): String = text
+
+        /** 비운 횟수를 세어 둔다 — Enter 뒤에 꼭 한 번 불려야 한다. */
+        var cleared = 0
+
+        override fun clearEditor() {
+            text = ""
+            cleared++
+        }
+
         override fun windowSize(): Rect = Rect(0, 0, 336, 324)
         override fun windowBounds(): Rect? = bounds
         override fun screens(): List<ScreenBox> = monitors
@@ -178,6 +187,38 @@ class FloatingControllerTest {
         // 받는 쪽은 앞 창이 돌아오기를 기다린다. 우리가 아직 떠 있으면 그 기다림이 헛돈다.
         assertEquals(listOf("place", "show", "focus", "hide"), f.host.log)
         assertEquals(listOf(HideReason.APPLY), f.hides)
+    }
+
+    /**
+     * 넘긴 뒤에는 글칸이 비어야 한다.
+     *
+     * 안 비우면 다음에 불렀을 때 넘긴 글이 그대로 남고, 이어 쳐서 Enter 를 누르면 옛 글까지
+     * 한 번 더 들어간다. 실측으로 받는 창에 같은 글이 두 벌 쌓이는 것을 봤다.
+     */
+    @Test
+    fun `Enter 로 넘긴 뒤 글칸을 비운다`() {
+        val f = Fixture()
+        f.host.text = "돼요"
+        f.controller.summon()
+        f.controller.onKey(VK_ENTER, 0, composing = false)
+        assertEquals(1, f.host.cleared, "글칸을 안 비웠다")
+        assertEquals("", f.host.editorText())
+
+        // 두 번째로 불러서 새로 치면, 넘어가는 것은 **새 글뿐**이어야 한다.
+        f.host.text = "안녕"
+        f.controller.summon()
+        f.controller.onKey(VK_ENTER, 0, composing = false)
+        assertEquals(listOf("돼요", "안녕"), f.applied, "옛 글이 딸려 갔다")
+    }
+
+    /** 비우는 것은 글을 집은 **뒤**여야 한다. 순서가 뒤집히면 빈 글이 넘어간다. */
+    @Test
+    fun `비우기는 글을 집은 뒤에 한다`() {
+        val f = Fixture()
+        f.host.text = "보낼 글"
+        f.controller.summon()
+        f.controller.onKey(VK_ENTER, 0, composing = false)
+        assertEquals(listOf("보낼 글"), f.applied)
     }
 
     @Test
