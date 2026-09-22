@@ -18,6 +18,7 @@ object Prefs {
     private const val KEY_CLIPBOARD = "clipboard"
     private const val KEY_INSTALL_ID = "install_id"
     private const val KEY_PURCHASE_TOKEN = "purchase_token"
+    private const val KEY_DEVICE_TOKEN = "device_token"
     private const val KEY_QUOTA_PLAN = "quota_plan"
     private const val KEY_QUOTA_REMAINING = "quota_remaining"
     private const val KEY_QUOTA_LIMIT = "quota_limit"
@@ -102,6 +103,21 @@ object Prefs {
     fun aiAvailable(): Boolean = serverAvailable()
 
     /**
+     * 구글 로그인에 쓸 OAuth 클라이언트 ID(웹 종류).
+     *
+     * 비밀값이 아니다 — 구글이 발급한 공개 식별자라 APK 를 뜯으면 어차피 보인다.
+     * 그래도 저장소에는 안 넣는다. 사람마다 다른 프로젝트를 쓰니 빌드할 때 넣는 값이다.
+     *
+     * 서버의 `GOOGLE_CLIENT_IDS` 에 **이 값이 들어 있어야** 로그인이 통과한다.
+     * 서버는 토큰의 `aud` 가 그 목록에 있는지 본다 — 없으면 남의 앱에 발급된 멀쩡한
+     * 구글 토큰으로도 우리 계정에 들어올 수 있다.
+     */
+    fun googleClientId(): String = BuildConfig.GOOGLE_CLIENT_ID.trim()
+
+    /** 로그인 행을 띄울 수 있는가. 클라이언트 ID 와 서버가 둘 다 있어야 한다. */
+    fun loginAvailable(): Boolean = serverAvailable() && googleClientId().isNotEmpty()
+
+    /**
      * 이 설치를 가리키는 무작위 ID.
      *
      * 서버가 무료 한도를 세는 단위다. 계정이 없어서 이것밖에 없다 — 지우고 다시 깔면
@@ -131,11 +147,33 @@ object Prefs {
         prefs(context).edit().putString(KEY_PURCHASE_TOKEN, token).apply()
     }
 
-    /** 중계 서버로 보낼 때 붙이는 헤더. 서버는 이걸로 누구인지, 돈을 냈는지 안다. */
+    /**
+     * 서버가 발급한 기기 토큰. 로그인하면 [AccountManager] 가 넣어 준다.
+     *
+     * 계정에 붙은 구매를 가리키는 손잡이다. 이 폰이 직접 산 구독이 있으면 쓸 일이 없지만
+     * (구매 토큰이 먼저다), 폰을 바꾸는 중이거나 다른 기기가 산 구독을 빌려 쓸 때 이것이
+     * 길이 된다. 서버는 해시만 들고 있어서 잃어버리면 다시 로그인하는 수밖에 없다.
+     */
+    fun deviceToken(context: Context): String =
+        prefs(context).getString(KEY_DEVICE_TOKEN, "").orEmpty()
+
+    fun setDeviceToken(context: Context, token: String) {
+        prefs(context).edit().putString(KEY_DEVICE_TOKEN, token).apply()
+    }
+
+    fun signedIn(context: Context): Boolean = deviceToken(context).isNotEmpty()
+
+    /**
+     * 중계 서버로 보낼 때 붙이는 헤더. 서버는 이걸로 누구인지, 돈을 냈는지 안다.
+     *
+     * 둘 다 실려 가면 서버는 **구매 토큰 쪽을 믿는다** — Play 에 직접 물어볼 수 있는
+     * 쪽이다. 기기 토큰은 그것이 없을 때(로그인만 한 기기) 쓰인다.
+     */
     fun serverHeaders(context: Context): Map<String, String> {
         val headers = LinkedHashMap<String, String>()
         headers["X-Install-Id"] = installId(context)
         purchaseToken(context).takeIf { it.isNotEmpty() }?.let { headers["X-Purchase-Token"] = it }
+        deviceToken(context).takeIf { it.isNotEmpty() }?.let { headers["X-Device-Token"] = it }
         return headers
     }
 

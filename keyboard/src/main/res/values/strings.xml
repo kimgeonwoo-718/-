@@ -63,6 +63,22 @@
     <string name="setting_quota_unlimited">프리미엄 · 이용 중</string>
     <string name="setting_quota_no_server">이 빌드에는 AI 서버 주소가 없어요</string>
     <string name="setting_plan_subscribe">프리미엄 알아보기 · 월 2,990원</string>
+    <!-- 로그인. 구독을 폰 밖(윈도우·아이폰)에서도 쓰게 하는 칸이다. -->
+    <string name="setting_account_title">로그인</string>
+    <string name="setting_account_sub">윈도우·아이폰에서도 같은 구독을 쓰려면 로그인하세요.</string>
+    <string name="setting_account_signin">구글로 로그인</string>
+    <string name="setting_account_signout">로그아웃</string>
+    <string name="setting_account_working">로그인 중…</string>
+    <string name="setting_account_signed_in">로그인됨 · 다른 기기에서도 이 구독을 쓸 수 있어요</string>
+    <string name="setting_account_signed_in_free">로그인됨 · 아직 붙은 구독이 없어요. 구독하면 다른 기기에서도 열려요</string>
+    <string name="account_error_network">서버에 닿지 못했어요. 잠시 후 다시 시도해 주세요.</string>
+    <string name="account_error_server">로그인하지 못했어요 (%1$s)</string>
+    <string name="account_error_no_google">이 폰에 구글 계정이 없어요. 폰 설정에서 계정을 추가한 뒤 다시 눌러 주세요.</string>
+    <string name="account_error_no_token">구글이 로그인 정보를 주지 않았어요. 다시 시도해 주세요.</string>
+    <string name="account_error_bad_token">로그인 정보가 만료됐어요. 다시 시도해 주세요.</string>
+    <string name="account_error_google_down">구글 로그인이 지금 안 돼요. 잠시 후 다시 시도해 주세요.</string>
+    <string name="account_error_too_many_devices">기기가 너무 많아요. 안 쓰는 기기에서 로그아웃해 주세요.</string>
+    <string name="account_error_not_configured">이 빌드에는 로그인이 준비되지 않았어요.</string>
     <string name="setting_plan_note">자동 교정은 요금제와 상관없이 언제나 무제한이에요. 결제는 Google Play 가 처리하고, Play 스토어에서 설치한 앱에서만 결제창이 떠요.</string>
     <string name="billing_subscribed">프리미엄이 확인됐어요. 이제 AI 교정을 쓸 수 있어요.</string>
 

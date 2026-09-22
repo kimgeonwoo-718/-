@@ -158,6 +158,31 @@
                 style="@style/Caption"
                 android:layout_marginTop="10dp" />
 
+            <View style="@style/Divider" />
+
+            <!--
+              로그인. 구독은 Play 구매 토큰 하나로 도는데 윈도우에는 스토어가 없고 아이폰은
+              다른 스토어다. 로그인해 두면 그 구매가 계정에 붙어 다른 기기가 찾아 쓴다.
+              빌드에 클라이언트 ID 가 없으면 통째로 숨는다(SetupActivity).
+            -->
+            <LinearLayout
+                android:id="@+id/account_row"
+                style="@style/Row">
+                <LinearLayout style="@style/RowText">
+                    <TextView style="@style/RowTitle" android:text="@string/setting_account_title" />
+                    <TextView style="@style/RowSub" android:text="@string/setting_account_sub" />
+                    <TextView
+                        android:id="@+id/account_status"
+                        style="@style/RowSub"
+                        android:textColor="@color/toss_blue"
+                        android:textStyle="bold" />
+                </LinearLayout>
+                <TextView
+                    android:id="@+id/account_button"
+                    style="@style/Pill"
+                    android:text="@string/setting_account_signin" />
+            </LinearLayout>
+
             <TextView
                 style="@style/Caption"
                 android:layout_marginTop="6dp"

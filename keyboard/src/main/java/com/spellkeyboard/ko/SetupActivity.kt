@@ -34,6 +34,14 @@ class SetupActivity : AppCompatActivity() {
     private var quotaOutput: TextView? = null
     private var backgroundStatus: TextView? = null
     private var billing: BillingManager? = null
+    private var account: AccountManager? = null
+
+    /**
+     * 로그인할 때 서버가 알려 준 구독 여부. 화면이 다시 만들어지면 사라진다(null) —
+     * 그때는 이 폰이 들고 있는 구매 토큰으로 대신 짐작한다. 어느 쪽이든 **표시용**이고,
+     * 실제 판단은 교정할 때마다 서버가 Play 에 물어 한다.
+     */
+    private var accountSubscriber: Boolean? = null
 
     /**
      * 시스템 사진 선택창. 저장소 권한 없이 사용자가 고른 그 한 장만 받는다.
@@ -85,6 +93,8 @@ class SetupActivity : AppCompatActivity() {
     override fun onDestroy() {
         billing?.destroy()
         billing = null
+        account?.destroy()
+        account = null
         super.onDestroy()
     }
 
@@ -146,7 +156,61 @@ class SetupActivity : AppCompatActivity() {
             startActivity(android.content.Intent(this, PaywallActivity::class.java))
         }
 
+        bindAccount()
         showInstallId()
+    }
+
+    // --- 로그인 ---------------------------------------------------------------
+
+    /**
+     * 로그인 행.
+     *
+     * 폰만 쓰는 사람에게는 아무 소용이 없다 — Play 가 알아서 복원해 준다. 이 칸은
+     * **윈도우·아이폰에서 같은 구독을 쓰려는 사람**을 위한 것이다. 그래서 설명도 그렇게
+     * 적고, 빌드에 클라이언트 ID 가 없으면 행을 통째로 감춘다(눌러 봐야 오류만 난다).
+     */
+    private fun bindAccount() {
+        val row = findViewById<View>(R.id.account_row) ?: return
+        if (!Prefs.loginAvailable()) {
+            row.isVisible = false
+            return
+        }
+        account = AccountManager(this)
+        findViewById<TextView>(R.id.account_button).setOnClickListener { view ->
+            // 두 번 누르면 계정 창이 두 개 뜬다. 끝날 때까지 막아 둔다.
+            view.isEnabled = false
+            findViewById<TextView>(R.id.account_status).setText(R.string.setting_account_working)
+            val done: (AccountManager.Result) -> Unit = { result ->
+                view.isEnabled = true
+                accountSubscriber = if (result.signedIn) result.subscriber else null
+                showAccount()
+                result.message?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
+            }
+            if (Prefs.signedIn(this)) account?.signOut(done) else account?.signIn(this, done)
+        }
+        showAccount()
+    }
+
+    /**
+     * 로그인 상태 한 줄.
+     *
+     * **여기서 서버에 묻지 않는다.** 화면에 들어올 때마다 두드리면 하는 일 없이 요청만
+     * 쌓인다. 로그인할 때 받아 둔 답([accountSubscriber])을 쓰고, 그것이 없으면 이 폰이
+     * 구매 토큰을 들고 있는지로 짐작한다.
+     */
+    private fun showAccount() {
+        val status = findViewById<TextView>(R.id.account_status) ?: return
+        val button = findViewById<TextView>(R.id.account_button) ?: return
+        val signedIn = Prefs.signedIn(this)
+        button.setText(if (signedIn) R.string.setting_account_signout else R.string.setting_account_signin)
+        status.isVisible = signedIn
+        if (signedIn) {
+            val attached = accountSubscriber ?: Prefs.purchaseToken(this).isNotEmpty()
+            status.setText(
+                if (attached) R.string.setting_account_signed_in
+                else R.string.setting_account_signed_in_free
+            )
+        }
     }
 
     /**

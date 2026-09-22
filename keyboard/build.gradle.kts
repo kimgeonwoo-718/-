@@ -24,6 +24,17 @@ val aiServerUrl: String = run {
 }
 
 /**
+ * 구글 로그인 클라이언트 ID(웹 종류).
+ *
+ * 비밀값이 아니다 — APK 를 뜯으면 어차피 보이는 공개 식별자다. 그래도 저장소에는 안
+ * 넣는다. 프로젝트마다 다른 값이고, 서버의 `GOOGLE_CLIENT_IDS` 와 **짝이 맞아야** 한다.
+ * 비어 있으면 설정 화면의 로그인 행이 통째로 사라진다(`Prefs.loginAvailable`).
+ */
+val googleClientId: String = (System.getenv("GOOGLE_CLIENT_ID")
+    ?: (project.findProperty("googleClientId") as String?)
+    ?: "").trim()
+
+/**
  * 서명 키.
  *
  * 없으면 안드로이드가 만들어 주는 디버그 키를 쓰는데, CI 러너마다 새로 만들어져서
@@ -103,6 +114,7 @@ android {
         versionName = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "0.1"
 
         buildConfigField("String", "AI_SERVER_URL", "\"$aiServerUrl\"")
+        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"$googleClientId\"")
 
         // 번역기(ML Kit)가 CPU 종류마다 네이티브 라이브러리를 하나씩 들고 온다. 네 벌이
         // 다 들어가면 그것만 62MB 다. x86 과 x86_64 는 **에뮬레이터 전용**이라 실제 폰에서는
@@ -180,6 +192,13 @@ dependencies {
     // Google Play 구독. 결제창을 띄우고 구매 토큰을 받는 것까지만 한다 —
     // "구독자인가" 는 서버가 그 토큰을 Play 에 물어 판단한다.
     implementation("com.android.billingclient:billing-ktx:7.1.1")
+
+    // 구글 로그인. 계정 고르는 창을 띄워 **ID 토큰** 하나를 받는 데까지만 쓴다 —
+    // 그 토큰이 진짜인지는 서버가 구글 공개키로 확인한다(docs/ACCOUNTS.md).
+    // 옛 GoogleSignIn API 대신 Credential Manager 를 쓴다. 그쪽은 2025 년에 접혔다.
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     // 온디바이스 번역 (구글 ML Kit). 언어팩은 처음 쓸 때 기기가 내려받고, 번역 자체는
     // 기기 안에서만 돈다 — 서버도 AI 한도도 쓰지 않는다.

@@ -58,7 +58,7 @@ for kind in sorted(g):
     out.append(f'    object {kind} {{')
     out += [f'        const val {n} = 0' for n in sorted(g[kind])]
     out.append('    }')
-out += ['}', '', 'object BuildConfig { const val AI_SERVER_URL = "" }']
+out += ['}', '', 'object BuildConfig {', '    const val AI_SERVER_URL = ""', '    const val GOOGLE_CLIENT_ID = ""', '}']
 open(work + '/stub_R.kt', 'w', encoding='utf-8').write('\n'.join(out) + '\n')
 PY
 
