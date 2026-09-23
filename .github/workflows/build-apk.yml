@@ -98,6 +98,15 @@ jobs:
           fi
           ls -lh dist/
 
+      # 구글 로그인은 "이 패키지 + 이 서명" 으로 등록된 안드로이드 클라이언트가 있어야
+      # 계정 창을 띄워 준다. 그 서명 지문(SHA-1)을 여기서 찍는다. 공개 정보다 — 설치된
+      # APK 에서 누구나 꺼낼 수 있는 값이라 로그에 남아도 된다. 비밀번호는 안 쓴다.
+      - name: 서명 지문 (구글 로그인 등록용)
+        run: |
+          set -euo pipefail
+          signer=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          "$signer" verify --print-certs dist/spell-keyboard-debug.apk | grep -i "SHA-1" || true
+
       # 사이드로드한 키보드는 Play Protect 가 경고를 띄운다. 경고를 없앨 수는 없지만,
       # 빌드된 APK 가 실제로 무슨 권한을 갖는지는 증명할 수 있다.
       - name: APK 권한 감사
