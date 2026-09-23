@@ -507,9 +507,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         keyboard?.showClipboardItems(clipboardHistory.items())
     }
 
+    /** 자판의 설정 버튼. 자판·테마를 바꾸러 온 것이라 첫 화면이 아니라 환경설정으로 간다. */
     override fun onOpenSettings() {
         startActivity(
-            Intent(this, SetupActivity::class.java)
+            Intent(this, SettingsActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     }

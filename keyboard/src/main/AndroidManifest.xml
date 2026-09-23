@@ -39,7 +39,16 @@
             </intent-filter>
         </activity>
 
-        <!-- 결제 화면. 설정 안에서만 열리므로 밖으로 내보내지 않는다. -->
+        <!--
+          환경설정. 첫 화면 위 막대와 자판 도구 줄의 설정 버튼에서만 열리므로 밖으로
+          내보내지 않는다.
+        -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_title" />
+
+        <!-- 결제 화면. 첫 화면 안에서만 열리므로 밖으로 내보내지 않는다. -->
         <activity
             android:name=".PaywallActivity"
             android:exported="false"

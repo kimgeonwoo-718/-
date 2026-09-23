@@ -1,30 +1,26 @@
 package com.spellkeyboard.ko
 
-import android.content.ClipData
-import android.content.ClipboardManager
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
 import android.view.inputmethod.InputMethodManager
-import android.widget.CompoundButton
-import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 
 /**
- * 설정 화면.
+ * 첫 화면.
  *
- * 위에서부터: 시작하기(켜기·선택) → 써 보기 → 사용법(접혀 있음) → 교정(실시간 스위치,
- * AI 와 요금제) → 키보드(자판·테마·배경). 사용자가 매일 만지는 것이 위에, 한 번 하고
- * 마는 것이 아래에 온다. API 키나 모델 이름 같은 내부 사정은 보여 주지 않는다.
+ * 위 막대: 앱 이름 · 로그인 · 환경설정. 본문: 시작하기(켜기·선택) → 써 보기 → 사용법 →
+ * 프리미엄. **처음 온 사람이 할 일만 둔다.** 자판·테마·배경 같은 것은 한 번 맞추면 잘 안
+ * 만지므로 [SettingsActivity] 로 옮겼다 — 한 화면에 다 넣었더니 너무 길어져서 정작 해야 할
+ * 일(키보드 켜기, 써 보기)이 묻혔다.
  *
  * 사용법이 써 보기 바로 밑인 이유: 쳐 보다가 "이건 뭐지" 싶을 때 눈이 가는 자리다.
  * 그 칸은 [ToolbarGuideView] 가 알아서 그리고 눌린 것을 가리키므로 여기서 묶을 것이 없다.
@@ -32,7 +28,6 @@ import androidx.core.view.isVisible
 class SetupActivity : AppCompatActivity() {
 
     private var quotaOutput: TextView? = null
-    private var backgroundStatus: TextView? = null
     private var billing: BillingManager? = null
     private var account: AccountManager? = null
 
@@ -43,44 +38,26 @@ class SetupActivity : AppCompatActivity() {
      */
     private var accountSubscriber: Boolean? = null
 
-    /**
-     * 시스템 사진 선택창. 저장소 권한 없이 사용자가 고른 그 한 장만 받는다.
-     * 원본은 크므로 [BackgroundImage] 가 줄여서 앱 폴더에 넣는다 — 그 동안 화면이
-     * 멎지 않게 다른 스레드에서 한다.
-     */
-    private val pickBackground = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri == null) return@registerForActivityResult
-        backgroundStatus?.setText(R.string.setting_background_saving)
-        Thread {
-            val saved = BackgroundImage.save(this, uri)
-            runOnUiThread {
-                if (!saved) Toast.makeText(this, R.string.setting_background_failed, Toast.LENGTH_LONG).show()
-                showBackgroundStatus()
-            }
-        }.start()
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 설정 화면도 키보드와 같은 밝기를 따른다. 키보드는 어두운데 설정만 하얗게 뜨면 어색하다.
-        AppCompatDelegate.setDefaultNightMode(nightModeOf(Prefs.themeMode(this)))
+        // 앱 화면도 키보드와 같은 밝기를 따른다. 키보드는 어두운데 앱만 하얗게 뜨면 어색하다.
+        AppCompatDelegate.setDefaultNightMode(Prefs.themeMode(this).nightMode())
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_setup)
-        // 밝게/어둡게를 바꾸면 액티비티가 통째로 다시 만들어진다. 스크롤 위치를 직접
-        // 살려 놓지 않으면 그때마다 맨 위로 튄다 — 실기기에서 그렇게 보였다.
-        // 레이아웃이 끝난 뒤에 옮겨야 한다. 그 전에는 내용 높이가 0 이라 무시된다.
+        // 환경설정에서 테마를 바꾸고 돌아오면 이 화면도 통째로 다시 만들어진다. 스크롤
+        // 위치를 살려 놓지 않으면 맨 위로 튄다. 레이아웃이 끝난 뒤에 옮겨야 한다.
         savedInstanceState?.getInt(KEY_SCROLL, 0)?.takeIf { it > 0 }?.let { y ->
             findViewById<View>(R.id.setup_scroll).post { findViewById<View>(R.id.setup_scroll).scrollTo(0, y) }
         }
 
+        bindTopBar()
         bindSetup()
-        bindCorrection()
-        bindKeyboard()
+        bindPremium()
     }
 
     override fun onResume() {
         super.onResume()
         // 시스템 설정에서 켜고 돌아오면 '완료' 로 바뀌어야 하고, 키보드에서 AI 를 쓰고
-        // 돌아오면 숫자가 줄어 있어야 한다.
+        // 돌아오면 요금 상태가 새로 보여야 한다.
         showSetupProgress()
         showQuota()
     }
@@ -96,6 +73,82 @@ class SetupActivity : AppCompatActivity() {
         account?.destroy()
         account = null
         super.onDestroy()
+    }
+
+    // --- 위 막대 ---------------------------------------------------------------
+
+    private fun bindTopBar() {
+        findViewById<View>(R.id.settings_button).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        bindAccount()
+    }
+
+    /**
+     * 로그인 버튼.
+     *
+     * 폰만 쓰는 사람에게는 아무 소용이 없다 — Play 가 알아서 복원해 준다. **윈도우·아이폰에서
+     * 같은 구독을 쓰려는 사람**을 위한 것이라 본문이 아니라 위 막대에 작게 둔다. 빌드에
+     * 클라이언트 ID 가 없으면 통째로 감춘다(눌러 봐야 오류만 난다).
+     *
+     * 로그인 전: 누르면 바로 구글 계정 창. 로그인 뒤: "내 계정" — 누르면 상태와 로그아웃.
+     */
+    private fun bindAccount() {
+        val button = findViewById<TextView>(R.id.account_button)
+        if (!Prefs.loginAvailable()) {
+            button.isVisible = false
+            return
+        }
+        account = AccountManager(this)
+        button.setOnClickListener {
+            if (Prefs.signedIn(this)) showAccountDialog() else signIn(button)
+        }
+        showAccount()
+    }
+
+    private fun signIn(button: TextView) {
+        // 두 번 누르면 계정 창이 두 개 뜬다. 끝날 때까지 막아 둔다.
+        button.isEnabled = false
+        button.setText(R.string.setting_account_working)
+        account?.signIn(this) { result ->
+            button.isEnabled = true
+            accountSubscriber = if (result.signedIn) result.subscriber else null
+            showAccount()
+            val message = result.message ?: if (result.signedIn) getString(accountStatus()) else null
+            message?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
+        }
+    }
+
+    private fun showAccountDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.account_dialog_title)
+            .setMessage(accountStatus())
+            .setPositiveButton(R.string.account_close, null)
+            .setNegativeButton(R.string.account_signout) { _, _ ->
+                account?.signOut {
+                    accountSubscriber = null
+                    showAccount()
+                }
+            }
+            .show()
+    }
+
+    private fun showAccount() {
+        findViewById<TextView>(R.id.account_button)?.setText(
+            if (Prefs.signedIn(this)) R.string.top_account else R.string.top_login
+        )
+    }
+
+    /**
+     * 로그인 상태 한 줄.
+     *
+     * **여기서 서버에 묻지 않는다.** 화면에 들어올 때마다 두드리면 하는 일 없이 요청만
+     * 쌓인다. 로그인할 때 받아 둔 답([accountSubscriber])을 쓰고, 그것이 없으면 이 폰이
+     * 구매 토큰을 들고 있는지로 짐작한다.
+     */
+    private fun accountStatus(): Int {
+        val attached = accountSubscriber ?: Prefs.purchaseToken(this).isNotEmpty()
+        return if (attached) R.string.setting_account_signed_in else R.string.setting_account_signed_in_free
     }
 
     // --- 시작하기 -------------------------------------------------------------
@@ -133,16 +186,9 @@ class SetupActivity : AppCompatActivity() {
         }
     }
 
-    // --- 교정 -----------------------------------------------------------------
+    // --- 프리미엄 ---------------------------------------------------------------
 
-    private fun bindCorrection() {
-        findViewById<CompoundButton>(R.id.auto_correct_switch).apply {
-            isChecked = Prefs.autoCorrectEnabled(this@SetupActivity)
-            setOnCheckedChangeListener { _, checked ->
-                Prefs.setAutoCorrectEnabled(this@SetupActivity, checked)
-            }
-        }
-
+    private fun bindPremium() {
         quotaOutput = findViewById(R.id.quota_output)
         val billingStatus = findViewById<TextView>(R.id.billing_status)
         billing = BillingManager(this) { message ->
@@ -153,82 +199,7 @@ class SetupActivity : AppCompatActivity() {
         }.also { it.start() }
         // 결제창을 바로 띄우지 않는다. 무엇을 얼마에 사는지 먼저 보여주는 화면을 거친다.
         findViewById<View>(R.id.subscribe_button).setOnClickListener {
-            startActivity(android.content.Intent(this, PaywallActivity::class.java))
-        }
-
-        bindAccount()
-        showInstallId()
-    }
-
-    // --- 로그인 ---------------------------------------------------------------
-
-    /**
-     * 로그인 행.
-     *
-     * 폰만 쓰는 사람에게는 아무 소용이 없다 — Play 가 알아서 복원해 준다. 이 칸은
-     * **윈도우·아이폰에서 같은 구독을 쓰려는 사람**을 위한 것이다. 그래서 설명도 그렇게
-     * 적고, 빌드에 클라이언트 ID 가 없으면 행을 통째로 감춘다(눌러 봐야 오류만 난다).
-     */
-    private fun bindAccount() {
-        val row = findViewById<View>(R.id.account_row) ?: return
-        if (!Prefs.loginAvailable()) {
-            row.isVisible = false
-            return
-        }
-        account = AccountManager(this)
-        findViewById<TextView>(R.id.account_button).setOnClickListener { view ->
-            // 두 번 누르면 계정 창이 두 개 뜬다. 끝날 때까지 막아 둔다.
-            view.isEnabled = false
-            findViewById<TextView>(R.id.account_status).setText(R.string.setting_account_working)
-            val done: (AccountManager.Result) -> Unit = { result ->
-                view.isEnabled = true
-                accountSubscriber = if (result.signedIn) result.subscriber else null
-                showAccount()
-                result.message?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
-            }
-            if (Prefs.signedIn(this)) account?.signOut(done) else account?.signIn(this, done)
-        }
-        showAccount()
-    }
-
-    /**
-     * 로그인 상태 한 줄.
-     *
-     * **여기서 서버에 묻지 않는다.** 화면에 들어올 때마다 두드리면 하는 일 없이 요청만
-     * 쌓인다. 로그인할 때 받아 둔 답([accountSubscriber])을 쓰고, 그것이 없으면 이 폰이
-     * 구매 토큰을 들고 있는지로 짐작한다.
-     */
-    private fun showAccount() {
-        val status = findViewById<TextView>(R.id.account_status) ?: return
-        val button = findViewById<TextView>(R.id.account_button) ?: return
-        val signedIn = Prefs.signedIn(this)
-        button.setText(if (signedIn) R.string.setting_account_signout else R.string.setting_account_signin)
-        status.isVisible = signedIn
-        if (signedIn) {
-            val attached = accountSubscriber ?: Prefs.purchaseToken(this).isNotEmpty()
-            status.setText(
-                if (attached) R.string.setting_account_signed_in
-                else R.string.setting_account_signed_in_free
-            )
-        }
-    }
-
-    /**
-     * 설치 ID 를 보여 준다. 길게 누르면 복사된다.
-     *
-     * 이 기기가 서버에 자기를 밝히는 이름이다. 문의할 때 이걸 알려 주면 어느 기기인지
-     * 짚을 수 있고, 출시 전에는 이 값을 서버의 시험용 구독자 목록에 넣어 유료 기능을
-     * 실기기에서 확인한다. 개인 정보가 아니라 앱이 처음 켜질 때 만든 무작위 값이다.
-     */
-    private fun showInstallId() {
-        val view = findViewById<TextView>(R.id.install_id) ?: return
-        val id = Prefs.installId(this)
-        view.text = getString(R.string.setting_install_id, id)
-        view.setOnLongClickListener {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.setting_install_id_label), id))
-            Toast.makeText(this, R.string.setting_install_id_copied, Toast.LENGTH_SHORT).show()
-            true
+            startActivity(Intent(this, PaywallActivity::class.java))
         }
     }
 
@@ -254,77 +225,6 @@ class SetupActivity : AppCompatActivity() {
             quota?.plan == FREE_PLAN -> getString(R.string.setting_quota_free)
             else -> getString(R.string.setting_quota_unlimited)
         }
-    }
-
-    // --- 키보드 ---------------------------------------------------------------
-
-    private fun bindKeyboard() {
-        val qwerty = findViewById<TextView>(R.id.layout_qwerty)
-        val cheonjiin = findViewById<TextView>(R.id.layout_cheonjiin)
-        fun showLayout() {
-            val current = Prefs.layoutType(this)
-            qwerty.isSelected = current == LayoutType.QWERTY
-            cheonjiin.isSelected = current == LayoutType.CHEONJIIN
-        }
-        showLayout()
-        qwerty.setOnClickListener { Prefs.setLayoutType(this, LayoutType.QWERTY); showLayout() }
-        cheonjiin.setOnClickListener { Prefs.setLayoutType(this, LayoutType.CHEONJIIN); showLayout() }
-
-        val light = findViewById<TextView>(R.id.theme_light)
-        val dark = findViewById<TextView>(R.id.theme_dark)
-        val currentTheme = Prefs.themeMode(this)
-        light.isSelected = currentTheme == ThemeMode.LIGHT
-        dark.isSelected = currentTheme == ThemeMode.DARK
-        light.setOnClickListener { chooseTheme(ThemeMode.LIGHT) }
-        dark.setOnClickListener { chooseTheme(ThemeMode.DARK) }
-
-        backgroundStatus = findViewById(R.id.background_status)
-        showBackgroundStatus()
-        findViewById<View>(R.id.background_pick).setOnClickListener {
-            pickBackground.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-        }
-        findViewById<View>(R.id.background_clear).setOnClickListener {
-            BackgroundImage.clear(this)
-            showBackgroundStatus()
-        }
-
-        val transparencyValue = findViewById<TextView>(R.id.key_transparency_value)
-        findViewById<SeekBar>(R.id.key_transparency).apply {
-            fun show(percent: Int) {
-                transparencyValue.text = getString(R.string.setting_key_transparency_value, percent)
-            }
-            progress = Prefs.keyTransparency(this@SetupActivity)
-            show(progress)
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) = show(value)
-
-                // 끌고 있는 동안은 숫자만 바꾸고, 손을 뗄 때 저장한다. 끄는 내내 저장하면
-                // 한 번 움직일 때마다 디스크에 쓴다.
-                override fun onStartTrackingTouch(bar: SeekBar) = Unit
-
-                override fun onStopTrackingTouch(bar: SeekBar) {
-                    Prefs.setKeyTransparency(this@SetupActivity, bar.progress)
-                }
-            })
-        }
-    }
-
-    /** 테마를 바꾸면 이 화면도 같은 밝기로 다시 뜬다 — 그래서 선택 표시를 따로 갱신할 필요가 없다. */
-    private fun chooseTheme(mode: ThemeMode) {
-        if (mode == Prefs.themeMode(this)) return
-        Prefs.setThemeMode(this, mode)
-        AppCompatDelegate.setDefaultNightMode(nightModeOf(mode))
-    }
-
-    private fun showBackgroundStatus() {
-        backgroundStatus?.setText(
-            if (BackgroundImage.exists(this)) R.string.setting_background_set else R.string.setting_background_none
-        )
-    }
-
-    private fun nightModeOf(mode: ThemeMode): Int = when (mode) {
-        ThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
-        ThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
     }
 
     companion object {

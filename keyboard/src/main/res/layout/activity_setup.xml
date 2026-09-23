@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  설정 화면. 토스 톤 — 연회색 바탕에 흰 카드, 카드 안은 56dp 행.
+  첫 화면. 토스 톤 — 연회색 바탕에 흰 카드, 카드 안은 56dp 행.
 
   autofill 은 화면 통째로 끈다. 키보드 앱이 비밀번호 관리자를 불러내는 그림은 사용자를
   불안하게 만든다.
@@ -23,13 +23,42 @@
         android:paddingTop="28dp"
         android:paddingBottom="40dp">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <!--
+          위 막대. 한 번 하고 마는 것(로그인)과 가끔 만지는 것(환경설정)을 여기 올려 두고,
+          본문에는 처음 온 사람이 할 일(시작하기 → 써 보기 → 사용법 → 프리미엄)만 남긴다.
+          360dp 폰에서 제목 22sp + 알약 둘이 한 줄에 들어가게 맞췄다(26sp 면 제목이 두 줄로 꺾인다).
+        -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/app_name"
-            android:textColor="@color/toss_text"
-            android:textSize="26sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/app_name"
+                android:textColor="@color/toss_text"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <!-- 빌드에 로그인 클라이언트 ID 가 없으면 숨는다(SetupActivity). -->
+            <TextView
+                android:id="@+id/account_button"
+                style="@style/Pill"
+                android:paddingHorizontal="12dp"
+                android:text="@string/top_login" />
+
+            <TextView
+                android:id="@+id/settings_button"
+                style="@style/Pill"
+                android:paddingHorizontal="12dp"
+                android:layout_marginStart="6dp"
+                android:text="@string/top_settings" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"
@@ -115,25 +144,12 @@
 
         </LinearLayout>
 
-        <!-- 교정 -->
+        <!--
+          프리미엄. 무엇을 파는지와 사는 버튼만. 한도·데이터 안내 같은 잔글씨는 환경설정의
+          정보 칸으로 옮겼다 — 여기서는 눈이 버튼에 가야 한다.
+        -->
         <LinearLayout style="@style/Card">
-            <TextView style="@style/CardTitle" android:text="@string/section_correction" />
-
-            <LinearLayout style="@style/Row">
-                <LinearLayout style="@style/RowText">
-                    <TextView style="@style/RowTitle" android:text="@string/setting_auto_correct" />
-                    <TextView style="@style/RowSub" android:text="@string/setting_auto_correct_sub" />
-                </LinearLayout>
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/auto_correct_switch"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:thumb="@drawable/switch_thumb"
-                    app:showText="false"
-                    app:track="@drawable/switch_track" />
-            </LinearLayout>
-
-            <View style="@style/Divider" />
+            <TextView style="@style/CardTitle" android:text="@string/paywall_title_plan" />
 
             <LinearLayout style="@style/Row">
                 <LinearLayout style="@style/RowText">
@@ -158,138 +174,11 @@
                 style="@style/Caption"
                 android:layout_marginTop="10dp" />
 
-            <View style="@style/Divider" />
-
-            <!--
-              로그인. 구독은 Play 구매 토큰 하나로 도는데 윈도우에는 스토어가 없고 아이폰은
-              다른 스토어다. 로그인해 두면 그 구매가 계정에 붙어 다른 기기가 찾아 쓴다.
-              빌드에 클라이언트 ID 가 없으면 통째로 숨는다(SetupActivity).
-            -->
-            <LinearLayout
-                android:id="@+id/account_row"
-                style="@style/Row">
-                <LinearLayout style="@style/RowText">
-                    <TextView style="@style/RowTitle" android:text="@string/setting_account_title" />
-                    <TextView style="@style/RowSub" android:text="@string/setting_account_sub" />
-                    <TextView
-                        android:id="@+id/account_status"
-                        style="@style/RowSub"
-                        android:textColor="@color/toss_blue"
-                        android:textStyle="bold" />
-                </LinearLayout>
-                <TextView
-                    android:id="@+id/account_button"
-                    style="@style/Pill"
-                    android:text="@string/setting_account_signin" />
-            </LinearLayout>
-
             <TextView
                 style="@style/Caption"
                 android:layout_marginTop="6dp"
+                android:layout_marginBottom="8dp"
                 android:text="@string/setting_plan_note" />
-
-            <TextView
-                style="@style/Caption"
-                android:layout_marginTop="6dp"
-                android:text="@string/ai_notice" />
-
-            <!--
-              설치 ID. 길게 눌러 복사한다. 서버에 문의하거나 시험용 구독자 목록에 넣을 때
-              필요하다. 평소에는 아무 의미 없는 줄이라 맨 아래 흐린 글씨로 둔다.
-            -->
-            <TextView
-                android:id="@+id/install_id"
-                style="@style/Caption"
-                android:layout_marginTop="10dp"
-                android:textIsSelectable="true" />
         </LinearLayout>
-
-        <!-- 키보드 -->
-        <LinearLayout style="@style/Card">
-            <TextView style="@style/CardTitle" android:text="@string/section_keyboard" />
-
-            <LinearLayout style="@style/Row">
-                <LinearLayout style="@style/RowText">
-                    <TextView style="@style/RowTitle" android:text="@string/setting_layout" />
-                </LinearLayout>
-                <LinearLayout style="@style/Segment">
-                    <TextView android:id="@+id/layout_qwerty" style="@style/SegmentItem" android:text="@string/setting_layout_qwerty" />
-                    <TextView android:id="@+id/layout_cheonjiin" style="@style/SegmentItem" android:text="@string/setting_layout_cheonjiin" />
-                </LinearLayout>
-            </LinearLayout>
-
-            <View style="@style/Divider" />
-
-            <LinearLayout style="@style/Row">
-                <LinearLayout style="@style/RowText">
-                    <TextView style="@style/RowTitle" android:text="@string/setting_theme" />
-                </LinearLayout>
-                <LinearLayout style="@style/Segment">
-                    <TextView android:id="@+id/theme_light" style="@style/SegmentItem" android:text="@string/setting_theme_light" />
-                    <TextView android:id="@+id/theme_dark" style="@style/SegmentItem" android:text="@string/setting_theme_dark" />
-                </LinearLayout>
-            </LinearLayout>
-
-            <View style="@style/Divider" />
-
-            <LinearLayout style="@style/Row">
-                <LinearLayout style="@style/RowText">
-                    <TextView style="@style/RowTitle" android:text="@string/setting_background" />
-                    <TextView android:id="@+id/background_status" style="@style/RowSub" />
-                </LinearLayout>
-                <TextView android:id="@+id/background_pick" style="@style/Pill" android:text="@string/setting_background_pick" />
-                <TextView
-                    android:id="@+id/background_clear"
-                    style="@style/Pill"
-                    android:layout_marginStart="6dp"
-                    android:text="@string/setting_background_clear" />
-            </LinearLayout>
-
-            <View style="@style/Divider" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:paddingTop="14dp"
-                android:paddingBottom="6dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-
-                    <TextView
-                        style="@style/RowTitle"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:text="@string/setting_key_transparency" />
-
-                    <TextView
-                        android:id="@+id/key_transparency_value"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="@color/toss_blue"
-                        android:textSize="16sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-
-                <TextView style="@style/RowSub" android:text="@string/setting_key_transparency_sub" />
-
-                <SeekBar
-                    android:id="@+id/key_transparency"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:max="100" />
-            </LinearLayout>
-        </LinearLayout>
-
-
-        <TextView
-            style="@style/Caption"
-            android:layout_marginTop="20dp"
-            android:paddingHorizontal="4dp"
-            android:text="@string/privacy_notice" />
     </LinearLayout>
 </ScrollView>

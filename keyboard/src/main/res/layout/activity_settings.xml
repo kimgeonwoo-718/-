@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  환경설정. 첫 화면에서 덜어 낸 것들 — 자주 안 만지지만 찾으면 있어야 하는 것.
+  첫 화면과 같은 토스 톤을 쓴다.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/settings_scroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/toss_bg"
+    android:fillViewport="true"
+    android:importantForAutofill="noExcludeDescendants"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingTop="20dp"
+        android:paddingBottom="40dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/back_button"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="-10dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:contentDescription="@string/back"
+                android:focusable="true"
+                android:gravity="center"
+                android:text="←"
+                android:textColor="@color/toss_text"
+                android:textSize="24sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_title"
+                android:textColor="@color/toss_text"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- 교정 -->
+        <LinearLayout style="@style/Card">
+            <TextView style="@style/CardTitle" android:text="@string/section_correction" />
+
+            <LinearLayout style="@style/Row">
+                <LinearLayout style="@style/RowText">
+                    <TextView style="@style/RowTitle" android:text="@string/setting_auto_correct" />
+                    <TextView style="@style/RowSub" android:text="@string/setting_auto_correct_sub" />
+                </LinearLayout>
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/auto_correct_switch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:thumb="@drawable/switch_thumb"
+                    app:showText="false"
+                    app:track="@drawable/switch_track" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 키보드 -->
+        <LinearLayout style="@style/Card">
+            <TextView style="@style/CardTitle" android:text="@string/section_keyboard" />
+
+            <LinearLayout style="@style/Row">
+                <LinearLayout style="@style/RowText">
+                    <TextView style="@style/RowTitle" android:text="@string/setting_layout" />
+                </LinearLayout>
+                <LinearLayout style="@style/Segment">
+                    <TextView android:id="@+id/layout_qwerty" style="@style/SegmentItem" android:text="@string/setting_layout_qwerty" />
+                    <TextView android:id="@+id/layout_cheonjiin" style="@style/SegmentItem" android:text="@string/setting_layout_cheonjiin" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout style="@style/Row">
+                <LinearLayout style="@style/RowText">
+                    <TextView style="@style/RowTitle" android:text="@string/setting_theme" />
+                </LinearLayout>
+                <LinearLayout style="@style/Segment">
+                    <TextView android:id="@+id/theme_light" style="@style/SegmentItem" android:text="@string/setting_theme_light" />
+                    <TextView android:id="@+id/theme_dark" style="@style/SegmentItem" android:text="@string/setting_theme_dark" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout style="@style/Row">
+                <LinearLayout style="@style/RowText">
+                    <TextView style="@style/RowTitle" android:text="@string/setting_background" />
+                    <TextView android:id="@+id/background_status" style="@style/RowSub" />
+                </LinearLayout>
+                <TextView android:id="@+id/background_pick" style="@style/Pill" android:text="@string/setting_background_pick" />
+                <TextView
+                    android:id="@+id/background_clear"
+                    style="@style/Pill"
+                    android:layout_marginStart="6dp"
+                    android:text="@string/setting_background_clear" />
+            </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="14dp"
+                android:paddingBottom="6dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        style="@style/RowTitle"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/setting_key_transparency" />
+
+                    <TextView
+                        android:id="@+id/key_transparency_value"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/toss_blue"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView style="@style/RowSub" android:text="@string/setting_key_transparency_sub" />
+
+                <SeekBar
+                    android:id="@+id/key_transparency"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:max="100" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!--
+          정보. 잔글씨를 한곳에 모은다. 설치 ID 는 길게 눌러 복사한다 — 문의하거나 시험용
+          구독자 목록에 넣을 때 필요하고, 평소에는 아무 의미 없는 줄이라 맨 아래 둔다.
+        -->
+        <LinearLayout style="@style/Card">
+            <TextView style="@style/CardTitle" android:text="@string/section_info" />
+
+            <TextView
+                style="@style/Caption"
+                android:layout_marginTop="10dp"
+                android:text="@string/privacy_notice" />
+
+            <TextView
+                style="@style/Caption"
+                android:layout_marginTop="8dp"
+                android:text="@string/ai_notice" />
+
+            <TextView
+                android:id="@+id/install_id"
+                style="@style/Caption"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="8dp"
+                android:textIsSelectable="true" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

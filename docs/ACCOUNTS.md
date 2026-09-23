@@ -101,13 +101,13 @@ Play 가 복원해 주니 안드로이드 안에서는 문제가 없다.
 
 ## 안드로이드 (만들었다)
 
-설정 → 교정 칸 맨 아래에 **로그인 행**이 있다. `AccountManager` 가 Credential Manager 로
+첫 화면 **위 막대의 "로그인" 버튼**이다(로그인하면 "내 계정" 으로 바뀌고, 누르면 상태와 로그아웃). `AccountManager` 가 Credential Manager 로
 계정 고르는 창을 띄워 ID 토큰을 받고, 구매 토큰이 이 폰에 있으면 **같이 보낸다** —
 그래야 이 폰이 산 구독이 계정에 붙어 윈도우·아이폰이 찾아 쓸 수 있다. 받은 기기 토큰은
 `Prefs.deviceToken` 에 두고, 교정 요청마다 `X-Device-Token` 으로 같이 실린다.
 
 - 옛 `GoogleSignIn` API 말고 **Credential Manager** 를 쓴다. 그쪽은 접혔다.
-- **빌드에 클라이언트 ID 가 없으면 행이 통째로 숨는다.** 눌러 봐야 오류만 난다.
+- **빌드에 클라이언트 ID 가 없으면 버튼이 통째로 숨는다.** 눌러 봐야 오류만 난다.
   `GOOGLE_CLIENT_ID`(환경 변수 또는 `gradle.properties` 의 `googleClientId`) → `BuildConfig`.
   CI(`build-apk.yml`)에 값이 적혀 있다. 저장소 변수 `GOOGLE_CLIENT_ID` 가 있으면 그것이 우선이다.
 - **로그아웃은 서버가 뭐라 하든 폰에서 지운다.** 망이 끊겼다고 로그인 상태로 남아 있으면
