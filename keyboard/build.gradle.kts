@@ -26,8 +26,8 @@ val aiServerUrl: String = run {
 /**
  * 구글 로그인 클라이언트 ID(웹 종류).
  *
- * 비밀값이 아니다 — APK 를 뜯으면 어차피 보이는 공개 식별자다. 그래도 저장소에는 안
- * 넣는다. 프로젝트마다 다른 값이고, 서버의 `GOOGLE_CLIENT_IDS` 와 **짝이 맞아야** 한다.
+ * 비밀값이 아니다 — APK 를 뜯으면 어차피 보이는 공개 식별자다. 실제 값은 CI
+ * (`build-apk.yml`)에 적혀 있고, 서버의 `GOOGLE_CLIENT_IDS` 와 **짝이 맞아야** 한다.
  * 비어 있으면 설정 화면의 로그인 행이 통째로 사라진다(`Prefs.loginAvailable`).
  */
 val googleClientId: String = (System.getenv("GOOGLE_CLIENT_ID")
