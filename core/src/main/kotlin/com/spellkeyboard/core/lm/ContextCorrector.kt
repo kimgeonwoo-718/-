@@ -830,6 +830,18 @@ class ContextCorrector(
                 val id = Hangul.jungseongIndex(alternative)
                 if (id >= 0) out += swap(word, index, Hangul.compose(cho, id, jong)) to cost
             }
+            // 어미 바로 앞의 ㅅ → ㅆ('출발햇어', '모엿어', '공지하겟습니다'). 폰에서 쉬프트를
+            // 놓쳐 나는 오타라 제일 흔한데, 보통 받침 편집 값을 매기면 원문도 그럴듯하게 분석돼서
+            // ('햇'을 XSV+EP 로 읽는다) 문턱을 못 넘었다(오타 시험지 ㅆ→ㅅ 되살림 78%).
+            // 모음이 과거형을 이루는 것(ㅏㅓㅕㅐㅘㅝㅙㅞ)이고 뒤에 어미가 올 때만 싸게 준다.
+            // '낫다'(더 낫네, 병이 낫는)는 '났다'와 부딪혀서 뺀다. 고친 말이 언어모델이 아는
+            // 말일 때만 후보가 되는 것은 다른 편집과 같다.
+            if (jong == JONG_S && index + 1 < word.length && jung in PAST_VOWELS &&
+                !(cho == CHO_N && jung == JUNG_A) &&
+                ENDING_STARTS.any { word.startsWith(it, index + 1) }
+            ) {
+                out += swap(word, index, Hangul.compose(cho, jung, JONG_SS)) to PAST_SLIP_COST
+            }
             JONGSEONG_EDITS[Hangul.JONGSEONG[jong]]?.forEach { (alternative, cost) ->
                 val id = if (alternative == NO_JONG) 0 else Hangul.jongseongIndex(alternative)
                 if (id >= 0) out += swap(word, index, Hangul.compose(cho, jung, id)) to cost
@@ -1142,6 +1154,26 @@ class ContextCorrector(
             listOf('ㄱ', 'ㄴ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ').map { it to CODA_ADD_COST }
 
         /** 받침 혼동. 소리가 같거나(ㅅ/ㅆ/ㄷ/ㅈ/ㅊ/ㅌ) 겹받침의 한쪽이 떨어진 것. */
+        private val JONG_S = Hangul.jongseongIndex('ㅅ')
+        private val JONG_SS = Hangul.jongseongIndex('ㅆ')
+        private val CHO_N = Hangul.choseongIndex('ㄴ')
+        private val JUNG_A = Hangul.jungseongIndex('ㅏ')
+
+        /** 과거형 '-았/-었/-였/-했/-겠'을 이루는 모음. */
+        private val PAST_VOWELS = "ㅏㅓㅕㅐㅘㅝㅙㅞㅔ".map { Hangul.jungseongIndex(it) }.toSet()
+
+        /** 과거형 받침 뒤에 오는 어미의 첫머리. */
+        private val ENDING_STARTS = listOf(
+            "어", "다", "네", "지", "고", "는", "던", "을", "음", "잖", "죠", "습", "으", "니",
+            "나", "냐", "대", "더", "구", "거", "기", "겠"
+        )
+
+        /**
+         * 어미 앞 ㅅ→ㅆ 값. **음수다** — 편집 기본값([EDIT_BASE_COST])을 거의 지워 준다.
+         * 이 오타는 우연히 맞는 말이 될 일이 드물어서('낫'만 뺐다) 원문과 겨룰 때 확실히 이기게.
+         */
+        const val PAST_SLIP_COST = -1.0f
+
         val JONGSEONG_EDITS = edits(
             'ㅅ' to ('ㅆ' to 0.8f), 'ㅆ' to ('ㅅ' to 0.8f),
             'ㄴ' to ('ㄶ' to 1.5f), 'ㄶ' to ('ㄴ' to 1.5f),

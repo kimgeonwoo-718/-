@@ -285,6 +285,16 @@ class ChatRulesTest {
     }
 
     @Test
+    fun `지 안 은 지 않 — 띄어 친 부사 안 은 그대로`() {
+        assertFixed("생각보다 춥지 않아", "생각보다 춥지 안아")
+        assertFixed("갈 데가 마땅치 않네", "갈 데가 마땅치 안네")
+        assertFixed("있을게", "잇을게")
+        assertFixed("추후 공지하겠습니다", "추후 공지하겟습니다")
+        assertFixed("모르겠어", "모르겟어")
+        assertUntouched("하지 안 해도 돼", "실을 잇는 중")
+    }
+
+    @Test
     fun `만큼 뿐 — ㄹ 받침 명사 뒤는 조사라 붙인다`() {
         assertFixed("먹을 만큼 먹어", "먹을만큼 먹어")
         assertFixed("할 뿐이야", "할뿐이야")
