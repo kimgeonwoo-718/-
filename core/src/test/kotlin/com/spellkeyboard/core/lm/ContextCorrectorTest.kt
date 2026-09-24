@@ -29,6 +29,12 @@ class ContextCorrectorTest {
     }
 
     @Test
+    fun `맞는 는대 는 는데 로 바꾸지 않는다 — 전해 들은 말`() {
+        // '밥 먹는대'(먹는다고 한다)를 '먹는데'로 바꿨다(2026-09-24).
+        assertUntouched("밥 먹는대")
+    }
+
+    @Test
     fun `잘못 떨어진 어절을 합치면서 오타도 고친다`() {
         assertFixed("뭐 하세요", "뭐 하 새요")
     }

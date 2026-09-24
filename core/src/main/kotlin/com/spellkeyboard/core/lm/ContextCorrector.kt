@@ -430,7 +430,9 @@ class ContextCorrector(
             codaSlip = (identityCount ?: -1f) < CODA_SLIP_MAX_LN,
             nearKey = (identityCount ?: -1f) < NEAR_KEY_MAX_LN
         )) {
-            if (lm.lnCount(edited) != null && !(kind == KIND_FREE && startsBound(edited))) {
+            if (lm.lnCount(edited) != null && !(kind == KIND_FREE && startsBound(edited)) &&
+                !hearsayToConnective(surface, edited)
+            ) {
                 out += Candidate(edited, -(cost + penalty))
             }
         }
@@ -444,6 +446,17 @@ class ContextCorrector(
             }
         }
         return if (out.size <= 1) out else merge(out, emptyList())
+    }
+
+    /**
+     * 맞는 '-는대'(전해 들은 말: '밥 먹는대')를 '-는데'로 바꾸는 편집인가. 말뭉치에 '-는대'가
+     * 드물어서 맞게 친 것을 바꿨다(2026-09-24). 과거형·'있다·없다' 뒤의 '-는대'는 없는 꼴이라
+     * ('했는대요', '있는대요' — 전해 들은 말이면 '했대', '있대') 그때는 고친다.
+     */
+    private fun hearsayToConnective(surface: String, edited: String): Boolean {
+        val at = surface.indexOf("는대")
+        if (at < 0 || edited.length != surface.length || !edited.startsWith("는데", at)) return false
+        return at == 0 || surface[at - 1] !in NEUNDAE_WRONG_BEFORE
     }
 
     /** 원문이 흔한 말일수록 편집을 비싸게. ln(빈도)가 [KNOWN_FREE_LN] 을 넘는 만큼 물린다. */
@@ -1047,6 +1060,9 @@ class ContextCorrector(
         private val TOKEN = Regex("""\S+|\s+""")
         private val SENTENCE_ENDERS = setOf('.', '!', '?', '…')
         private val PUNCTUATION = setOf('.', ',', '!', '?', '…', '~', ')', '"', '\'', '”', '’', ';', ':')
+
+        /** 이 음절 뒤의 '-는대'는 없는 꼴이다(과거형·있다·없다). */
+        private val NEUNDAE_WRONG_BEFORE = "았었였했갔왔봤졌됐켰셨겠있없".toSet()
 
         /** 어절 앞에 붙는 여는 괄호·따옴표. */
         private val OPENERS = setOf('(', '"', '\'', '“', '‘', '[', '「', '『')
