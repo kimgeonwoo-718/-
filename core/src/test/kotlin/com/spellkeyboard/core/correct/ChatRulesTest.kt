@@ -425,4 +425,13 @@ class ChatRulesTest {
         assertFixed("요새 바빠", "요세 바빠")
         assertUntouched("스불재네", "불이 났어 화재네", "요세미티 가 봤어")
     }
+
+    @Test
+    fun `업무 메시지`() {
+        assertFixed("결제는 카드로 가능합니다", "결재는 카드로 가능합니다")
+        assertFixed("입금 확인되면 발송해 드립니다", "입금 확인 되면 발송해 드립니다")
+        assertFixed("해당 건은 처리 완료되었습니다", "해당 건은 처리 완료 되었습니다")
+        assertFixed("좋은 하루 되십시오", "좋은하루 되십시요")
+        assertUntouched("결재 서류 올렸습니다", "확인 안 되면 연락 주세요", "좋은데 비싸")
+    }
 }
