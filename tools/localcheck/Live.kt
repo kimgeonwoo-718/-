@@ -50,6 +50,11 @@ fun main(args: Array<String>) {
         if (again in answers) kept++ else broken += "  $clean\n    → $again"
     }
     println("고침: $fixed / ${rows.size}  (${pct(fixed, rows.size)})")
+    if (System.getenv("LIVE_TIME") == "1") {
+        val sorted = timings.sorted()
+        println("스페이스 한 번: 중앙 %.2fms  p95 %.2fms  최대 %.2fms  (%d번, JVM 이라 폰은 몇 배 느리다)".format(
+            sorted[sorted.size / 2] / 1e6, sorted[sorted.size * 95 / 100] / 1e6, sorted.last() / 1e6, sorted.size))
+    }
     println("지킴: $kept / ${rows.size}  (${pct(kept, rows.size)})  — 정답을 그대로 쳤을 때 안 건드린 것")
     if (misses.isNotEmpty()) { println("\n## 못 고친 것 (${misses.size})"); misses.take(show).forEach(::println) }
     if (broken.isNotEmpty()) { println("\n## 멀쩡한 걸 건드린 것 (${broken.size})"); broken.take(show).forEach(::println) }
@@ -62,7 +67,10 @@ fun type(engine: CorrectionEngine, sentence: String): String {
         buffer.append(word)
         val before = buffer.toString().takeLast(64)
         val cut = buffer.length - before.length
-        engine.correctTail(before)?.let { tail ->
+        val t0 = System.nanoTime()
+        val tailFix = engine.correctTail(before)
+        timings += System.nanoTime() - t0
+        tailFix?.let { tail ->
             val start = cut + before.length - tail.deleteBefore
             buffer.replace(start, buffer.length, tail.replacement)
         }
@@ -70,6 +78,8 @@ fun type(engine: CorrectionEngine, sentence: String): String {
     }
     return buffer.toString().trim().replace(Regex("\\s+"), " ")
 }
+
+val timings = ArrayList<Long>()
 
 val DECORATIONS = listOf("ㅋㅋ", "ㅠㅠ", "~", "!!", "ㅎㅎ", "😂", "..", "^^")
 
