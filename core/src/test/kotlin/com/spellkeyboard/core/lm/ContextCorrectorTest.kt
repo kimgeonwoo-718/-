@@ -58,6 +58,8 @@ class ContextCorrectorTest {
         // 뒤에 부호만 허용해서 'ㅋㅋ·ㅠㅠ·이모지'가 붙은 어절을 통째로 건너뛰었다(2026-09-24).
         assertFixed("어제 늦게 잤어ㅋㅋ", "어제 늦게 잣어ㅋㅋ")
         assertFixed("오늘 했어😂", "오늘 햇어😂")
+        assertFixed("ㅋㅋ했어", "ㅋㅋ햇어")
+        assertFixed("(나도 했어)", "(나도 햇어)")
         assertUntouched("진짜 웃기다ㅋㅋㅋ")
         assertUntouched("보고 싶어♡")
     }

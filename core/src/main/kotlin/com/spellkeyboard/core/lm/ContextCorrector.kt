@@ -185,9 +185,11 @@ class ContextCorrector(
          * ('했어ㅋㅋ', '미안ㅠㅠ', '고마워😂', '좋아^^')만 붙을 수 있다. 장식을 막아 두었더니
          * 그 어절을 통째로 안 봐서 '햇어😂'·'많이먹어ㅠㅠ'가 그대로 남았다(2026-09-24).
          * '3시에' 처럼 앞에 다른 글자가 붙은 것은 언어모델이 본 적 없는 어절이라 건드리지 않는다.
+         * 앞에 붙은 것이 장식이나 여는 괄호·따옴표뿐이면('ㅋㅋ햇어', '(나도') 본다.
          */
         val soft: Boolean =
-            !whitespace && prefix.isEmpty() && core.isNotEmpty() && core.length <= MAX_TOKEN_SYLLABLES &&
+            !whitespace && prefix.all { it in OPENERS || isDecoration(it) } && core.isNotEmpty() &&
+                core.length <= MAX_TOKEN_SYLLABLES &&
                 core.all { it in HANGUL } && suffix.all { it in PUNCTUATION || isDecoration(it) }
     }
 
@@ -1045,6 +1047,9 @@ class ContextCorrector(
         private val TOKEN = Regex("""\S+|\s+""")
         private val SENTENCE_ENDERS = setOf('.', '!', '?', '…')
         private val PUNCTUATION = setOf('.', ',', '!', '?', '…', '~', ')', '"', '\'', '”', '’', ';', ':')
+
+        /** 어절 앞에 붙는 여는 괄호·따옴표. */
+        private val OPENERS = setOf('(', '"', '\'', '“', '‘', '[', '「', '『')
 
         /** 어절 끝에 붙는 채팅 장식: 낱자모(ㅋㅋ·ㅠㅠ), 이모지, '^'·'♡' 같은 기호. */
         private fun isDecoration(c: Char): Boolean =
