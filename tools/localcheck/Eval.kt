@@ -17,6 +17,7 @@ import kotlin.random.Random
 fun main(args: Array<String>) {
     val limit = (System.getenv("EVAL_LIMIT") ?: "1500").toInt()
     val show = (System.getenv("EVAL_SHOW") ?: "0").toInt()
+    showMangled = System.getenv("EVAL_MANGLED") == "1"
 
     val sets = LinkedHashMap<String, List<String>>()
     args.firstOrNull()?.let { path ->
@@ -100,6 +101,9 @@ private fun oneGap(engine: CorrectionEngine, sample: List<String>, show: Int) {
     missed.take(show).forEach { println("     $it") }
 }
 
+/** EVAL_MANGLED=1 이면 글자를 바꾼 문장(글자바뀜)을 찍는다. */
+private var showMangled = false
+
 /** 3. 공백을 [ratio] 만큼 지운 것. 경계 정밀도/재현율. */
 private fun partial(engine: CorrectionEngine, sample: List<String>, label: String, ratio: Double, show: Int) {
     val random = Random(13)
@@ -112,7 +116,7 @@ private fun partial(engine: CorrectionEngine, sample: List<String>, label: Strin
         val out = engine.correctAll(input).text
         val g = breaksOf(gold)
         want += g.size
-        if (out.replace(" ", "") != gold.replace(" ", "")) { mangled++; continue }
+        if (out.replace(" ", "") != gold.replace(" ", "")) { mangled++; if (showMangled) println("   ✗ $input → $out"); continue }
         val p = breaksOf(out)
         got += p.size
         hit += p.count { it in g }
@@ -134,7 +138,7 @@ private fun bare(engine: CorrectionEngine, sample: List<String>, show: Int) {
         val out = engine.correctAll(input).text
         val g = breaksOf(gold)
         want += g.size
-        if (out.replace(" ", "") != input) { mangled++; continue }
+        if (out.replace(" ", "") != input) { mangled++; if (showMangled) println("   ✗ $input → $out"); continue }
         val p = breaksOf(out)
         got += p.size
         hit += p.count { it in g }
