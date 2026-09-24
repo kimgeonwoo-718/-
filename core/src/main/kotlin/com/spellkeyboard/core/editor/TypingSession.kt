@@ -2,6 +2,7 @@ package com.spellkeyboard.core.editor
 
 import com.spellkeyboard.core.correct.CorrectionEngine
 import com.spellkeyboard.core.hangul.CheonjiinAutomata
+import com.spellkeyboard.core.hangul.Hangul
 import com.spellkeyboard.core.hangul.HangulAutomata
 import com.spellkeyboard.core.hangul.JamoAutomata
 
@@ -46,6 +47,13 @@ class TypingSession(
     var onEvent: ((CorrectionEvent) -> Unit)? = null
 
     private data class Undo(val applied: String, val original: String)
+
+    /**
+     * 사용자가 백스페이스로 물린 교정의 원문. 교정 창이 커서 앞 세 어절이라, 물린 말이 다음
+     * 스페이스에서 **다시 창에 들어와 도로 고쳐졌다**('됬다' → 물림 → 다음 어절 → '됐다').
+     * 창을 이 말 뒤에서부터 잡는다. 신조어·이름처럼 사용자가 일부러 친 말이 이렇다.
+     */
+    private val kept = ArrayDeque<String>()
 
     fun reset() {
         automata.reset()
@@ -199,7 +207,8 @@ class TypingSession(
             return
         }
 
-        val before = readBeforeCursor(editor, LOOKBEHIND_CHARS)
+        val read = readBeforeCursor(editor, LOOKBEHIND_CHARS)
+        val before = read.substring(keptEnd(read))
         val tail = engine.correctTail(before)
 
         editor.beginBatch()
@@ -239,8 +248,38 @@ class TypingSession(
         commit(editor, pending.original)
         editor.endBatch()
 
+        remember(pending.original.trim())
         onEvent?.invoke(CorrectionEvent.Reverted)
         return true
+    }
+
+    private fun remember(original: String) {
+        if (original.isEmpty()) return
+        kept.remove(original)
+        kept.addLast(original)
+        while (kept.size > MAX_KEPT) kept.removeFirst()
+    }
+
+    /**
+     * [text] 에서 물린 말이 마지막으로 끝나는 자리. 교정 창은 여기서부터 잡는다. 없으면 0.
+     * 어절 경계에 걸친 것만 본다 — 다른 말 속에 우연히 든 것은 아니다.
+     */
+    private fun keptEnd(text: String): Int {
+        var cut = 0
+        for (word in kept) {
+            var at = text.lastIndexOf(word)
+            while (at >= 0) {
+                val end = at + word.length
+                val startsWord = at == 0 || text[at - 1].isWhitespace()
+                val endsWord = end == text.length || !Hangul.isSyllable(text[end])
+                if (startsWord && endsWord) {
+                    if (end > cut) cut = end
+                    break
+                }
+                at = if (at == 0) -1 else text.lastIndexOf(word, at - 1)
+            }
+        }
+        return cut
     }
 
     /**
@@ -263,6 +302,9 @@ class TypingSession(
     companion object {
         /** 교정 창을 만들 때 커서 앞에서 읽어오는 최대 글자 수. */
         const val LOOKBEHIND_CHARS = 64
+
+        /** 물린 교정을 몇 개까지 기억할까. */
+        private const val MAX_KEPT = 32
 
         /** 사본으로 들고 있을 최대 글자 수. */
         private const val MIRROR_CAPACITY = 256

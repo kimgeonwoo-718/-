@@ -125,6 +125,21 @@ class TypingSessionTest {
     }
 
     @Test
+    fun `되돌린 말은 다음 어절을 칠 때 다시 고치지 않는다`() {
+        // 교정 창은 커서 앞 세 어절이라, 되돌린 말이 다음 스페이스에서 다시 창에 들어온다.
+        // 사용자가 싫다고 물린 교정을 도로 해 버리면 안 된다(신조어·이름이 그렇다).
+        type("ㄷㅚㅆㄷㅏ")
+        session.pressSpace(editor)
+        session.pressBackspace(editor)
+        assertEquals("됬다 ", editor.text)
+
+        type("ㄱㅡㄹㅐ ")
+        assertEquals("됬다 그래 ", editor.text)
+        type("ㅁㅏㅈㅇㅏ ")
+        assertEquals("됬다 그래 맞아 ", editor.text)
+    }
+
+    @Test
     fun `조합 중일 때 백스페이스는 한 단계씩 푼다`() {
         type("ㅇㅏㄴ")
         assertTrue(session.pressBackspace(editor))

@@ -109,6 +109,8 @@ class ContextCorrector(
      */
     fun knowsWord(word: String): Boolean {
         if (lm.lnCount(word) != null) return true
+        // 말뭉치보다 새 줄임말('핵노잼이더라')도 아는 말로 친다 — 붙여 쓴 덩어리로 보고 쪼갰다.
+        if (SLANG_STEMS.any { word.startsWith(it) }) return true
         for (particle in TRAILING_PARTICLES) {
             // 조사를 떼고 남는 것이 한 음절이면 어절로 보지 않는다.
             if (word.length <= particle.length + 1) continue
@@ -198,7 +200,8 @@ class ContextCorrector(
         val soft: Boolean =
             !whitespace && prefix.all { it in OPENERS || isDecoration(it) } && core.isNotEmpty() &&
                 core.length <= MAX_TOKEN_SYLLABLES &&
-                core.all { it in HANGUL } && suffix.all { it in PUNCTUATION || isDecoration(it) }
+                core.all { it in HANGUL } && suffix.all { it in PUNCTUATION || isDecoration(it) } &&
+                SLANG_STEMS.none { core.startsWith(it) }
     }
 
     private fun tokenize(window: String): List<Piece> =
@@ -1090,6 +1093,18 @@ class ContextCorrector(
         private val TOKEN = Regex("""\S+|\s+""")
         private val SENTENCE_ENDERS = setOf('.', '!', '?', '…')
         private val PUNCTUATION = setOf('.', ',', '!', '?', '…', '~', ')', '"', '\'', '”', '’', ';', ':')
+
+        /**
+         * 말뭉치보다 새로 생긴 줄임말. 말뭉치가 몰라서 디코더가 잘게 쪼개거나('핵노잼이더라' →
+         * '핵 노 잼이더라') 딴 말로 바꿨다('알잘딱깔센' → '알 잘 딱 갈 센'). 이걸로 시작하는
+         * 어절은 디코더가 건드리지 않는다. **짧은 말은 넣지 마라** — 접두사로 비교해서
+         * 다른 낱말까지 막는다.
+         */
+        private val SLANG_STEMS = listOf(
+            "핵노잼", "핵꿀잼", "알잘딱", "갑분싸", "스불재", "자만추", "중꺾마", "얼죽아", "오운완",
+            "존맛탱", "대존맛", "쌉가능", "퇴근각", "킹받", "갓생", "뇌절", "킹정", "꾸안꾸", "머선",
+            "많관부", "억텐", "찐텐", "갑통알", "혼코노", "별다줄", "사바사", "케바케"
+        )
 
         /** 이 음절 뒤의 '-는대'는 없는 꼴이다(과거형·있다·없다). */
         private val NEUNDAE_WRONG_BEFORE = "았었였했갔왔봤졌됐켰셨겠있없".toSet()
