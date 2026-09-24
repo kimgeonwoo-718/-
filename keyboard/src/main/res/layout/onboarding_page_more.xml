@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  안내 4쪽: ☰ 더보기. 위에는 첫 화면 위 막대(☰ 에 동그라미), 아래에는 열린 서랍.
+  서랍은 진짜처럼 오른쪽 3분의 2 가 흰 판, 왼쪽 3분의 1 이 어둡다. 설명 글은 서랍 오른쪽
+  옆 칸에 줄마다 맞춰 두어 작대기가 거의 수평으로 짧게 간다.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="24dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="16dp">
+
+        <TextView style="@style/GuideTitle" android:text="@string/guide4_title" />
+        <TextView style="@style/GuideSub" android:text="@string/guide4_sub" />
+
+        <com.spellkeyboard.ko.CalloutLayout
+            android:id="@+id/page_callout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="@drawable/bg_card"
+            android:padding="18dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- 첫 화면 위 막대 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_input"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingVertical="8dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="8dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/app_name"
+                        android:textColor="@color/toss_text"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <ImageView
+                        android:id="@+id/mock_menu"
+                        android:layout_width="28dp"
+                        android:layout_height="28dp"
+                        android:contentDescription="@null"
+                        android:padding="3dp"
+                        android:src="@drawable/ic_menu" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/label_menu"
+                    style="@style/GuideLabel"
+                    android:layout_gravity="end"
+                    android:layout_marginStart="60dp"
+                    android:layout_marginTop="20dp"
+                    android:text="@string/guide4_label_menu" />
+
+                <!-- 열린 서랍 + 옆 설명 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="22dp"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="11"
+                        android:background="@drawable/bg_input"
+                        android:orientation="horizontal"
+                        android:padding="1dp">
+
+                        <View
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:background="#99000000" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="2"
+                            android:background="@color/toss_card"
+                            android:orientation="vertical">
+
+                            <LinearLayout
+                                android:id="@+id/mock_login"
+                                android:layout_width="match_parent"
+                                android:layout_height="40dp"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal"
+                                android:paddingHorizontal="8dp">
+
+                                <View
+                                    android:layout_width="16dp"
+                                    android:layout_height="16dp"
+                                    android:background="@drawable/bg_avatar" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:maxLines="1"
+                                    android:text="@string/account_signin"
+                                    android:textColor="@color/toss_text"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <TextView android:id="@+id/mock_keyboard" style="@style/MockDrawerRow" android:text="@string/menu_keyboard" />
+                            <TextView style="@style/MockDrawerRow" android:text="@string/menu_privacy" android:textColor="@color/toss_text3" />
+                            <TextView style="@style/MockDrawerRow" android:text="@string/menu_terms" android:textColor="@color/toss_text3" />
+                            <TextView android:id="@+id/mock_support" style="@style/MockDrawerRow" android:text="@string/menu_support" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- 줄마다 한 칸. 설명이 없는 줄은 빈칸. -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="9"
+                        android:layout_marginStart="18dp"
+                        android:orientation="vertical"
+                        android:paddingTop="1dp">
+
+                        <LinearLayout style="@style/MockDrawerLabelSlot">
+                            <TextView android:id="@+id/label_login" style="@style/GuideLabel" android:textSize="12sp" android:text="@string/guide4_label_login" />
+                        </LinearLayout>
+                        <LinearLayout style="@style/MockDrawerLabelSlot">
+                            <TextView android:id="@+id/label_keyboard" style="@style/GuideLabel" android:textSize="12sp" android:text="@string/guide4_label_keyboard" />
+                        </LinearLayout>
+                        <LinearLayout style="@style/MockDrawerLabelSlot" />
+                        <LinearLayout style="@style/MockDrawerLabelSlot" />
+                        <LinearLayout style="@style/MockDrawerLabelSlot">
+                            <TextView android:id="@+id/label_support" style="@style/GuideLabel" android:textSize="12sp" android:text="@string/guide4_label_support" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </com.spellkeyboard.ko.CalloutLayout>
+    </LinearLayout>
+</ScrollView>

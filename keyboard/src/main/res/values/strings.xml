@@ -183,6 +183,45 @@
     <string name="guide_settings_name">설정</string>
     <string name="guide_settings_desc">키보드 맞춤설정을 열어요. 자판 종류(쿼티·천지인), 밝기, 배경 사진을 여기서 바꿔요.</string>
 
+    <!--
+      첫 실행 안내(OnboardingActivity). 쪽마다 제목·설명, 그리고 동그라미에서 작대기로 잇는
+      설명 글(label). 1쪽 예문은 실제 엔진에 넣어 확인한 것이다 — 바꾸면 tools/localcheck/try.sh
+      로 다시 확인할 것. 안 고쳐지는 예문을 보여 주면 첫인상부터 거짓말이 된다.
+    -->
+    <string name="guide_skip">건너뛰기</string>
+    <string name="guide_next">다음</string>
+    <string name="guide_start">시작하기</string>
+    <string name="menu_guide">사용 안내 다시 보기</string>
+
+    <string name="guide1_title">쓰는 대로 바로 고쳐요</string>
+    <string name="guide1_sub">띄어쓰기와 맞춤법을 치는 동안 폰 안에서 고쳐요. 인터넷도, 돈도 필요 없어요.</string>
+    <string name="guide1_typed_caption">이렇게 쳐도</string>
+    <string name="guide1_typed">걱정안해도되요 우리도 할수있어</string>
+    <string name="guide1_fixed">걱정 안 해도 돼요 우리도 할 수 있어</string>
+    <string name="guide1_label_fixed">스페이스를 누를 때마다 앞말을 바로 고쳐요</string>
+    <string name="guide1_label_live">자판 위 LIVE 가 파랗게 차 있으면 켜진 거예요. 누르면 끄고 켤 수 있어요</string>
+
+    <string name="guide2_title">자판 위 도구 줄</string>
+    <string name="guide2_sub">동그라미를 눌러 보세요. 막대기가 가리키며 무슨 버튼인지 알려 줘요.</string>
+
+    <string name="guide3_title">꾹 누르면 AI 가 해요</string>
+    <string name="guide3_sub">짧게 누르면 폰 안에서 무료로, 꾹 누르면 AI 가 더 똑똑하게 해 줘요.</string>
+    <string name="guide3_label_all"><b>ALL</b>\n짧게: 글 전체 교정 (무료)\n꾹: AI 가 문장을 다듬어요</string>
+    <string name="guide3_label_translate"><b>번역</b>\n짧게: 번역 입력줄 (무료)\n꾹: AI 가 글 전체를 번역해요</string>
+    <string name="guide3_note">AI 기능은 프리미엄이에요. 누를 때만 그 입력란의 글이 AI 로 가요.</string>
+
+    <string name="guide4_title">☰ 더보기</string>
+    <string name="guide4_sub">첫 화면 오른쪽 위 ☰ 를 누르면 로그인, 키보드 맞춤설정, 약관, 고객센터가 나와요.</string>
+    <string name="guide4_label_menu">여기를 누르면 오른쪽에서 더보기가 열려요</string>
+    <string name="guide4_label_login">로그인하면 PC·아이폰에서도 같은 구독을 써요</string>
+    <string name="guide4_label_keyboard">자판 종류·밝기·배경 사진을 바꿔요</string>
+    <string name="guide4_label_support">궁금한 건 여기로 물어보세요</string>
+
+    <string name="guide5_title">이제 키보드를 켜 볼까요?</string>
+    <string name="guide5_sub">처음 한 번만 하면 돼요. 첫 화면 \'시작하기\' 칸에서 언제든 다시 할 수 있어요.</string>
+    <string name="guide5_label_enable">누르면 설정이 열려요. \'맞춤법 키보드\' 스위치를 켜 주세요</string>
+    <string name="guide5_label_pick">목록에서 \'맞춤법 키보드\' 를 골라 주세요</string>
+
     <plurals name="correct_all_done">
         <item quantity="other">%d곳을 고쳤어요</item>
     </plurals>

@@ -24,7 +24,8 @@ import androidx.core.view.isVisible
  * 첫 화면이 뒤에 그대로 비쳐 있어서 어디서 왔는지 잃지 않는다.
  *
  * 안에 든 것: 계정 칸(로그인 전엔 로그인 버튼, 뒤엔 구글 프로필 사진·이름과 로그아웃·회원
- * 탈퇴), 메뉴(키보드 맞춤설정 · 개인정보 처리방침 · 서비스 이용약관 · 고객센터), 버전·설치 ID.
+ * 탈퇴), 메뉴(키보드 맞춤설정 · 개인정보 처리방침 · 서비스 이용약관 · 고객센터 · 사용 안내 다시
+ * 보기), 버전·설치 ID.
  * 이름과 사진은 이 폰에만 있다([Prefs.profileName], [ProfilePhoto]).
  *
  * **약관 두 개는 서버 페이지를 연다.** Play Console 에 적는 주소와 같은 곳이라, 앱 안에 글을
@@ -197,6 +198,10 @@ class MoreDrawer(private val activity: Activity) {
         activity.findViewById<View>(R.id.menu_privacy).setOnClickListener { openServerPage("/privacy") }
         activity.findViewById<View>(R.id.menu_terms).setOnClickListener { openServerPage("/terms") }
         activity.findViewById<View>(R.id.menu_support).setOnClickListener { writeToSupport() }
+        activity.findViewById<View>(R.id.menu_guide).setOnClickListener {
+            close()
+            activity.startActivity(Intent(activity, OnboardingActivity::class.java))
+        }
     }
 
     /** 서버가 내는 약관 페이지를 브라우저로 연다. 서버 주소가 없는 빌드에서는 열 곳이 없다. */

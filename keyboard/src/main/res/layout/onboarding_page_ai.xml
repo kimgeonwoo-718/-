@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 안내 3쪽: 짧게 누르면 기기 안에서 무료, 꾹 누르면 AI(프리미엄). ALL 과 번역 두 버튼. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="24dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="16dp">
+
+        <TextView style="@style/GuideTitle" android:text="@string/guide3_title" />
+        <TextView style="@style/GuideSub" android:text="@string/guide3_sub" />
+
+        <com.spellkeyboard.ko.CalloutLayout
+            android:id="@+id/page_callout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="@drawable/bg_card"
+            android:padding="18dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <include
+                    layout="@layout/guide_mock_toolbar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="34dp"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/label_all"
+                        style="@style/GuideLabel"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp"
+                        android:text="@string/guide3_label_all" />
+
+                    <TextView
+                        android:id="@+id/label_translate"
+                        style="@style/GuideLabel"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp"
+                        android:text="@string/guide3_label_translate" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/Caption"
+                    android:layout_marginTop="20dp"
+                    android:text="@string/guide3_note" />
+            </LinearLayout>
+        </com.spellkeyboard.ko.CalloutLayout>
+    </LinearLayout>
+</ScrollView>

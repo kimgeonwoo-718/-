@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 안내 1쪽: 쓰는 대로 바로 고친다. 예문은 실제 엔진에 넣어 확인한 것이다(try.sh). -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="24dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="16dp">
+
+        <TextView style="@style/GuideTitle" android:text="@string/guide1_title" />
+        <TextView style="@style/GuideSub" android:text="@string/guide1_sub" />
+
+        <com.spellkeyboard.ko.CalloutLayout
+            android:id="@+id/page_callout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="@drawable/bg_card"
+            android:padding="18dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/guide1_typed_caption"
+                    android:textColor="@color/toss_text3"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/bg_input"
+                    android:padding="12dp"
+                    android:text="@string/guide1_typed"
+                    android:textColor="@color/toss_text2"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginVertical="4dp"
+                    android:gravity="center"
+                    android:text="↓"
+                    android:textColor="@color/toss_blue"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/demo_fixed"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_badge"
+                    android:padding="12dp"
+                    android:text="@string/guide1_fixed"
+                    android:textColor="@color/toss_blue"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/label_fixed"
+                    style="@style/GuideLabel"
+                    android:layout_marginStart="48dp"
+                    android:layout_marginTop="22dp"
+                    android:text="@string/guide1_label_fixed" />
+
+                <include
+                    layout="@layout/guide_mock_toolbar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="28dp" />
+
+                <TextView
+                    android:id="@+id/label_live"
+                    style="@style/GuideLabel"
+                    android:layout_gravity="end"
+                    android:layout_marginStart="72dp"
+                    android:layout_marginTop="22dp"
+                    android:text="@string/guide1_label_live" />
+            </LinearLayout>
+        </com.spellkeyboard.ko.CalloutLayout>
+    </LinearLayout>
+</ScrollView>

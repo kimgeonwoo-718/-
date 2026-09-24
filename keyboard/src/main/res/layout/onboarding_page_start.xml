@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  안내 5쪽(끝): 키보드 켜기. 첫 화면 '시작하기' 칸과 같은 두 줄을 흉내 내고 '열기' 버튼마다
+  무엇을 하면 되는지 작대기로 짚는다. 아래 '시작하기' 를 누르면 그 첫 화면으로 간다.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="24dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="16dp">
+
+        <TextView style="@style/GuideTitle" android:text="@string/guide5_title" />
+        <TextView style="@style/GuideSub" android:text="@string/guide5_sub" />
+
+        <com.spellkeyboard.ko.CalloutLayout
+            android:id="@+id/page_callout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="@drawable/bg_card"
+            android:padding="18dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView style="@style/CardTitle" android:text="@string/section_setup" />
+
+                <LinearLayout style="@style/Row">
+                    <LinearLayout style="@style/RowText">
+                        <TextView style="@style/RowTitle" android:text="@string/setup_enable_title" />
+                        <TextView style="@style/RowSub" android:text="@string/setup_enable_sub" />
+                    </LinearLayout>
+                    <TextView android:id="@+id/mock_enable" style="@style/Pill" android:clickable="false" android:text="@string/setup_open" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/label_enable"
+                    style="@style/GuideLabel"
+                    android:layout_marginTop="14dp"
+                    android:layout_marginEnd="90dp"
+                    android:text="@string/guide5_label_enable" />
+
+                <View style="@style/Divider" android:layout_marginTop="16dp" />
+
+                <LinearLayout style="@style/Row">
+                    <LinearLayout style="@style/RowText">
+                        <TextView style="@style/RowTitle" android:text="@string/setup_pick_title" />
+                        <TextView style="@style/RowSub" android:text="@string/setup_pick_sub" />
+                    </LinearLayout>
+                    <TextView android:id="@+id/mock_pick" style="@style/Pill" android:clickable="false" android:text="@string/setup_open" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/label_pick"
+                    style="@style/GuideLabel"
+                    android:layout_marginTop="14dp"
+                    android:layout_marginEnd="90dp"
+                    android:text="@string/guide5_label_pick" />
+            </LinearLayout>
+        </com.spellkeyboard.ko.CalloutLayout>
+    </LinearLayout>
+</ScrollView>

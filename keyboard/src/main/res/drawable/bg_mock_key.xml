@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 안내 화면의 흉내 도구 줄 버튼. 진짜 도구 줄처럼 옅은 회색 동그라미. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="@color/toss_fill_pressed" />
+</shape>

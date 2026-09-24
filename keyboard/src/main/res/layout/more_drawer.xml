@@ -195,6 +195,14 @@
             android:textSize="15sp"
             android:text="@string/menu_support" />
 
+        <View style="@style/Divider" />
+
+        <TextView
+            android:id="@+id/menu_guide"
+            style="@style/MenuRow"
+            android:textSize="15sp"
+            android:text="@string/menu_guide" />
+
         <TextView
             android:id="@+id/app_info"
             style="@style/Caption"

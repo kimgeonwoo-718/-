@@ -20,6 +20,7 @@ object Prefs {
     private const val KEY_PURCHASE_TOKEN = "purchase_token"
     private const val KEY_DEVICE_TOKEN = "device_token"
     private const val KEY_PROFILE_NAME = "profile_name"
+    private const val KEY_ONBOARDING_SEEN = "onboarding_seen"
     private const val KEY_QUOTA_PLAN = "quota_plan"
     private const val KEY_QUOTA_REMAINING = "quota_remaining"
     private const val KEY_QUOTA_LIMIT = "quota_limit"
@@ -85,6 +86,17 @@ object Prefs {
 
     fun setToolbarCollapsed(context: Context, collapsed: Boolean) {
         prefs(context).edit().putBoolean(KEY_TOOLBAR_COLLAPSED, collapsed).apply()
+    }
+
+    /**
+     * 첫 실행 안내를 봤는가. 건너뛰어도 본 것으로 친다 — 싫다고 닫은 사람에게 다시 들이밀지
+     * 않는다. 더보기 서랍의 "사용 안내 다시 보기" 로 언제든 다시 연다.
+     */
+    fun onboardingSeen(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_ONBOARDING_SEEN, false)
+
+    fun setOnboardingSeen(context: Context, seen: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ONBOARDING_SEEN, seen).apply()
     }
 
     // --- AI 경로 ----------------------------------------------------------------

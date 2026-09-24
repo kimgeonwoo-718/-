@@ -48,6 +48,12 @@ class SetupActivity : AppCompatActivity() {
         }
         bindSetup()
         bindPremium()
+
+        // 처음 깐 사람에게는 안내를 먼저 보여 준다. 이 화면은 그 밑에 깔려 있다가 안내를
+        // 닫으면 드러난다. 화면이 다시 만들어질 때(테마 변경 등)는 다시 띄우지 않는다.
+        if (savedInstanceState == null && !Prefs.onboardingSeen(this)) {
+            startActivity(Intent(this, OnboardingActivity::class.java))
+        }
     }
 
     override fun onResume() {
