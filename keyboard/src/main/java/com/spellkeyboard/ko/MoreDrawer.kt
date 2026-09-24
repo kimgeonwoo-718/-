@@ -17,8 +17,8 @@ import android.widget.Toast
 import androidx.core.view.isVisible
 
 /**
- * 더보기 서랍. 첫 화면 오른쪽 위 ☰ 를 누르면 오른쪽에서 밀려 나와 **화면 폭의 반**을 덮고,
- * 나머지 반은 어둡게 깔린다. 어두운 곳이나 ✕ 나 뒤로 가기를 누르면 닫힌다.
+ * 더보기 서랍. 첫 화면 오른쪽 위 ☰ 를 누르면 오른쪽에서 밀려 나와 **화면 폭의 3분의 2**를
+ * 덮고, 나머지는 어둡게 깔린다. 어두운 곳이나 ✕ 나 뒤로 가기를 누르면 닫힌다.
  *
  * 처음엔 따로 화면(액티비티)이었는데 "아예 다른 창으로 넘어간다" 는 평이라 서랍으로 바꿨다.
  * 첫 화면이 뒤에 그대로 비쳐 있어서 어디서 왔는지 잃지 않는다.
@@ -57,7 +57,8 @@ class MoreDrawer(private val activity: Activity) {
     // --- 열고 닫기 ---------------------------------------------------------------
 
     /**
-     * 연다. 폭은 화면의 반 — 가로로 눕힌 폰이나 태블릿에서 반이면 너무 넓어서 400dp 에서 멈춘다.
+     * 연다. 폭은 화면의 3분의 2 — 처음엔 반이었는데 좁다는 평이라 넓혔다. 가로로 눕힌 폰이나
+     * 태블릿에서는 그래도 너무 넓어서 400dp 에서 멈춘다.
      *
      * [animate] 가 false 면 바로 편다. 테마를 바꿔 화면이 다시 만들어질 때 서랍을 연 채로
      * 되살리는 자리다 — 거기서 다시 미끄러져 나오면 어색하다.
@@ -66,7 +67,7 @@ class MoreDrawer(private val activity: Activity) {
         if (isOpen) return
         hideKeyboard()
         val metrics = activity.resources.displayMetrics
-        val width = minOf(metrics.widthPixels / 2, (MAX_WIDTH_DP * metrics.density).toInt())
+        val width = minOf(metrics.widthPixels * 2 / 3, (MAX_WIDTH_DP * metrics.density).toInt())
         drawer.layoutParams = drawer.layoutParams.apply { this.width = width }
         showAccount()
 

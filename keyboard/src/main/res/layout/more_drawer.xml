@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  더보기 서랍. 첫 화면 오른쪽 위 ☰ 를 누르면 오른쪽에서 밀려 나와 **화면 폭의 반**을 덮고,
-  나머지 반은 어둡게 깔린다(그 어두운 곳을 누르면 닫힌다). 다른 화면으로 넘어가지 않는다.
+  더보기 서랍. 첫 화면 오른쪽 위 ☰ 를 누르면 오른쪽에서 밀려 나와 **화면 폭의 3분의 2**를
+  덮고, 나머지는 어둡게 깔린다(그 어두운 곳을 누르면 닫힌다). 다른 화면으로 넘어가지 않는다.
 
-  폭이 반이라 좁다(360dp 폰에서 180dp). 그래서 카드 대신 구분선으로 나누고, 로그아웃·회원
+  폭이 넉넉하지 않다(360dp 폰에서 240dp). 그래서 카드 대신 구분선으로 나누고, 로그아웃·회원
   탈퇴 버튼은 나란히가 아니라 위아래로 둔다. 폭은 MoreDrawer 가 코드로 정한다.
 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/more_drawer"
-    android:layout_width="180dp"
+    android:layout_width="240dp"
     android:layout_height="match_parent"
     android:layout_gravity="end"
     android:background="@color/toss_card"
