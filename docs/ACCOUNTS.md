@@ -131,6 +131,7 @@ Play 가 복원해 주니 안드로이드 안에서는 문제가 없다.
 |---|---|---|
 | 웹 | ID 토큰의 `aud`. 서버가 이것을 확인한다 | `server/wrangler.toml` `GOOGLE_CLIENT_IDS`, `build-apk.yml` `GOOGLE_CLIENT_ID` |
 | Android | 폰에 계정 창이 뜨게 한다. 값을 어디에도 적지 않는다 | 콘솔에만 (`com.spellkeyboard.ko` + SHA-1) |
+| 데스크톱 | 윈도우 프로그램의 구글 로그인. 토큰의 `aud` 가 이것이다 | `server/wrangler.toml` `GOOGLE_CLIENT_IDS` 둘째 (2026-09-24) |
 
 **둘이 짝이 맞아야 한다** — 앱에 넣은 웹 클라이언트 ID 가 서버 목록에 없으면 401 이다.
 안드로이드 Credential Manager 가 `aud` 에 넣는 것은 **웹 클라이언트 ID** 다.
