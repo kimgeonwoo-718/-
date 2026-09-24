@@ -516,6 +516,26 @@ test('개인정보 처리방침 페이지는 키 없이도 뜬다', async () => 
   assert.ok(!body.includes('문의:'), '연락처가 설정돼 있지 않으면 빈 줄을 만들지 않는다');
 });
 
+test('개인정보 처리방침은 계정과 탈퇴를 설명한다', async () => {
+  // Play 는 계정을 만드는 앱에 "웹에서 삭제를 요청하는 길" 을 요구한다. 이 페이지의
+  // #delete 가 그 자리다.
+  const res = await handle(new Request('https://spell.test/privacy'), env({ CONTACT_EMAIL: 'help@example.com' }));
+  const body = await res.text();
+  assert.match(body, /id="delete"/);
+  assert.match(body, /회원 탈퇴/);
+  assert.match(body, /이름·이메일·프로필 사진은 서버에 저장하지 않습니다/);
+  assert.match(body, /문의: help@example\.com/);
+});
+
+test('이용약관 페이지가 뜬다', async () => {
+  const res = await handle(new Request('https://spell.test/terms'), env({ GEMINI_API_KEY: '' }));
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/html/);
+  const body = await res.text();
+  assert.match(body, /서비스 이용약관/);
+  assert.match(body, /탈퇴해도 구독은 해지되지 않습니다/);
+});
+
 
 test('시험용 설치 ID 는 결제 없이 구독자로 친다', async () => {
   const e = env({ TEST_INSTALL_IDS: 'other-id, ' + INSTALL });

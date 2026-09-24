@@ -134,8 +134,16 @@ export function fakeDb() {
                 if (row) row.seen_at = args[0];
                 return;
               }
+              if (sql.startsWith('DELETE FROM devices WHERE account_id')) {
+                for (const [hash, d] of [...devices]) if (d.account_id === args[0]) devices.delete(hash);
+                return;
+              }
               if (sql.startsWith('DELETE FROM devices')) {
                 devices.delete(args[0]);
+                return;
+              }
+              if (sql.startsWith('DELETE FROM accounts WHERE id')) {
+                accounts.delete(args[0]);
                 return;
               }
               if (sql.startsWith('DELETE FROM cache')) {

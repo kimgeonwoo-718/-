@@ -186,3 +186,59 @@ test('기기 토큰은 해시로만 저장한다', async () => {
   const found = await purchaseForDevice(e.DB, device, NOON_KST);
   assert.equal(found.purchaseToken, 'paid-token');
 });
+
+// --- 회원 탈퇴 ---------------------------------------------------------------
+
+const DELETE = 'https://spell.test/v1/account/delete';
+
+function deleteWith(device) {
+  return new Request(DELETE, { method: 'POST', headers: { 'x-device-token': device } });
+}
+
+test('탈퇴하면 계정과 거기 붙은 기기가 전부 사라진다', async () => {
+  // 폰에서 탈퇴를 눌렀는데 윈도우가 계속 구독을 빌려 쓰면 탈퇴가 아니다.
+  const e = await paidEnv();
+  const accountId = await accountForPurchase(e.DB, 'paid-token', NOON_KST);
+  const phone = await issueDevice(e.DB, accountId, '폰', NOON_KST);
+  const windows = await issueDevice(e.DB, accountId, '윈도우', NOON_KST);
+
+  const res = await handle(deleteWith(phone), e, deps);
+  assert.equal(res.status, 200);
+  assert.equal(e.DB.accounts.size, 0);
+  assert.equal(e.DB.devices.size, 0);
+
+  const after = await handle(correctWith({ 'x-device-token': windows }), e, deps);
+  assert.equal(after.status, 402, '빌려 쓰던 기기는 끊긴다');
+});
+
+test('탈퇴해도 구매한 폰은 구매 토큰으로 계속 쓴다', async () => {
+  // 구독은 Play 에 있고 탈퇴로 해지되지 않는다. 돈을 계속 내는 사람을 막으면 안 된다.
+  const e = await paidEnv();
+  const device = await linkedDevice(e);
+  await handle(deleteWith(device), e, deps);
+
+  const res = await handle(correctWith({ 'x-purchase-token': 'paid-token' }), e, deps);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('x-plan'), 'subscriber');
+});
+
+test('다른 사람 계정은 건드리지 않는다', async () => {
+  const e = await paidEnv();
+  const mine = await linkedDevice(e, 'paid-token');
+  const theirs = await linkedDevice(e, 'other-token');
+
+  await handle(deleteWith(mine), e, deps);
+  assert.equal(e.DB.accounts.size, 1);
+  assert.ok(await purchaseForDevice(e.DB, theirs, NOON_KST), '남의 기기는 그대로 산다');
+});
+
+test('모르는 기기 토큰으로는 탈퇴가 안 된다', async () => {
+  const e = await paidEnv();
+  await linkedDevice(e);
+
+  const unknown = await handle(deleteWith('f'.repeat(64)), e, deps);
+  assert.equal(unknown.status, 404);
+  const malformed = await handle(deleteWith('nope'), e, deps);
+  assert.equal(malformed.status, 400);
+  assert.equal(e.DB.accounts.size, 1, '아무것도 안 지워졌다');
+});

@@ -25,6 +25,7 @@ import {
   revokeDevice,
   sha256Hex,
   validDeviceToken,
+  deleteAccount,
 } from './account.js';
 import { allowedClientIds, fetchJwks, verifyIdToken } from './google.js';
 import { fetchAccessToken, verifySubscription } from './play.js';
@@ -130,6 +131,7 @@ export async function handle(request, env, deps = {}) {
   if (url.pathname === '/health') return json(200, { ok: true });
   // Play 는 키보드 앱에 개인정보 처리방침 주소를 요구한다. 따로 호스팅할 데가 없어 여기서 낸다.
   if (request.method === 'GET' && url.pathname === '/privacy') return privacyPage(env);
+  if (request.method === 'GET' && url.pathname === '/terms') return termsPage(env);
   // 지금 쓰기로 한 쪽의 키가 있어야 한다. 둘 중 아무거나 있으면 되는 게 아니다 —
   // 구글로 돌려 놓고 구글 키가 없으면 교정마다 401 을 받으면서 이유는 안 보인다.
   if (!env[provider(env) === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY']) {
@@ -159,6 +161,9 @@ export async function handle(request, env, deps = {}) {
   }
   if (request.method === 'POST' && url.pathname === '/v1/account/subscription') {
     return subscriptionOf(request, env, fetchImpl, now);
+  }
+  if (request.method === 'POST' && url.pathname === '/v1/account/delete') {
+    return deleteAccountOf(request, env, now);
   }
   const isGenerate = /^\/v1beta\/models\/[^/]+:generateContent$/.test(url.pathname);
   if (request.method === 'POST' && isGenerate) {
@@ -225,6 +230,21 @@ async function signOut(request, env) {
   const device = request.headers.get('x-device-token') ?? '';
   if (!validDeviceToken(device)) return fail(400, 'invalid_device_token');
   await revokeDevice(env.DB, device);
+  return json(200, { ok: true });
+}
+
+/**
+ * 회원 탈퇴. 이 기기가 붙은 계정과, 그 계정에 붙은 **모든** 기기를 지운다.
+ *
+ * 기기 토큰 하나로 된다 — 그 토큰이 곧 이 계정에 로그인한 증거다. 되묻는 것은 앱이
+ * 한다(확인 창). 구독은 Play 에 있으므로 여기서 해지되지 않는다([deleteAccount] 참고).
+ */
+async function deleteAccountOf(request, env, now) {
+  const device = request.headers.get('x-device-token') ?? '';
+  if (!validDeviceToken(device)) return fail(400, 'invalid_device_token');
+  const found = await purchaseForDevice(env.DB, device, now());
+  if (!found) return fail(404, 'device_not_linked');
+  await deleteAccount(env.DB, found.accountId);
   return json(200, { ok: true });
 }
 
@@ -665,37 +685,116 @@ function fail(status, code) {
 }
 
 /** 개인정보 처리방침. 앱이 실제로 하는 것만 적는다 — 과장도, 누락도 없이. */
-function privacyPage(env) {
+/**
+ * 개인정보 처리방침과 이용약관은 **여기 하나에만** 있다.
+ *
+ * Play Console 에 적는 주소도, 앱의 더보기 메뉴가 여는 주소도 이 페이지다. 앱 안에 글을 따로
+ * 넣으면 두 벌이 생기고, 언젠가 하나만 고쳐져서 서로 다른 말을 하게 된다.
+ *
+ * 문의처(`CONTACT_EMAIL`)와 운영자 이름(`OPERATOR_NAME`)은 설정에서 읽는다. 비어 있으면 그
+ * 줄을 아예 안 만든다 — "문의: " 만 덩그러니 있는 것보다 낫다.
+ */
+function docPage(env, title, body) {
+  const operator = env.OPERATOR_NAME ? `<p>운영자: ${escapeHtml(env.OPERATOR_NAME)}</p>` : '';
   const contact = env.CONTACT_EMAIL ? `<p>문의: ${escapeHtml(env.CONTACT_EMAIL)}</p>` : '';
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>맞춤법 키보드 ${title}</title>
+<style>body{font-family:sans-serif;max-width:680px;margin:40px auto;padding:0 20px;line-height:1.7;color:#191f28}h1{font-size:22px}h2{font-size:17px;margin-top:28px}li{margin:4px 0}.muted{color:#6b7684;font-size:14px}</style>
+</head><body>
+<h1>맞춤법 키보드 ${title}</h1>
+${body}
+${operator}${contact}
+<p class="muted">시행일: ${DOCS_EFFECTIVE}</p>
+</body></html>`;
+  return new Response(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+}
+
+/** 두 문서의 시행일. 내용을 바꾸면 같이 올린다. */
+const DOCS_EFFECTIVE = '2026-09-24';
+
+function privacyPage(env) {
   // 어느 회사로 보내는지는 방침의 핵심이라 실제 설정을 그대로 따라가게 둔다.
   const provider = openAiModel(env) ? 'OpenAI API' : 'Google Gemini API';
   const providerName = openAiModel(env) ? 'OpenAI' : 'Google';
-  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>맞춤법 키보드 개인정보 처리방침</title>
-<style>body{font-family:sans-serif;max-width:680px;margin:40px auto;padding:0 20px;line-height:1.7;color:#191f28}h1{font-size:22px}h2{font-size:17px;margin-top:28px}</style>
-</head><body>
-<h1>맞춤법 키보드 개인정보 처리방침</h1>
+  const aiAbroad = openAiModel(env)
+    ? '<li><strong>OpenAI (미국)</strong> — AI 교정·번역 처리. 누를 때 그 입력란의 글. 처리 즉시 결과만 돌려받습니다.</li>'
+    : '';
+  return docPage(env, '개인정보 처리방침', `
 <p>맞춤법 키보드는 타이핑하는 글을 기기 안에서 고쳐 주는 안드로이드 키보드입니다. 이 문서는 앱이 어떤 정보를 어디까지 다루는지 설명합니다.</p>
+
 <h2>1. 타이핑한 글</h2>
-<p>실시간 맞춤법·띄어쓰기 교정은 <strong>전부 기기 안에서</strong> 처리됩니다. 타이핑한 글은 어디로도 전송되거나 저장되지 않습니다. 비밀번호·이메일·URL 입력란에서는 교정이 자동으로 꺼집니다.</p>
-<h2>2. AI 전체 교정</h2>
-<p>키보드 위 ✦ 버튼을 <strong>직접 누를 때만</strong>, 그 입력란의 글이 앱 서버를 거쳐 ${provider} 로 전송되어 교정된 결과가 돌아옵니다. 서버는 글을 저장하지 않으며, 교정 요청 횟수만 셉니다. ${providerName} 의 처리에 대해서는 ${providerName} 의 개인정보 처리방침이 적용됩니다.</p>
+<p>실시간 맞춤법·띄어쓰기 교정과 전체 교정(짧게 누르기)은 <strong>전부 기기 안에서</strong> 처리됩니다. 타이핑한 글은 어디로도 전송되거나 저장되지 않습니다. 비밀번호·이메일·URL 입력란에서는 교정이 자동으로 꺼집니다.</p>
+
+<h2>2. AI 교정·번역 (프리미엄)</h2>
+<p>자판 위 전체 교정이나 번역 버튼을 <strong>직접 꾹 누를 때만</strong>, 그 입력란의 글이 앱 서버를 거쳐 ${provider} 로 전송되고 결과가 돌아옵니다. 서버는 글을 저장하지 않으며, 하루 사용량(글자 수)만 셉니다. ${providerName} 의 처리에는 ${providerName} 의 개인정보 처리방침이 적용됩니다.</p>
+
 <h2>3. 서버가 보관하는 것</h2>
 <ul>
-<li><strong>설치 식별자</strong>: 앱을 설치할 때 만들어지는 무작위 값입니다. 무료 사용 횟수를 세는 데만 쓰이며, 사용자 계정이나 기기 정보와 연결되지 않습니다.</li>
-<li><strong>일별 사용 횟수</strong>: 설치 식별자·접속 IP 별 하루 요청 수. 이틀 뒤 삭제됩니다.</li>
-<li><strong>구독 확인</strong>: 구독한 경우 Google Play 구매 토큰을 Google Play 에 조회해 구독 상태만 확인합니다. 결제 정보는 Google Play 가 처리하며 앱과 서버는 카드 정보 등을 다루지 않습니다.</li>
+<li><strong>설치 식별자</strong>: 앱을 설치할 때 만들어지는 무작위 값입니다. 요청을 구분하는 데 쓰이며, 이름·전화번호 같은 개인 정보와 연결되지 않습니다.</li>
+<li><strong>하루 사용량</strong>: 구독 하나당 하루에 쓴 글자 수. 이틀 뒤 삭제됩니다.</li>
+<li><strong>구독 확인</strong>: 구독한 경우 Google Play 구매 토큰으로 Google Play 에 구독 상태를 조회합니다. 결제는 Google Play 가 처리하며 앱과 서버는 카드 정보 등을 다루지 않습니다.</li>
+<li><strong>계정 (로그인한 경우에만)</strong>: 구글 계정 고유 번호를 <strong>되돌릴 수 없게 바꾼 값(해시)</strong>, 계정에 연결된 구매 토큰, 로그인한 기기 목록(기기 모델명, 마지막 사용 시각). 한 구독을 윈도우·아이폰 등 다른 기기에서 같이 쓰게 하는 데만 쓰입니다. <strong>이름·이메일·프로필 사진은 서버에 저장하지 않습니다.</strong> 회원 탈퇴하면 바로 삭제됩니다.</li>
 </ul>
+
 <h2>4. 기기에만 저장되는 것</h2>
-<p>클립보드 기록, 배경 사진, 테마·자판 설정은 기기 안에만 저장되며 앱을 삭제하면 함께 사라집니다. 클립보드에서 "민감" 으로 표시된 내용(비밀번호 등)은 기록하지 않습니다.</p>
-<h2>5. 권한</h2>
-<p>인터넷 권한은 AI 전체 교정과 구독 확인에만 쓰입니다. 그 외 권한은 요구하지 않습니다.</p>
-<h2>6. 변경</h2>
-<p>이 방침이 바뀌면 이 페이지에 갱신합니다.</p>
-${contact}
-</body></html>`;
-  return new Response(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+<p>클립보드 기록, 배경 사진, 테마·자판 설정, 그리고 로그인한 경우 구글 계정 이름과 프로필 사진(더보기 화면에 보여 주는 용도)은 기기 안에만 저장되며, 로그아웃하거나 앱을 삭제하면 함께 사라집니다. 클립보드에서 "민감" 으로 표시된 내용(비밀번호 등)은 기록하지 않습니다.</p>
+
+<h2>5. 국외 이전</h2>
+<p>서비스 제공을 위해 아래 업체의 해외 서버에서 정보가 처리됩니다. 보관 기간은 위 3번과 같습니다.</p>
+<ul>
+<li><strong>Cloudflare (미국 등)</strong> — 앱 서버 운영. 위 3번의 정보.</li>
+<li><strong>Google (미국)</strong> — ${openAiModel(env) ? '' : 'AI 교정·번역 처리(누를 때 그 입력란의 글), '}구독 확인(구매 토큰), 로그인 확인(구글이 발급한 로그인 증명).</li>
+${aiAbroad}
+</ul>
+
+<h2 id="delete">6. 회원 탈퇴와 삭제 요청</h2>
+<p>앱 → 오른쪽 위 ☰ → 더보기 → <strong>회원 탈퇴</strong> 를 누르면 서버의 계정 정보(3번의 계정 항목)가 즉시 삭제됩니다. 앱을 쓸 수 없는 경우 아래 문의처로 요청하면 삭제해 드립니다.</p>
+<p><strong>구독은 회원 탈퇴로 해지되지 않습니다.</strong> 해지는 Google Play 스토어 → 결제 및 정기 결제 → 정기 결제에서 해 주세요.</p>
+
+<h2>7. 권한</h2>
+<p>인터넷 권한은 AI 교정·번역, 구독 확인, 로그인에만 쓰입니다. 그 외에 연락처·위치·마이크 같은 권한은 요구하지 않습니다.</p>
+
+<h2>8. 변경</h2>
+<p>이 방침이 바뀌면 이 페이지에 갱신하고 시행일을 고칩니다.</p>`);
+}
+
+function termsPage(env) {
+  return docPage(env, '서비스 이용약관', `
+<h2>1. 서비스</h2>
+<p>맞춤법 키보드(이하 "앱")는 한국어 맞춤법·띄어쓰기를 고쳐 주는 안드로이드 키보드입니다. 실시간 교정과 기기 안 전체 교정은 무료로 제공되며, AI 교정·번역은 프리미엄 구독자에게 제공됩니다.</p>
+
+<h2>2. 프리미엄 구독</h2>
+<ul>
+<li>요금은 월 2,990원이며 Google Play 로 결제되고 해지할 때까지 매달 자동으로 갱신됩니다.</li>
+<li>해지는 Google Play 스토어 → 결제 및 정기 결제 → 정기 결제에서 언제든 할 수 있습니다. 해지해도 이미 결제한 기간이 끝날 때까지는 계속 쓸 수 있습니다.</li>
+<li>환불은 Google Play 환불 정책을 따릅니다.</li>
+<li>과도한 사용으로 서비스 운영이 어려워지는 것을 막기 위해 하루 사용량 한도가 있습니다. 한도에 닿으면 다음 날까지 AI 기능이 제한될 수 있습니다.</li>
+</ul>
+
+<h2>3. 계정</h2>
+<ul>
+<li>로그인은 구독을 여러 기기에서 같이 쓰기 위한 선택 기능입니다. 로그인하지 않아도 앱과 구독을 쓸 수 있습니다.</li>
+<li>한 계정에 연결할 수 있는 기기는 5대까지입니다. 계정을 다른 사람과 나눠 쓰면 안 됩니다.</li>
+<li>회원 탈퇴는 앱의 더보기 화면에서 언제든 할 수 있으며, 탈퇴해도 구독은 해지되지 않습니다.</li>
+</ul>
+
+<h2>4. AI 결과</h2>
+<p>AI 교정·번역 결과는 틀릴 수 있습니다. 계약서·공문처럼 중요한 글은 보내기 전에 직접 확인해 주세요. 앱은 AI 결과로 생긴 손해에 대해 법이 허용하는 범위에서 책임지지 않습니다.</p>
+
+<h2>5. 하지 말아야 할 것</h2>
+<ul>
+<li>앱이나 서버를 뜯어 고쳐 결제 없이 프리미엄 기능을 쓰는 행위</li>
+<li>자동화된 방법으로 서버에 대량으로 요청하는 행위</li>
+<li>다른 사람의 계정이나 구매 정보를 쓰는 행위</li>
+</ul>
+<p>이런 행위가 확인되면 해당 계정이나 구독의 AI 기능 이용을 제한할 수 있습니다.</p>
+
+<h2>6. 서비스 변경과 중단</h2>
+<p>기능이나 요금이 바뀌면 적용 전에 앱이나 이 페이지로 알립니다. 요금이 오르면 Google Play 가 구독자에게 따로 동의를 받습니다.</p>
+
+<h2>7. 준거법</h2>
+<p>이 약관은 대한민국 법을 따릅니다.</p>`);
 }
 
 function escapeHtml(text) {

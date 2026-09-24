@@ -178,3 +178,22 @@ export async function purchaseOfAccount(db, accountId) {
     .first();
   return row?.purchase_token ?? '';
 }
+
+/**
+ * 계정을 통째로 지운다 — 회원 탈퇴.
+ *
+ * 붙은 기기를 먼저, 계정을 나중에 지운다. 거꾸로 하면 잠깐이나마 주인 없는 기기 행이 남고,
+ * 그 사이에 들어온 요청이 이상한 상태를 본다.
+ *
+ * **구독은 건드리지 않는다.** 구독은 Play 에 있고 우리는 가리키기만 했다. 계정이 사라져도
+ * 결제는 계속되므로, 해지는 Play 스토어에서 해야 한다고 앱이 탈퇴 전에 알린다. 구매한 폰은
+ * 구매 토큰을 직접 들고 있어서 탈퇴 뒤에도 AI 를 그대로 쓴다 — 끊기는 것은 로그인으로
+ * 빌려 쓰던 다른 기기들뿐이다.
+ *
+ * 하루 사용량(`usage`)은 구매 토큰 해시로 세고 이틀 뒤 저절로 지워지므로 따로 안 지운다.
+ * 그 행에는 구글 계정과 이어지는 값이 없다.
+ */
+export async function deleteAccount(db, accountId) {
+  await db.prepare('DELETE FROM devices WHERE account_id = ?').bind(accountId).run();
+  await db.prepare('DELETE FROM accounts WHERE id = ?').bind(accountId).run();
+}
