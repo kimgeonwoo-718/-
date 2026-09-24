@@ -38,6 +38,9 @@ class MoreDrawer(private val activity: Activity) {
 
     private var account: AccountManager? = null
 
+    /** "사용 안내 다시 보기" 를 눌렀을 때. 둘러보기는 첫 화면 몫이라 첫 화면이 채운다. */
+    var onGuide: (() -> Unit)? = null
+
     /**
      * 로그인할 때 서버가 알려 준 구독 여부. 화면이 다시 만들어지면 사라진다(null) —
      * 그때는 이 폰이 들고 있는 구매 토큰으로 대신 짐작한다. 어느 쪽이든 **표시용**이고,
@@ -198,10 +201,7 @@ class MoreDrawer(private val activity: Activity) {
         activity.findViewById<View>(R.id.menu_privacy).setOnClickListener { openServerPage("/privacy") }
         activity.findViewById<View>(R.id.menu_terms).setOnClickListener { openServerPage("/terms") }
         activity.findViewById<View>(R.id.menu_support).setOnClickListener { writeToSupport() }
-        activity.findViewById<View>(R.id.menu_guide).setOnClickListener {
-            close()
-            activity.startActivity(Intent(activity, OnboardingActivity::class.java))
-        }
+        activity.findViewById<View>(R.id.menu_guide).setOnClickListener { onGuide?.invoke() }
     }
 
     /** 서버가 내는 약관 페이지를 브라우저로 연다. 서버 주소가 없는 빌드에서는 열 곳이 없다. */

@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 안내 화면 쪽 표시: 지금 보는 쪽. 가로로 길쭉해서 어느 쪽인지 한눈에 보인다. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <corners android:radius="4dp" />
-    <solid android:color="@color/toss_blue" />
-</shape>

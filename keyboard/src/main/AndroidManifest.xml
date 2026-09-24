@@ -48,12 +48,6 @@
             android:exported="false"
             android:label="@string/settings_title" />
 
-        <!-- 첫 실행 안내. 첫 화면과 더보기 서랍에서만 열리므로 밖으로 내보내지 않는다. -->
-        <activity
-            android:name=".OnboardingActivity"
-            android:exported="false"
-            android:label="@string/app_name" />
-
         <!-- 결제 화면. 첫 화면 안에서만 열리므로 밖으로 내보내지 않는다. -->
         <activity
             android:name=".PaywallActivity"

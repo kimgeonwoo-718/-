@@ -28,6 +28,7 @@ class SetupActivity : AppCompatActivity() {
     private var quotaOutput: TextView? = null
     private var billing: BillingManager? = null
     private var more: MoreDrawer? = null
+    private var tour: CoachTour? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 앱 화면도 키보드와 같은 밝기를 따른다. 키보드는 어두운데 앱만 하얗게 뜨면 어색하다.
@@ -49,10 +50,13 @@ class SetupActivity : AppCompatActivity() {
         bindSetup()
         bindPremium()
 
-        // 처음 깐 사람에게는 안내를 먼저 보여 준다. 이 화면은 그 밑에 깔려 있다가 안내를
-        // 닫으면 드러난다. 화면이 다시 만들어질 때(테마 변경 등)는 다시 띄우지 않는다.
+        // 처음 깐 사람에게는 이 화면 위에서 버튼을 하나씩 짚어 준다. 화면이 다시 만들어질
+        // 때(테마 변경 등)는 다시 띄우지 않는다. 레이아웃이 끝나야 버튼 자리를 알 수 있어 post.
+        tour = more?.let { drawer ->
+            CoachTour(this, drawer).also { t -> drawer.onGuide = { t.start() } }
+        }
         if (savedInstanceState == null && !Prefs.onboardingSeen(this)) {
-            startActivity(Intent(this, OnboardingActivity::class.java))
+            findViewById<View>(R.id.setup_scroll).post { tour?.start() }
         }
     }
 
@@ -71,7 +75,7 @@ class SetupActivity : AppCompatActivity() {
     }
 
     /**
-     * 서랍이 열려 있으면 뒤로 가기는 서랍만 닫는다. 앱이 통째로 닫히면 당황스럽다.
+     * 둘러보기 중이면 둘러보기를, 서랍이 열려 있으면 서랍만 닫는다. 앱이 통째로 닫히면 당황스럽다.
      *
      * 옛 방식(onBackPressed)이지만 여기 한 곳뿐이라 이걸로 둔다. 앱이 새 뒤로 가기 방식
      * (enableOnBackInvokedCallback)을 켜지 않아서 그대로 불린다.
@@ -79,7 +83,11 @@ class SetupActivity : AppCompatActivity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         val drawer = more
-        if (drawer != null && drawer.isOpen) drawer.close() else super.onBackPressed()
+        when {
+            tour?.isShowing == true -> tour?.finish()
+            drawer != null && drawer.isOpen -> drawer.close()
+            else -> super.onBackPressed()
+        }
     }
 
     override fun onDestroy() {
