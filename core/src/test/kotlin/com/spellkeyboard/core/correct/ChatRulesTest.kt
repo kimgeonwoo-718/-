@@ -120,7 +120,7 @@ class ChatRulesTest {
         assertFixed("잘 자", "잘자")
         assertFixed("같이 가자", "같이가자")
         assertFixed("빨리 와", "빨리와")
-        assertUntouched("뭐야", "뭐라고", "왜냐하면", "왜곡", "잘못 보냈어", "잘했어", "빨리빨리 해")
+        assertUntouched("뭐야", "뭐라고", "뭐가 더 나아?", "왜냐하면", "왜곡", "잘못 보냈어", "잘했어", "빨리빨리 해")
     }
 
     @Test
@@ -292,6 +292,25 @@ class ChatRulesTest {
         assertFixed("추후 공지하겠습니다", "추후 공지하겟습니다")
         assertFixed("모르겠어", "모르겟어")
         assertUntouched("하지 안 해도 돼", "실을 잇는 중")
+    }
+
+    @Test
+    fun `ㅐ ㅔ 오타 — 낱말이 아닌 꼴만`() {
+        assertFixed("운동 열심히 했어", "운동 열심히 헸어")
+        assertFixed("출발해", "출발헤")
+        assertFixed("예약해뒀어", "예약헤뒀어")
+        assertFixed("사진 보내줄게", "사진 보내줄개")
+        assertFixed("적어둘게", "적어둘개")
+        assertFixed("같이 먹을래?", "같이 먹을레?")
+        assertFixed("비 많이 왔네", "비 많이 왔내")
+        assertFixed("할 만하던데", "할 만하던대")
+        assertFixed("일찍 자는 게 좋아", "일찍 자는 개 좋아")
+        assertFixed("쓸데없는 걱정", "쓸대없는 걱정")
+        assertFixed("그렇게 멀지 않네", "그렇게 멀지 안내")
+        assertUntouched(
+            "이제 헤어지자", "길을 헤매다", "헤드셋 좋다", "비행기 날개", "쓸개가 아파", "얼굴이 빨개",
+            "공원 둘레", "안내 방송 들었어?", "실내 온도", "사과 한 개 좀 줘", "그 개 좀 봐", "이불을 갰다"
+        )
     }
 
     @Test
