@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  환경설정. 첫 화면에서 덜어 낸 것들 — 자주 안 만지지만 찾으면 있어야 하는 것.
-  첫 화면과 같은 토스 톤을 쓴다.
+  키보드 맞춤설정. 더보기 화면과 자판 도구 줄의 설정 버튼에서 온다.
+  실시간 교정 스위치와 자판 모양(종류·밝기·배경·투명도). 첫 화면과 같은 토스 톤을 쓴다.
 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -150,29 +150,10 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!--
-          정보. 잔글씨를 한곳에 모은다. 설치 ID 는 길게 눌러 복사한다 — 문의하거나 시험용
-          구독자 목록에 넣을 때 필요하고, 평소에는 아무 의미 없는 줄이라 맨 아래 둔다.
-        -->
-        <LinearLayout style="@style/Card">
-            <TextView style="@style/CardTitle" android:text="@string/section_info" />
-
-            <TextView
-                style="@style/Caption"
-                android:layout_marginTop="10dp"
-                android:text="@string/privacy_notice" />
-
-            <TextView
-                style="@style/Caption"
-                android:layout_marginTop="8dp"
-                android:text="@string/ai_notice" />
-
-            <TextView
-                android:id="@+id/install_id"
-                style="@style/Caption"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="8dp"
-                android:textIsSelectable="true" />
-        </LinearLayout>
+        <TextView
+            style="@style/Caption"
+            android:layout_marginTop="20dp"
+            android:paddingHorizontal="4dp"
+            android:text="@string/privacy_notice" />
     </LinearLayout>
 </ScrollView>

@@ -24,9 +24,9 @@
         android:paddingBottom="40dp">
 
         <!--
-          위 막대. 한 번 하고 마는 것(로그인)과 가끔 만지는 것(환경설정)을 여기 올려 두고,
+          위 막대. 앱 이름과 ☰ 하나. 로그인·키보드 맞춤설정·약관·고객센터는 전부 ☰ 뒤
+          더보기 화면에 모았다 — 버튼을 여기 늘어놓았더니 지저분하고 서로 따로 놀았다.
           본문에는 처음 온 사람이 할 일(시작하기 → 써 보기 → 사용법 → 프리미엄)만 남긴다.
-          360dp 폰에서 제목 22sp + 알약 둘이 한 줄에 들어가게 맞췄다(26sp 면 제목이 두 줄로 꺾인다).
         -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -38,26 +38,22 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:ellipsize="end"
-                android:maxLines="1"
                 android:text="@string/app_name"
                 android:textColor="@color/toss_text"
-                android:textSize="22sp"
+                android:textSize="26sp"
                 android:textStyle="bold" />
 
-            <!-- 빌드에 로그인 클라이언트 ID 가 없으면 숨는다(SetupActivity). -->
-            <TextView
-                android:id="@+id/account_button"
-                style="@style/Pill"
-                android:paddingHorizontal="12dp"
-                android:text="@string/top_login" />
-
-            <TextView
-                android:id="@+id/settings_button"
-                style="@style/Pill"
-                android:paddingHorizontal="12dp"
-                android:layout_marginStart="6dp"
-                android:text="@string/top_settings" />
+            <ImageView
+                android:id="@+id/menu_button"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginEnd="-10dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:contentDescription="@string/more_title"
+                android:focusable="true"
+                android:padding="10dp"
+                android:src="@drawable/ic_menu" />
         </LinearLayout>
 
         <TextView
@@ -177,8 +173,14 @@
             <TextView
                 style="@style/Caption"
                 android:layout_marginTop="6dp"
-                android:layout_marginBottom="8dp"
                 android:text="@string/setting_plan_note" />
+
+            <!-- AI 로 글이 나간다는 말은 AI 를 파는 자리에 있어야 한다. -->
+            <TextView
+                style="@style/Caption"
+                android:layout_marginTop="6dp"
+                android:layout_marginBottom="8dp"
+                android:text="@string/ai_notice" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

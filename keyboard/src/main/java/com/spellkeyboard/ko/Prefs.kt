@@ -19,6 +19,7 @@ object Prefs {
     private const val KEY_INSTALL_ID = "install_id"
     private const val KEY_PURCHASE_TOKEN = "purchase_token"
     private const val KEY_DEVICE_TOKEN = "device_token"
+    private const val KEY_PROFILE_NAME = "profile_name"
     private const val KEY_QUOTA_PLAN = "quota_plan"
     private const val KEY_QUOTA_REMAINING = "quota_remaining"
     private const val KEY_QUOTA_LIMIT = "quota_limit"
@@ -162,6 +163,19 @@ object Prefs {
     }
 
     fun signedIn(context: Context): Boolean = deviceToken(context).isNotEmpty()
+
+    /**
+     * 로그인한 구글 계정 이름. 더보기 화면에 사진 옆에 띄우는 **표시용**이다.
+     *
+     * **이 폰에만 있다.** 우리 서버로 보내지 않고, 서버도 저장하지 않는다(서버는 구글 계정
+     * 번호의 해시만 안다). 로그아웃·탈퇴하면 [ProfilePhoto] 의 사진과 함께 지운다.
+     */
+    fun profileName(context: Context): String =
+        prefs(context).getString(KEY_PROFILE_NAME, "").orEmpty()
+
+    fun setProfileName(context: Context, name: String) {
+        prefs(context).edit().putString(KEY_PROFILE_NAME, name).apply()
+    }
 
     /**
      * 중계 서버로 보낼 때 붙이는 헤더. 서버는 이걸로 누구인지, 돈을 냈는지 안다.

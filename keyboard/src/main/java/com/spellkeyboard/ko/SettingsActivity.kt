@@ -1,8 +1,5 @@
 package com.spellkeyboard.ko
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.os.Bundle
 import android.view.View
 import android.widget.CompoundButton
@@ -15,11 +12,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 
 /**
- * 환경설정.
+ * 키보드 맞춤설정.
  *
- * 첫 화면([SetupActivity])에서 덜어 낸 것들이다: 실시간 교정 스위치, 자판·테마·배경,
- * 그리고 잔글씨(개인정보·AI 안내, 설치 ID). 한 번 맞춰 두면 잘 안 만지지만 찾으면 있어야
- * 하는 것. 첫 화면 위 막대의 "환경설정" 과 자판 도구 줄의 설정 버튼이 여기로 온다.
+ * 실시간 교정 스위치와 자판 모양(종류·밝기·배경·투명도). 한 번 맞춰 두면 잘 안 만지지만
+ * 찾으면 있어야 하는 것. 더보기([MoreActivity])의 "키보드 맞춤설정" 과 자판 도구 줄의 설정
+ * 버튼이 여기로 온다.
  */
 class SettingsActivity : AppCompatActivity() {
 
@@ -56,7 +53,6 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<View>(R.id.back_button).setOnClickListener { finish() }
         bindCorrection()
         bindKeyboard()
-        showInstallId()
     }
 
     override fun onResume() {
@@ -150,33 +146,12 @@ class SettingsActivity : AppCompatActivity() {
         )
     }
 
-    // --- 정보 -----------------------------------------------------------------
-
-    /**
-     * 설치 ID 를 보여 준다. 길게 누르면 복사된다.
-     *
-     * 이 기기가 서버에 자기를 밝히는 이름이다. 문의할 때 이걸 알려 주면 어느 기기인지
-     * 짚을 수 있고, 출시 전에는 이 값을 서버의 시험용 구독자 목록에 넣어 유료 기능을
-     * 실기기에서 확인한다. 개인 정보가 아니라 앱이 처음 켜질 때 만든 무작위 값이다.
-     */
-    private fun showInstallId() {
-        val view = findViewById<TextView>(R.id.install_id) ?: return
-        val id = Prefs.installId(this)
-        view.text = getString(R.string.setting_install_id, id)
-        view.setOnLongClickListener {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.setting_install_id_label), id))
-            Toast.makeText(this, R.string.setting_install_id_copied, Toast.LENGTH_SHORT).show()
-            true
-        }
-    }
-
     private companion object {
         const val KEY_SCROLL = "scroll_y"
     }
 }
 
-/** 앱 화면 밝기. 첫 화면과 환경설정이 같은 값을 따른다. */
+/** 앱 화면 밝기. 첫 화면·더보기·키보드 맞춤설정이 같은 값을 따른다. */
 internal fun ThemeMode.nightMode(): Int = when (this) {
     ThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
     ThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES

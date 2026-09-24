@@ -63,19 +63,40 @@
     <string name="setting_quota_unlimited">프리미엄 · 이용 중</string>
     <string name="setting_quota_no_server">이 빌드에는 AI 서버 주소가 없어요</string>
     <string name="setting_plan_subscribe">프리미엄 알아보기 · 월 2,990원</string>
-    <!-- 첫 화면 위 막대와 환경설정 화면. -->
-    <string name="top_login">로그인</string>
-    <string name="top_account">내 계정</string>
-    <string name="top_settings">환경설정</string>
-    <string name="settings_title">환경설정</string>
-    <string name="section_info">정보</string>
+    <!-- 더보기(첫 화면 ☰)와 키보드 맞춤설정. -->
+    <string name="more_title">더보기</string>
+    <string name="settings_title">키보드 맞춤설정</string>
     <string name="back">뒤로</string>
+    <string name="menu_keyboard">키보드 맞춤설정</string>
+    <string name="menu_privacy">개인정보 처리방침</string>
+    <string name="menu_terms">서비스 이용약관</string>
+    <string name="menu_support">고객센터</string>
+    <string name="app_info">버전 %1$s · 설치 ID %2$s (길게 눌러 복사)</string>
+    <string name="open_failed">열 수 있는 앱이 없어요.</string>
+
+    <!--
+      고객센터 메일 주소. 비어 있으면 고객센터를 눌렀을 때 "준비 중" 이라고 뜬다.
+      서버 설정 CONTACT_EMAIL(개인정보 처리방침 페이지에 뜨는 주소)과 같은 값을 넣는다.
+    -->
+    <string name="support_email" translatable="false"></string>
+    <string name="support_not_ready">고객센터 이메일을 준비 중이에요.</string>
+    <string name="support_subject">[맞춤법 키보드] 문의</string>
+    <string name="support_body">\n\n\n---\n아래 정보는 문제를 찾는 데 쓰여요. 지우지 말아 주세요.\n앱 버전: %1$s\n기기: %2$s (Android %3$s)\n설치 ID: %4$s</string>
 
     <!-- 로그인. 구독을 폰 밖(윈도우·아이폰)에서도 쓰게 하는 칸이다. -->
+    <string name="account_title">로그인</string>
+    <string name="account_signin_sub">윈도우·아이폰에서도 같은 구독을 쓰려면 로그인하세요.</string>
+    <string name="account_signin">구글로 로그인</string>
     <string name="setting_account_working">로그인 중…</string>
-    <string name="account_dialog_title">구글 계정으로 로그인됨</string>
+    <string name="account_photo">프로필 사진</string>
+    <string name="account_name_unknown">구글 계정</string>
     <string name="account_signout">로그아웃</string>
-    <string name="account_close">닫기</string>
+    <string name="account_delete">회원 탈퇴</string>
+    <string name="account_delete_title">회원 탈퇴할까요?</string>
+    <string name="account_delete_message">서버에 있는 계정 정보가 바로 지워지고, 이 계정으로 로그인한 다른 기기(윈도우 등)에서는 더 이상 구독을 쓸 수 없어요.\n\n구독은 해지되지 않아요. 해지하려면 Play 스토어 → 결제 및 정기 결제 → 정기 결제에서 해 주세요.</string>
+    <string name="account_delete_confirm">탈퇴하기</string>
+    <string name="account_cancel">취소</string>
+    <string name="account_deleted">탈퇴했어요. 계정 정보를 지웠어요.</string>
     <string name="setting_account_signed_in">로그인됨 · 다른 기기에서도 이 구독을 쓸 수 있어요</string>
     <string name="setting_account_signed_in_free">로그인됨 · 아직 붙은 구독이 없어요. 구독하면 다른 기기에서도 열려요</string>
     <string name="account_error_network">서버에 닿지 못했어요. 잠시 후 다시 시도해 주세요.</string>
@@ -136,7 +157,6 @@
     <string name="setting_key_transparency_sub">배경 사진을 썼을 때 키를 얼마나 비치게 할지 정해요. 오른쪽으로 갈수록 사진이 잘 보여요.</string>
     <string name="setting_key_transparency_value">%1$d%%</string>
     <!-- 설치 ID. 서버가 이 기기를 부르는 이름이라 문의·시험용 구독자 등록에 쓴다. -->
-    <string name="setting_install_id">설치 ID · %1$s (길게 눌러 복사)</string>
     <string name="setting_install_id_label">설치 ID</string>
     <string name="setting_install_id_copied">설치 ID 를 복사했다</string>
     <string name="ai_notice">AI 전체 교정을 누를 때만 그 입력란의 글이 서버를 거쳐 AI 로 가요(지금은 구글 제미나이). 타이핑 중 실시간 교정은 기기 안에서만 처리돼요.</string>
@@ -161,7 +181,7 @@
     <string name="guide_translate_name">번역</string>
     <string name="guide_translate_desc">짧게 누르면 번역 입력줄이 열려요. 한국어로 치면 앱에는 번역돼 들어가요. 꾹 누르면 써 놓은 글 전체를 AI 가 옮겨요(프리미엄).</string>
     <string name="guide_settings_name">설정</string>
-    <string name="guide_settings_desc">환경설정을 열어요. 자판 종류(쿼티·천지인), 밝기, 배경 사진을 여기서 바꿔요.</string>
+    <string name="guide_settings_desc">키보드 맞춤설정을 열어요. 자판 종류(쿼티·천지인), 밝기, 배경 사진을 여기서 바꿔요.</string>
 
     <plurals name="correct_all_done">
         <item quantity="other">%d곳을 고쳤어요</item>

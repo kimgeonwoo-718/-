@@ -79,6 +79,23 @@
         <item name="android:textStyle">bold</item>
     </style>
 
+    <!--
+      더보기 메뉴 한 줄. 글씨 오른쪽 끝에 › 를 달아 "누르면 넘어간다" 를 보인다.
+      줄 전체가 눌려야 해서 TextView 하나로 만든다(글씨만 눌리는 줄은 답답하다).
+    -->
+    <style name="MenuRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">56dp</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:drawableEnd">@drawable/ic_chevron</item>
+        <item name="android:textColor">@color/toss_text</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+
     <style name="PrimaryButton">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">54dp</item>

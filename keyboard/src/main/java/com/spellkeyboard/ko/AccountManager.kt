@@ -29,8 +29,10 @@ import java.util.concurrent.Executors
  * 서버에 넘기고, 돌려받은 기기 토큰을 [Prefs] 에 넣어 두는 것뿐이다. 살아 있는 구독인지는
  * 서버가 Play 에 물어본다 — 요청마다 다시.
  *
- * **이메일·이름은 받아도 버린다.** 토큰 안에 들어 있지만 읽지 않고, 저장하지도 않는다.
- * 키보드 앱이 사람 이름을 모아 둘 이유가 없다. 모으지 않으면 샐 것도 없다.
+ * **이름·사진은 이 폰에만 둔다.** 더보기 화면에 "누구로 로그인했나" 를 보여 주려고 구글이
+ * 준 이름과 프로필 사진을 폰에 저장하지만, 우리 서버로는 보내지 않는다 — 서버는 ID 토큰에서
+ * 구글 계정 번호(`sub`)만 꺼내 해시로 바꿔 쓴다. 이메일은 폰에서도 안 읽는다.
+ * 로그아웃·탈퇴하면 폰에서도 지운다.
  */
 class AccountManager(context: Context) {
 
@@ -69,13 +71,19 @@ class AccountManager(context: Context) {
             workers,
             object : CredentialManagerCallback<GetCredentialResponse, GetCredentialException> {
                 override fun onResult(result: GetCredentialResponse) {
-                    val idToken = idTokenOf(result)
-                    if (idToken == null) {
+                    val google = googleOf(result)
+                    if (google == null) {
                         deliver(onDone, Result(false, false, app.getString(R.string.account_error_no_token)))
                         return
                     }
                     // 이미 작업 스레드다(executor 가 여기로 부른다). 그대로 서버에 간다.
-                    deliver(onDone, attach(idToken))
+                    val attached = attach(google.idToken)
+                    if (attached.signedIn) {
+                        // 서버가 받아 준 뒤에만 남긴다. 로그인이 실패했는데 이름이 떠 있으면 헷갈린다.
+                        Prefs.setProfileName(app, google.displayName?.trim().orEmpty())
+                        ProfilePhoto.download(app, google.profilePictureUri?.toString())
+                    }
+                    deliver(onDone, attached)
                 }
 
                 override fun onError(error: GetCredentialException) {
@@ -94,7 +102,7 @@ class AccountManager(context: Context) {
      */
     fun signOut(onDone: (Result) -> Unit) {
         val device = Prefs.deviceToken(app)
-        Prefs.setDeviceToken(app, "")
+        forget()
         if (device.isEmpty()) {
             onDone(Result(false, false, null))
             return
@@ -105,8 +113,48 @@ class AccountManager(context: Context) {
         }
     }
 
+    /**
+     * 회원 탈퇴. 서버의 계정과, 그 계정에 붙은 **모든** 기기를 지운다.
+     *
+     * 로그아웃과 달리 **서버가 지웠다고 해야** 폰에서도 지운다. 망이 끊겨 서버에 계정이
+     * 남았는데 폰에서 "탈퇴했어요" 가 뜨면 거짓말이 된다. 실패하면 로그인 상태 그대로 두고
+     * 왜 안 됐는지 알린다. 서버가 "그런 기기 없다(404)" 고 하면 이미 없는 것이니 지운다.
+     *
+     * 구독은 Play 에 있어서 여기서 해지되지 않는다. 그 말은 확인 창이 먼저 한다.
+     * [Result.signedIn] 이 false 면 지워졌다는 뜻이다.
+     */
+    fun deleteAccount(onDone: (Result) -> Unit) {
+        val device = Prefs.deviceToken(app)
+        if (device.isEmpty()) {
+            forget()
+            onDone(Result(false, false, null))
+            return
+        }
+        workers.execute {
+            val result = try {
+                val (code, text) = post("/v1/account/delete", mapOf("X-Device-Token" to device), null)
+                if (code == 200 || code == 404) {
+                    forget()
+                    Result(false, false, null)
+                } else {
+                    Result(true, false, app.getString(R.string.account_error_server, reasonOf(text, code)))
+                }
+            } catch (error: Exception) {
+                Result(true, false, app.getString(R.string.account_error_network))
+            }
+            deliver(onDone, result)
+        }
+    }
+
     fun destroy() {
         workers.shutdown()
+    }
+
+    /** 이 폰에 남은 로그인 흔적을 전부 지운다 — 기기 토큰, 이름, 사진. */
+    private fun forget() {
+        Prefs.setDeviceToken(app, "")
+        Prefs.setProfileName(app, "")
+        ProfilePhoto.clear(app)
     }
 
     // --- 서버 --------------------------------------------------------------------
@@ -216,13 +264,13 @@ class AccountManager(context: Context) {
         else -> app.getString(R.string.account_error_server, error.type)
     }
 
-    private fun idTokenOf(result: GetCredentialResponse): String? {
+    private fun googleOf(result: GetCredentialResponse): GoogleIdTokenCredential? {
         val credential = result.credential
         if (credential !is CustomCredential) return null
         if (credential.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) return null
-        return runCatching { GoogleIdTokenCredential.createFrom(credential.data).idToken }
+        return runCatching { GoogleIdTokenCredential.createFrom(credential.data) }
             .getOrNull()
-            ?.takeIf { it.isNotEmpty() }
+            ?.takeIf { it.idToken.isNotEmpty() }
     }
 
     private companion object {

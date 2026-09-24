@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 프로필 사진이 없을 때 이름 첫 글자를 얹는 동그라미. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="@color/toss_blue" />
+</shape>
