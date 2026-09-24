@@ -199,7 +199,6 @@
     <string name="guide1_typed">걱정안해도되요 우리도 할수있어</string>
     <string name="guide1_fixed">걱정 안 해도 돼요 우리도 할 수 있어</string>
     <string name="guide1_label_fixed">스페이스를 누를 때마다 앞말을 바로 고쳐요</string>
-    <string name="guide1_label_live">자판 위 LIVE 가 파랗게 차 있으면 켜진 거예요. 누르면 끄고 켤 수 있어요</string>
 
     <string name="guide2_title">자판 위 도구 줄</string>
     <string name="guide2_sub">동그라미를 눌러 보세요. 막대기가 가리키며 무슨 버튼인지 알려 줘요.</string>

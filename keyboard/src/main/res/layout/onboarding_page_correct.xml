@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 안내 1쪽: 쓰는 대로 바로 고친다. 예문은 실제 엔진에 넣어 확인한 것이다(try.sh). -->
+<!--
+  안내 1쪽: 쓰는 대로 바로 고친다. 예문은 실제 엔진에 넣어 확인한 것이다(try.sh).
+
+  모든 쪽이 같은 뼈대다: 위쪽 남는 자리 한가운데에 흉내 화면을 크게 두고, 그 밑에 제목과 설명을
+  가운데 맞춤으로 — 버튼 바로 위라 눈이 그림 → 글 → 버튼 순으로 내려온다. 처음엔 제목을 맨 위에
+  두었더니 키 큰 폰에서 그림 밑이 휑하게 비었다. 화면이 작으면 통째로 스크롤된다.
+-->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -10,85 +16,85 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingHorizontal="24dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="16dp">
+        android:paddingHorizontal="20dp"
+        android:paddingBottom="4dp">
 
-        <TextView style="@style/GuideTitle" android:text="@string/guide1_title" />
-        <TextView style="@style/GuideSub" android:text="@string/guide1_sub" />
-
-        <com.spellkeyboard.ko.CalloutLayout
-            android:id="@+id/page_callout"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:background="@drawable/bg_card"
-            android:padding="18dp">
+            android:layout_height="0dp"
+            android:layout_weight="1">
 
-            <LinearLayout
+            <com.spellkeyboard.ko.CalloutLayout
+                android:id="@+id/page_callout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:layout_gravity="center_vertical"
+                android:layout_marginVertical="8dp"
+                android:background="@drawable/bg_card"
+                android:padding="16dp">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/guide1_typed_caption"
-                    android:textColor="@color/toss_text3"
-                    android:textSize="12sp" />
-
-                <TextView
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:background="@drawable/bg_input"
-                    android:padding="12dp"
-                    android:text="@string/guide1_typed"
-                    android:textColor="@color/toss_text2"
-                    android:textSize="15sp" />
+                    android:orientation="vertical">
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginVertical="4dp"
-                    android:gravity="center"
-                    android:text="↓"
-                    android:textColor="@color/toss_blue"
-                    android:textSize="20sp"
-                    android:textStyle="bold" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/guide1_typed_caption"
+                        android:textColor="@color/toss_text3"
+                        android:textSize="12sp" />
 
-                <TextView
-                    android:id="@+id/demo_fixed"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_badge"
-                    android:padding="12dp"
-                    android:text="@string/guide1_fixed"
-                    android:textColor="@color/toss_blue"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:background="@drawable/bg_input"
+                        android:padding="12dp"
+                        android:text="@string/guide1_typed"
+                        android:textColor="@color/toss_text2"
+                        android:textSize="15sp" />
 
-                <TextView
-                    android:id="@+id/label_fixed"
-                    style="@style/GuideLabel"
-                    android:layout_marginStart="48dp"
-                    android:layout_marginTop="22dp"
-                    android:text="@string/guide1_label_fixed" />
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginVertical="2dp"
+                        android:gravity="center"
+                        android:text="↓"
+                        android:textColor="@color/toss_blue"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
 
-                <include
-                    layout="@layout/guide_mock_toolbar"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="28dp" />
+                    <TextView
+                        android:id="@+id/demo_fixed"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_badge"
+                        android:padding="12dp"
+                        android:text="@string/guide1_fixed"
+                        android:textColor="@color/toss_blue"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
 
-                <TextView
-                    android:id="@+id/label_live"
-                    style="@style/GuideLabel"
-                    android:layout_gravity="end"
-                    android:layout_marginStart="72dp"
-                    android:layout_marginTop="22dp"
-                    android:text="@string/guide1_label_live" />
-            </LinearLayout>
-        </com.spellkeyboard.ko.CalloutLayout>
+                    <TextView
+                        android:id="@+id/label_fixed"
+                        style="@style/GuideLabel"
+                        android:layout_gravity="center_horizontal"
+                        android:layout_marginTop="18dp"
+                        android:text="@string/guide1_label_fixed" />
+                </LinearLayout>
+            </com.spellkeyboard.ko.CalloutLayout>
+        </FrameLayout>
+
+        <TextView
+            style="@style/GuideTitle"
+            android:layout_marginTop="20dp"
+            android:gravity="center"
+            android:text="@string/guide1_title" />
+
+        <TextView
+            style="@style/GuideSub"
+            android:gravity="center"
+            android:text="@string/guide1_sub" />
     </LinearLayout>
 </ScrollView>

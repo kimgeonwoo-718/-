@@ -14,7 +14,7 @@ import kotlin.math.abs
 /**
  * 첫 실행 안내. 앱을 처음 깔면 첫 화면보다 먼저 뜬다. 옆으로 넘기는 다섯 쪽:
  *
- * 1. 쓰는 대로 바로 고쳐요 — 예문이 고쳐지는 모습, LIVE 버튼
+ * 1. 쓰는 대로 바로 고쳐요 — 예문이 고쳐지는 모습
  * 2. 자판 위 도구 줄 — 첫 화면 '사용법' 그림 그대로(누르면 설명)
  * 3. 꾹 누르면 AI — ALL · 번역 버튼의 짧게/꾹
  * 4. ☰ 더보기 — ☰ 위치, 서랍 안 로그인 · 키보드 맞춤설정 · 고객센터
@@ -44,7 +44,6 @@ class OnboardingActivity : AppCompatActivity() {
     private val links = mapOf(
         R.layout.onboarding_page_correct to listOf(
             R.id.demo_fixed to R.id.label_fixed,
-            R.id.mock_live to R.id.label_live,
         ),
         R.layout.onboarding_page_ai to listOf(
             R.id.mock_all to R.id.label_all,
