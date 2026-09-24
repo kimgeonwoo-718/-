@@ -201,8 +201,6 @@
     <string name="tour_try_body">여기서 직접 쳐 보세요. 띄어쓰기와 맞춤법을 치는 동안 폰 안에서 바로 고쳐요. 인터넷도 필요 없어요.</string>
     <string name="tour_toolbar_title">자판 위 도구 줄</string>
     <string name="tour_toolbar_body">키보드 위에 뜨는 버튼들이에요. 여기 동그라미를 하나씩 누르면 무슨 버튼인지 알려 줘요.</string>
-    <string name="tour_premium_title">AI 교정 · 번역</string>
-    <string name="tour_premium_body">자판 위 ALL · 번역 버튼을 꾹 누르면 AI 가 문장을 다듬고 번역해요(프리미엄). 짧게 누르는 교정은 늘 무료예요.</string>
     <string name="tour_menu_title">더보기</string>
     <string name="tour_menu_body">로그인, 키보드 맞춤설정, 약관, 고객센터는 여기 있어요.</string>
     <string name="tour_account_title">로그인</string>

@@ -18,8 +18,13 @@ import android.widget.TextView
  * 첫 실행 둘러보기. **진짜 첫 화면 위에서** 한 단계에 버튼 하나만 밝게 남기고 나머지는 어둡게
  * 덮은 뒤, 그 버튼에서 작대기를 그어 설명 칸을 단다. "다음" 을 누르면 다음 버튼으로 넘어간다.
  *
- * 순서: 키보드 켜기 → 입력기 고르기 → 써 보기 → 도구 줄 → 프리미엄 → ☰ → (서랍을 열고) 로그인 →
- * 키보드 맞춤설정. 끝나면 서랍을 닫고 맨 위로 돌아간다.
+ * 순서: 키보드 켜기 → 입력기 고르기 → 써 보기 → 도구 줄 → ☰ → (서랍을 열고) 로그인 → 키보드
+ * 맞춤설정. 끝나면 서랍을 닫고 맨 위로 돌아간다. 프리미엄 버튼은 짚지 않는다 — 버튼에 적힌
+ * 그대로라 설명할 게 없다는 평.
+ *
+ * 다음/건너뛰기는 **화면 맨 아래 고정 막대**에 있다. 처음엔 설명 칸 안에 두었는데, 과녁이 화면
+ * 아래쪽이면 설명 칸이 화면 밖으로 밀려나 버튼째 사라져서 넘어갈 수가 없었다(프리미엄 단계).
+ * 이제 설명 칸은 재어 보고 들어가는 쪽에만 두며, 어느 쪽에도 안 들어가면 화면 안으로 당긴다.
  *
  * 따로 그린 그림이나 흉내 화면을 쓰지 않는 이유: 이전 판(흉내 화면 다섯 쪽)은 "어색하다" 는
  * 평이었다. 진짜 화면을 짚으면 사용자가 본 그대로를 다시 찾아갈 수 있고, 화면이 바뀌어도 이
@@ -40,7 +45,6 @@ class CoachTour(
         Step(R.id.pick_button, R.string.tour_pick_title, R.string.tour_pick_body),
         Step(R.id.test_field, R.string.tour_try_title, R.string.tour_try_body),
         Step(R.id.toolbar_guide, R.string.tour_toolbar_title, R.string.tour_toolbar_body),
-        Step(R.id.subscribe_button, R.string.tour_premium_title, R.string.tour_premium_body),
         Step(R.id.menu_button, R.string.tour_menu_title, R.string.tour_menu_body),
         Step(R.id.account_card, R.string.tour_account_title, R.string.tour_account_body, inDrawer = true),
         Step(R.id.menu_keyboard, R.string.tour_keyboard_title, R.string.tour_keyboard_body, inDrawer = true),
@@ -145,6 +149,7 @@ class CoachTour(
         private val path = Path()
 
         private val bubble: View = View.inflate(context, R.layout.coach_bubble, null)
+        private val controls: View = View.inflate(context, R.layout.coach_controls, null)
 
         init {
             setWillNotDraw(false)
@@ -158,8 +163,9 @@ class CoachTour(
                 rightMargin = side
             })
             bubble.visibility = INVISIBLE
-            bubble.findViewById<View>(R.id.coach_skip).setOnClickListener { finish() }
-            bubble.findViewById<View>(R.id.coach_next).setOnClickListener { next() }
+            addView(controls, LayoutParams(-1, -2, Gravity.BOTTOM))
+            controls.findViewById<View>(R.id.coach_skip).setOnClickListener { finish() }
+            controls.findViewById<View>(R.id.coach_next).setOnClickListener { next() }
         }
 
         /** 자리를 옮기는 동안: 구멍도 설명 칸도 없이 어둡게만. */
@@ -183,29 +189,46 @@ class CoachTour(
 
             bubble.findViewById<TextView>(R.id.coach_title).setText(step.title)
             bubble.findViewById<TextView>(R.id.coach_body).setText(step.body)
-            bubble.findViewById<TextView>(R.id.coach_step).text =
+            controls.findViewById<TextView>(R.id.coach_step).text =
                 context.getString(R.string.guide_step, index + 1, steps.size)
-            bubble.findViewById<TextView>(R.id.coach_next)
+            controls.findViewById<TextView>(R.id.coach_next)
                 .setText(if (index == steps.lastIndex) R.string.guide_start else R.string.guide_next)
 
-            // 설명 칸은 과녁 위아래 중 넓은 쪽에, 작대기 길이만큼 떨어뜨려 둔다.
-            val gap = (40 * density).toInt()
-            val below = height - hole.bottom >= hole.top
             bubble.layoutParams = (bubble.layoutParams as LayoutParams).apply {
-                if (below) {
-                    gravity = Gravity.TOP
-                    topMargin = (hole.bottom + gap).toInt()
-                    bottomMargin = 0
-                } else {
-                    gravity = Gravity.BOTTOM
-                    bottomMargin = (height - hole.top + gap).toInt()
-                    topMargin = 0
-                }
+                gravity = Gravity.TOP
+                topMargin = bubbleTop()
             }
             bubble.alpha = 0f
             bubble.visibility = VISIBLE
             bubble.animate().alpha(1f).setDuration(FADE_MS).start()
             invalidate()
+        }
+
+        /**
+         * 설명 칸의 위쪽 자리. 칸을 먼저 재어 보고, 과녁 아래(작대기 길이만큼 떨어져)에 들어가면
+         * 아래, 위에 들어가면 위. 둘 다 안 되면 넓은 쪽에 두되 화면 안으로 당긴다 — 과녁을 조금
+         * 가리더라도 칸이 화면 밖으로 사라지는 것보다 낫다. 아래 막대 자리는 비워 둔다.
+         */
+        private fun bubbleTop(): Int {
+            val side = (16 * density).toInt()
+            bubble.measure(
+                MeasureSpec.makeMeasureSpec(width - side * 2, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+            )
+            val bubbleHeight = bubble.measuredHeight
+            val gap = 36 * density
+            val edge = 8 * density
+            val floor = (height - controls.height).toFloat() - edge
+
+            val belowTop = hole.bottom + gap
+            val aboveTop = hole.top - gap - bubbleHeight
+            val top = when {
+                belowTop + bubbleHeight <= floor -> belowTop
+                aboveTop >= edge -> aboveTop
+                floor - hole.bottom >= hole.top -> belowTop
+                else -> aboveTop
+            }
+            return top.coerceIn(edge, maxOf(edge, floor - bubbleHeight)).toInt()
         }
 
         override fun dispatchDraw(canvas: Canvas) {
@@ -221,7 +244,9 @@ class CoachTour(
             if (hasHole) {
                 if (round) canvas.drawOval(hole, ring)
                 else canvas.drawRoundRect(hole, radius(), radius(), ring)
-                if (bubble.visibility == VISIBLE && bubble.height > 0) drawStick(canvas)
+                // 설명 칸이 과녁과 겹치게 당겨졌으면(둘 다 안 들어갈 때) 작대기는 긋지 않는다.
+                val clear = bubble.top >= hole.bottom || bubble.bottom <= hole.top
+                if (bubble.visibility == VISIBLE && bubble.height > 0 && clear) drawStick(canvas)
             }
             super.dispatchDraw(canvas)
         }

@@ -1,41 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  둘러보기 설명 칸. 밝게 남긴 버튼에서 작대기가 이 칸으로 이어진다.
-  위: 제목 · 몇 번째인지. 가운데: 설명. 아래: 건너뛰기 · 다음(마지막엔 시작하기).
+  둘러보기 설명 칸. 밝게 남긴 버튼에서 작대기가 이 칸으로 이어진다. 제목 · 설명만 —
+  다음/건너뛰기는 화면 맨 아래 고정 막대(coach_controls)에 있다. 설명 칸 안에 두었더니 칸이
+  화면 밖으로 밀려날 때 버튼까지 같이 사라져 넘어갈 수가 없었다.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@drawable/bg_card"
-    android:clickable="true"
-    android:focusable="true"
     android:orientation="vertical"
     android:paddingHorizontal="18dp"
-    android:paddingTop="16dp"
-    android:paddingBottom="12dp">
+    android:paddingVertical="16dp">
 
-    <LinearLayout
+    <TextView
+        android:id="@+id/coach_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:id="@+id/coach_title"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:textColor="@color/toss_text"
-            android:textSize="17sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/coach_step"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="@color/toss_text3"
-            android:textSize="13sp" />
-    </LinearLayout>
+        android:textColor="@color/toss_text"
+        android:textSize="17sp"
+        android:textStyle="bold" />
 
     <TextView
         android:id="@+id/coach_body"
@@ -45,46 +28,4 @@
         android:lineSpacingExtra="3dp"
         android:textColor="@color/toss_text2"
         android:textSize="15sp" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:id="@+id/coach_skip"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:layout_marginStart="-8dp"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center"
-            android:paddingHorizontal="8dp"
-            android:text="@string/guide_skip"
-            android:textColor="@color/toss_text3"
-            android:textSize="14sp" />
-
-        <View
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
-
-        <TextView
-            android:id="@+id/coach_next"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:background="@drawable/bg_button_primary"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center"
-            android:minWidth="88dp"
-            android:paddingHorizontal="18dp"
-            android:text="@string/guide_next"
-            android:textColor="#FFFFFF"
-            android:textSize="15sp"
-            android:textStyle="bold" />
-    </LinearLayout>
 </LinearLayout>
