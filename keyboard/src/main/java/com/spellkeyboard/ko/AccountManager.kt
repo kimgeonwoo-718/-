@@ -150,9 +150,10 @@ class AccountManager(context: Context) {
         workers.shutdown()
     }
 
-    /** 이 폰에 남은 로그인 흔적을 전부 지운다 — 기기 토큰, 이름, 사진. */
+    /** 이 폰에 남은 로그인 흔적을 전부 지운다 — 기기 토큰, 이름, 사진, 붙였다는 표시. */
     private fun forget() {
         Prefs.setDeviceToken(app, "")
+        Prefs.setAttachedPurchase(app, "")
         Prefs.setProfileName(app, "")
         ProfilePhoto.clear(app)
     }
@@ -184,28 +185,10 @@ class AccountManager(context: Context) {
             return Result(false, false, app.getString(R.string.account_error_server, "deviceToken"))
         }
         Prefs.setDeviceToken(app, device)
-        return Result(true, field(text, "plan") == "subscriber", null)
-    }
-
-    private fun post(path: String, headers: Map<String, String>, body: String?): Pair<Int, String> {
-        val connection = (URL(Prefs.serverUrl() + path).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = TIMEOUT_MS
-            readTimeout = TIMEOUT_MS
-            doOutput = body != null
-            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            headers.forEach { (name, value) -> setRequestProperty(name, value) }
-        }
-        try {
-            body?.let { payload ->
-                connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-            }
-            val code = connection.responseCode
-            val stream = if (code == 200) connection.inputStream else connection.errorStream
-            return code to stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-        } finally {
-            connection.disconnect()
-        }
+        val subscriber = field(text, "plan") == "subscriber"
+        // 구매를 들고 가서 구독자로 돌아왔으면 그 구매는 붙은 것이다. syncPurchase 가 또 안 보내게.
+        if (subscriber && purchase.isNotEmpty()) Prefs.setAttachedPurchase(app, purchase)
+        return Result(true, subscriber, null)
     }
 
     /**
@@ -218,18 +201,6 @@ class AccountManager(context: Context) {
      */
     private fun field(text: String, name: String): String =
         Regex("\"" + name + "\"\\s*:\\s*\"([^\"\\\\]*)\"").find(text)?.groupValues?.get(1).orEmpty()
-
-    /** 문자열을 JSON 리터럴로. 제어문자는 버린다 — 넣어 봐야 깨진 JSON 이 된다. */
-    private fun quote(value: String): String = buildString {
-        append('"')
-        for (ch in value) when {
-            ch == '"' -> append("\\\"")
-            ch == '\\' -> append("\\\\")
-            ch < ' ' -> Unit
-            else -> append(ch)
-        }
-        append('"')
-    }
 
     private fun deliver(onDone: (Result) -> Unit, result: Result) {
         main.post { onDone(result) }
@@ -273,7 +244,69 @@ class AccountManager(context: Context) {
             ?.takeIf { it.idToken.isNotEmpty() }
     }
 
-    private companion object {
-        const val TIMEOUT_MS = 15_000
+    companion object {
+        private const val TIMEOUT_MS = 15_000
+
+        /**
+         * 이 폰의 구매를 계정에 붙인다 — **로그인 먼저, 구독 나중** 순서를 위해.
+         *
+         * 구매는 로그인할 때만 붙었다. 그래서 로그인해 둔 뒤에 결제하면 구매가 계정에 안 붙어,
+         * PC 에서는 구독이 없는 걸로 보였다. [BillingManager] 가 구매를 받을 때마다(결제 직후, 그리고
+         * 앱을 켤 때 되찾을 때) 이걸 부른다. 이미 붙인 구매면 아무것도 안 한다 — 켤 때마다 서버를
+         * 두드리지 않게, 붙인 구매를 [Prefs.attachedPurchase] 에 적어 둔다.
+         *
+         * 실패는 조용히 넘어간다. 다음에 앱을 켤 때 다시 시도된다. 화면에서 부르는 게 아니라서
+         * 알릴 곳도 없다.
+         */
+        fun syncPurchase(context: Context) {
+            val app = context.applicationContext
+            val device = Prefs.deviceToken(app)
+            val purchase = Prefs.purchaseToken(app)
+            if (device.isEmpty() || purchase.isEmpty() || !Prefs.serverAvailable()) return
+            if (Prefs.attachedPurchase(app) == purchase) return
+            Thread {
+                runCatching {
+                    val body = "{\"purchaseToken\":" + quote(purchase) + "}"
+                    val (code, _) = post("/v1/account/attach", mapOf("X-Device-Token" to device), body)
+                    // 서버가 받았을 때만 적는다. 그 사이 로그아웃·다른 구매로 바뀌었으면 적지 않는다.
+                    if (code == 200 && Prefs.deviceToken(app) == device && Prefs.purchaseToken(app) == purchase) {
+                        Prefs.setAttachedPurchase(app, purchase)
+                    }
+                }
+            }.start()
+        }
+
+        private fun post(path: String, headers: Map<String, String>, body: String?): Pair<Int, String> {
+            val connection = (URL(Prefs.serverUrl() + path).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = TIMEOUT_MS
+                readTimeout = TIMEOUT_MS
+                doOutput = body != null
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                headers.forEach { (name, value) -> setRequestProperty(name, value) }
+            }
+            try {
+                body?.let { payload ->
+                    connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+                }
+                val code = connection.responseCode
+                val stream = if (code == 200) connection.inputStream else connection.errorStream
+                return code to stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            } finally {
+                connection.disconnect()
+            }
+        }
+
+        /** 문자열을 JSON 리터럴로. 제어문자는 버린다 — 넣어 봐야 깨진 JSON 이 된다. */
+        private fun quote(value: String): String = buildString {
+            append('"')
+            for (ch in value) when {
+                ch == '"' -> append("\\\"")
+                ch == '\\' -> append("\\\\")
+                ch < ' ' -> Unit
+                else -> append(ch)
+            }
+            append('"')
+        }
     }
 }

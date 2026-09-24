@@ -162,6 +162,9 @@ export async function handle(request, env, deps = {}) {
   if (request.method === 'POST' && url.pathname === '/v1/account/subscription') {
     return subscriptionOf(request, env, fetchImpl, now);
   }
+  if (request.method === 'POST' && url.pathname === '/v1/account/attach') {
+    return attachPurchaseOf(request, env, fetchImpl, now);
+  }
   if (request.method === 'POST' && url.pathname === '/v1/account/delete') {
     return deleteAccountOf(request, env, now);
   }
@@ -231,6 +234,39 @@ async function signOut(request, env) {
   if (!validDeviceToken(device)) return fail(400, 'invalid_device_token');
   await revokeDevice(env.DB, device);
   return json(200, { ok: true });
+}
+
+/**
+ * 이미 로그인한 폰이 **나중에** 산 구독을 계정에 붙인다.
+ *
+ * 로그인할 때(`signIn`)만 구매를 붙였더니 "로그인 먼저, 구독 나중" 순서에서 구매가 계정에 안
+ * 붙었다 — PC 에서는 구독이 없는 걸로 보이고, 로그아웃했다 다시 들어와야 붙었다. 앱은 구매를
+ * 받자마자(그리고 켤 때마다, 아직 안 붙였으면) 여기로 보낸다.
+ *
+ * 붙이기 전에 Play 에 살아 있는지 확인한다. 이유는 `signIn` 과 같다 — 보안 경계는 교정할 때마다
+ * 하는 확인이지만, 붙이기가 옛 계정에서 떼어 오는 동작이라 죽은 토큰으로 남의 자리를 흔들 여지를
+ * 없앤다.
+ */
+async function attachPurchaseOf(request, env, fetchImpl, now) {
+  const device = request.headers.get('x-device-token') ?? '';
+  if (!validDeviceToken(device)) return fail(400, 'invalid_device_token');
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return fail(400, 'bad_request');
+  }
+  const purchaseToken = typeof body?.purchaseToken === 'string' ? body.purchaseToken : '';
+  if (!purchaseToken) return fail(400, 'bad_request');
+
+  const nowMs = now();
+  const found = await purchaseForDevice(env.DB, device, nowMs);
+  if (!found) return fail(404, 'device_not_linked');
+
+  if (!(await isSubscriber(env, purchaseToken, fetchImpl, nowMs))) return fail(402, 'not_subscribed');
+  await attachPurchase(env.DB, found.accountId, purchaseToken, nowMs);
+  return json(200, { plan: 'subscriber' });
 }
 
 /**

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { handle } from '../src/index.js';
 import { fakeDb } from './fakeDb.js';
 import { testKeyPair } from './play.test.js';
-import { accountForPurchase, issueDevice, purchaseForDevice, validDeviceToken } from '../src/account.js';
+import { accountForGoogle, accountForPurchase, issueDevice, purchaseForDevice, validDeviceToken } from '../src/account.js';
 
 const GENERATE = 'https://spell.test/v1beta/models/gemini-x:generateContent';
 const SUBSCRIPTION = 'https://spell.test/v1/account/subscription';
@@ -241,4 +241,67 @@ test('모르는 기기 토큰으로는 탈퇴가 안 된다', async () => {
   const malformed = await handle(deleteWith('nope'), e, deps);
   assert.equal(malformed.status, 400);
   assert.equal(e.DB.accounts.size, 1, '아무것도 안 지워졌다');
+});
+
+// --- 로그인 먼저, 구독 나중 ---------------------------------------------------------
+
+const ATTACH = 'https://spell.test/v1/account/attach';
+
+function attachWith(device, purchaseToken) {
+  return new Request(ATTACH, {
+    method: 'POST',
+    headers: { 'x-device-token': device, 'content-type': 'application/json' },
+    body: JSON.stringify({ purchaseToken }),
+  });
+}
+
+/** 구글로 로그인만 한 계정(구매 없음)에 폰과 PC 가 붙어 있다. */
+async function signedInWithoutPurchase(e) {
+  const accountId = await accountForGoogle(e.DB, 'google-sub-hash', NOON_KST);
+  const phone = await issueDevice(e.DB, accountId, '폰', NOON_KST);
+  const pc = await issueDevice(e.DB, accountId, '윈도우', NOON_KST);
+  return { phone, pc };
+}
+
+test('로그인 먼저 하고 나중에 산 구독도 계정에 붙어 PC 가 쓴다', async () => {
+  // 로그인할 때만 붙였더니 이 순서에서 PC 는 구독이 없는 걸로 봤다.
+  const e = await paidEnv();
+  const { phone, pc } = await signedInWithoutPurchase(e);
+
+  const before = await handle(correctWith({ 'x-device-token': pc }), e, deps);
+  assert.equal(before.status, 402, '붙이기 전에는 PC 가 못 쓴다');
+
+  const res = await handle(attachWith(phone, 'paid-token'), e, deps);
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { plan: 'subscriber' });
+
+  const after = await handle(correctWith({ 'x-device-token': pc }), e, deps);
+  assert.equal(after.status, 200);
+  assert.equal(after.headers.get('x-plan'), 'subscriber');
+});
+
+test('살아 있지 않은 구매는 붙이지 않는다', async () => {
+  const e = await paidEnv();
+  const { phone, pc } = await signedInWithoutPurchase(e);
+
+  const res = await handle(attachWith(phone, 'expired-token'), e, deps);
+  assert.equal(res.status, 402);
+  const after = await handle(correctWith({ 'x-device-token': pc }), e, deps);
+  assert.equal(after.status, 402, 'PC 는 여전히 못 쓴다');
+});
+
+test('붙이기도 구매 토큰을 되돌려 주지 않는다', async () => {
+  const e = await paidEnv();
+  const { phone } = await signedInWithoutPurchase(e);
+  const res = await handle(attachWith(phone, 'paid-token'), e, deps);
+  const text = await res.text();
+  assert.ok(!text.includes('paid-token'));
+  for (const [, value] of res.headers) assert.ok(!value.includes('paid-token'));
+});
+
+test('붙이기: 모르는 기기는 404, 모양이 틀리면 400', async () => {
+  const e = await paidEnv();
+  assert.equal((await handle(attachWith('f'.repeat(64), 'paid-token'), e, deps)).status, 404);
+  assert.equal((await handle(attachWith('nope', 'paid-token'), e, deps)).status, 400);
+  assert.equal((await handle(attachWith('f'.repeat(64), ''), e, deps)).status, 400);
 });

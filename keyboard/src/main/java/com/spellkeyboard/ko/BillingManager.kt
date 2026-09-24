@@ -137,6 +137,8 @@ class BillingManager(
             client.acknowledgePurchase(params) { /* 실패해도 다음 restore 에서 다시 한다 */ }
         }
         Prefs.setPurchaseToken(app, purchase.purchaseToken)
+        // 로그인해 둔 폰이면 이 구매를 계정에도 붙인다 — PC·아이폰이 같이 쓰게. 이미 붙었으면 안 간다.
+        AccountManager.syncPurchase(app)
         onStatus(app.getString(R.string.billing_subscribed))
     }
 

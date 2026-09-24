@@ -19,6 +19,7 @@ object Prefs {
     private const val KEY_INSTALL_ID = "install_id"
     private const val KEY_PURCHASE_TOKEN = "purchase_token"
     private const val KEY_DEVICE_TOKEN = "device_token"
+    private const val KEY_ATTACHED_PURCHASE = "attached_purchase"
     private const val KEY_PROFILE_NAME = "profile_name"
     private const val KEY_ONBOARDING_SEEN = "onboarding_seen"
     private const val KEY_QUOTA_PLAN = "quota_plan"
@@ -175,6 +176,17 @@ object Prefs {
     }
 
     fun signedIn(context: Context): Boolean = deviceToken(context).isNotEmpty()
+
+    /**
+     * 서버가 "계정에 붙였다" 고 답한 구매 토큰. [purchaseToken] 과 같으면 이미 붙은 것이라
+     * [AccountManager.syncPurchase] 가 다시 안 보낸다. 로그아웃·탈퇴하면 지운다.
+     */
+    fun attachedPurchase(context: Context): String =
+        prefs(context).getString(KEY_ATTACHED_PURCHASE, "").orEmpty()
+
+    fun setAttachedPurchase(context: Context, token: String) {
+        prefs(context).edit().putString(KEY_ATTACHED_PURCHASE, token).apply()
+    }
 
     /**
      * 로그인한 구글 계정 이름. 더보기 화면에 사진 옆에 띄우는 **표시용**이다.

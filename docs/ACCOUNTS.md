@@ -81,6 +81,7 @@ Play 가 복원해 주니 안드로이드 안에서는 문제가 없다.
 | `POST /v1/account/signin` | 모든 기기 | `{idToken, purchaseToken?, label?}` | `{deviceToken, plan}` |
 | `POST /v1/account/signout` | 기기 | `X-Device-Token` | `{ok}` |
 | `POST /v1/account/subscription` | 윈도우·아이폰 | `X-Device-Token` | `{plan}` |
+| `POST /v1/account/attach` | 안드로이드 | `X-Device-Token` + `{purchaseToken}` | `{plan}` — 로그인 **뒤에** 산 구매를 붙인다 |
 | `POST /v1/account/delete` | 모든 기기 | `X-Device-Token` | `{ok}` — 계정과 **모든** 기기를 지운다 |
 | `POST .../generateContent` | 모든 기기 | `X-Purchase-Token` **또는** `X-Device-Token` | 교정문 |
 
@@ -140,6 +141,16 @@ SHA-1 은 CI 로그 "서명 지문" 단계에 찍힌다. 지금 CI 서명 키: `
 
 동의 화면은 **테스트 중** 상태다. 테스트 사용자로 등록한 계정만 로그인된다. 출시할 때
 "프로덕션으로 푸시" — 기본 항목(이메일·프로필)만 쓰니 구글 심사는 없다.
+
+## 로그인 먼저, 구독 나중 (2026-09-24)
+
+처음엔 구매를 **로그인할 때만** 붙였다. 그래서 로그인해 둔 뒤에 결제하면 구매가 계정에 안 붙어
+PC 에서는 구독이 없는 걸로 보였다(로그아웃했다 다시 들어와야 붙었다).
+
+`/v1/account/attach` 를 더했다. 앱은 구매를 받을 때마다(결제 직후, 앱을 켜서 되찾을 때)
+`AccountManager.syncPurchase` 로 보낸다. 서버가 붙였다고 답한 구매는 `Prefs.attachedPurchase` 에
+적어 두어 켤 때마다 두드리지 않는다. 실패하면 다음에 켤 때 다시 간다. 서버는 붙이기 전에 Play 에
+살아 있는지 확인한다(`signIn` 과 같은 이유).
 
 ## 회원 탈퇴 (2026-09-24)
 
