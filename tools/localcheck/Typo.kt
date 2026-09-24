@@ -20,6 +20,8 @@ import kotlin.random.Random
  *   받침빠짐  괜찮아→괜차아 같은 것 말고, 받침 하나가 통째로 빠짐 (먹었→머었)
  *   겹받침    괜찮→괜찬, 없→업, 않→안
  *   ㅐ↔ㅔ    내가→네가(이건 되돌릴 수 없는 경우도 있다)
+ *   TYPO_CJI=1 이면 천지인 오타도: 자음 연타 한 번 덜·더(했→핶 말고 ㅅ↔ㅎ, ㄴ↔ㄹ, ㅇ↔ㅁ),
+ *   모음 획 방향(ㅏ↔ㅓ, ㅗ↔ㅜ)
  */
 fun main(args: Array<String>) {
     val limit = (System.getenv("TYPO_LIMIT") ?: "1000").toInt()
@@ -46,6 +48,7 @@ fun main(args: Array<String>) {
     val cache = File(System.getProperty("java.io.tmpdir"), "spell-typo")
     val spacer = Spacer(SpacingDictionary.open(cache))
     val engine = CorrectionEngine().apply {
+        cheonjiin = System.getenv("SPELL_CJI") == "1"
         this.spacer = spacer
         this.speller = Speller(spacer)
         this.context = ContextCorrector(LanguageModel.open(cache), spacer)
@@ -93,7 +96,44 @@ fun typos(s: String, rnd: Random): List<Pair<String, String>> {
     pick("받침빠짐") { w -> replaceFirstSyllable(w) { jong -> if (jong != ' ' && jong !in "ㅆㄹ") ' ' else null } }
     pick("겹받침") { w -> replaceFirstSyllable(w) { jong -> mapOf('ㄶ' to 'ㄴ', 'ㅄ' to 'ㅂ', 'ㄺ' to 'ㄱ', 'ㄼ' to 'ㄹ', 'ㄻ' to 'ㅁ')[jong] } }
     pick("ㅐ↔ㅔ") { w -> swapVowel(w) }
+    // TYPO_CJI=1: 천지인 오타. 자음은 같은 키를 한 번 덜·더 눌러 이웃 글자로(ㅅ↔ㅎ, ㄴ↔ㄹ, ㅇ↔ㅁ…),
+    // 모음은 ㆍ를 ㅣ·ㅡ 반대쪽에 찍어서(ㅏ↔ㅓ, ㅗ↔ㅜ).
+    if (System.getenv("TYPO_CJI") == "1") {
+        pick("천지인자음") { w -> cjiConsonant(w, rnd) }
+        pick("천지인모음") { w -> cjiVowel(w, rnd) }
+    }
     return out
+}
+
+private val CJI_CHO = mapOf('ㄱ' to 'ㅋ', 'ㅋ' to 'ㄱ', 'ㄴ' to 'ㄹ', 'ㄹ' to 'ㄴ', 'ㄷ' to 'ㅌ', 'ㅌ' to 'ㄷ',
+    'ㅂ' to 'ㅍ', 'ㅍ' to 'ㅂ', 'ㅅ' to 'ㅎ', 'ㅎ' to 'ㅅ', 'ㅈ' to 'ㅊ', 'ㅊ' to 'ㅈ', 'ㅇ' to 'ㅁ', 'ㅁ' to 'ㅇ')
+private val CJI_VOWEL = mapOf('ㅏ' to 'ㅓ', 'ㅓ' to 'ㅏ', 'ㅗ' to 'ㅜ', 'ㅜ' to 'ㅗ', 'ㅑ' to 'ㅕ', 'ㅕ' to 'ㅑ', 'ㅛ' to 'ㅠ', 'ㅠ' to 'ㅛ')
+
+/** 어절 속 아무 음절의 초성이나 받침 하나를 천지인 이웃 글자로. */
+fun cjiConsonant(w: String, rnd: Random): String? {
+    val options = mutableListOf<String>()
+    for ((i, c) in w.withIndex()) {
+        val d = Hangul.decompose(c) ?: continue
+        CJI_CHO[Hangul.CHOSEONG[d.first]]?.let { to ->
+            options += w.substring(0, i) + Hangul.compose(Hangul.choseongIndex(to), d.second, d.third) + w.substring(i + 1)
+        }
+        if (d.third != 0) CJI_CHO[JONG[d.third]]?.let { to ->
+            val idx = JONG.indexOf(to)
+            if (idx > 0) options += w.substring(0, i) + Hangul.compose(d.first, d.second, idx) + w.substring(i + 1)
+        }
+    }
+    return if (options.isEmpty()) null else options[rnd.nextInt(options.size)]
+}
+
+fun cjiVowel(w: String, rnd: Random): String? {
+    val options = mutableListOf<String>()
+    for ((i, c) in w.withIndex()) {
+        val d = Hangul.decompose(c) ?: continue
+        CJI_VOWEL[Hangul.JUNGSEONG[d.second]]?.let { to ->
+            options += w.substring(0, i) + Hangul.compose(d.first, Hangul.jungseongIndex(to), d.third) + w.substring(i + 1)
+        }
+    }
+    return if (options.isEmpty()) null else options[rnd.nextInt(options.size)]
 }
 
 private val JONG = " ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ"

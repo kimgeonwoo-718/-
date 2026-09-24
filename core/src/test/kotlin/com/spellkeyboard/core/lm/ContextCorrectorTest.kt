@@ -71,6 +71,18 @@ class ContextCorrectorTest {
     }
 
     @Test
+    fun `천지인 오타는 천지인일 때만 고친다`() {
+        // 같은 키를 한 번 덜·더 누른 자음(ㄷ↔ㅌ, ㄱ↔ㅋ)과 ㆍ를 반대쪽에 찍은 모음(ㅏ↔ㅓ).
+        assertEquals("카페에서 기다리고 있을게", cheonjiin.correct("카페에서 기타리고 있을게", LanguageModel.BOS))
+        assertEquals("그때 봤던 영화 제목이 뭐였지", cheonjiin.correct("그때 봤던 양화 제목이 뭐였지", LanguageModel.BOS))
+        assertEquals("조금만 기다려줘", cheonjiin.correct("조금만 기더려줘", LanguageModel.BOS))
+        // 두벌식에서는 드문 오타라 손대지 않는다.
+        assertUntouched("카페에서 기타리고 있을게")
+        // 조사 '은↔을'은 한 키 차이지만 문맥으로 못 가려서 안 바꾼다.
+        assertNull(cheonjiin.correct("그 선택사항들은 지루하거나 비용이 많이 든다", LanguageModel.BOS))
+    }
+
+    @Test
     fun `띄어 친 가 와 는 조사로 붙이지 않는다`() {
         // '나 학교 가' 가 '나 학교가' 가 되고 '친구 와' 가 '친구와' 가 됐다(2026-09-24).
         // 홀로 선 '가·와' 는 '가다·오다' 가 훨씬 흔하다.
@@ -162,6 +174,11 @@ class ContextCorrectorTest {
             val dir = TestCache.dir
             dir.deleteOnExit()
             ContextCorrector(LanguageModel.open(dir), Spacer(SpacingDictionary.open(dir)))
+        }
+
+        private val cheonjiin: ContextCorrector by lazy {
+            val dir = TestCache.dir
+            ContextCorrector(LanguageModel.open(dir), Spacer(SpacingDictionary.open(dir))).apply { cheonjiin = true }
         }
     }
 }

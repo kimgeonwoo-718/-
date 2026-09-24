@@ -82,6 +82,14 @@ class ContextCorrector(
     }
 
     /**
+     * 천지인 자판으로 치고 있는가. 켜면 **말뭉치가 모르는 어절**에 천지인 오타 편집을 더 본다 —
+     * 같은 키를 한 번 덜·더 눌러 이웃 글자가 된 자음(ㅅ↔ㅎ, ㄴ↔ㄹ, ㅇ↔ㅁ…)과 ㆍ를 반대쪽에 찍은
+     * 모음(ㅏ↔ㅓ, ㅗ↔ㅜ). 두벌식에서는 드문 오타라 꺼 둔다. 키보드가 자판에 맞춰 켠다.
+     */
+    @Volatile
+    var cheonjiin: Boolean = false
+
+    /**
      * [window] 를 고친다.
      *
      * @param contextBefore 창 바로 앞 어절. [LanguageModel.BOS] 면 문장 첫머리, null 이면 모름.
@@ -428,7 +436,8 @@ class ContextCorrector(
         for ((edited, cost) in singleEdits(
             surface,
             codaSlip = (identityCount ?: -1f) < CODA_SLIP_MAX_LN,
-            nearKey = (identityCount ?: -1f) < NEAR_KEY_MAX_LN
+            nearKey = (identityCount ?: -1f) < NEAR_KEY_MAX_LN,
+            cheonjiinKey = cheonjiin && (identityCount ?: -1f) < CJI_MAX_LN
         )) {
             if (lm.lnCount(edited) != null && !(kind == KIND_FREE && startsBound(edited)) &&
                 !hearsayToConnective(surface, edited)
@@ -817,10 +826,31 @@ class ContextCorrector(
      *   받침이 빠지면 거의 언제나 없는 말이 되므로, 있는 말에까지 이 편집을 허용하면
      *   '서명해 → 설명해', '이식될 → 인식될' 처럼 **뜻이 바뀐다**.
      */
-    private fun singleEdits(word: String, codaSlip: Boolean = false, nearKey: Boolean = false): List<Pair<String, Float>> {
+    private fun singleEdits(
+        word: String,
+        codaSlip: Boolean = false,
+        nearKey: Boolean = false,
+        cheonjiinKey: Boolean = false
+    ): List<Pair<String, Float>> {
         val out = ArrayList<Pair<String, Float>>()
         for (index in word.indices) {
             val (cho, jung, jong) = Hangul.decompose(word[index]) ?: continue
+            // 어절 끝 조사 '은↔을'은 ㄴ·ㄹ 이 한 키라 한 번에 바뀌는데, 문맥으로 가를 수 없어
+            // '선택사항들은'이 '들을'이 됐다. 조사 자리는 천지인 편집을 하지 않는다.
+            if (cheonjiinKey && !(index == word.lastIndex && index > 0 && word[index] in CJI_PARTICLES)) {
+                CJI_NEIGHBORS[Hangul.CHOSEONG[cho]]?.let { alternative ->
+                    val id = Hangul.choseongIndex(alternative)
+                    if (id >= 0) out += swap(word, index, Hangul.compose(id, jung, jong)) to CJI_COST
+                }
+                CJI_VOWELS[Hangul.JUNGSEONG[jung]]?.let { alternative ->
+                    val id = Hangul.jungseongIndex(alternative)
+                    if (id >= 0) out += swap(word, index, Hangul.compose(cho, id, jong)) to CJI_COST
+                }
+                if (jong != 0) CJI_NEIGHBORS[Hangul.JONGSEONG[jong]]?.let { alternative ->
+                    val id = Hangul.jongseongIndex(alternative)
+                    if (id > 0) out += swap(word, index, Hangul.compose(cho, jung, id)) to CJI_COST
+                }
+            }
             if (codaSlip && jong == 0) CODA_SLIPS.forEach { (alternative, cost) ->
                 val id = Hangul.jongseongIndex(alternative)
                 if (id >= 0) out += swap(word, index, Hangul.compose(cho, jung, id)) to cost
@@ -1155,6 +1185,35 @@ class ContextCorrector(
          * 아무 말이나 가까운 다른 말로 미끄러지기 때문이다.
          */
         const val NEAR_KEY_MAX_LN = 0f
+
+        /**
+         * 천지인 오타 편집 값. [cheonjiin] 이 켜졌을 때만, **말뭉치가 모르는 어절**에만 연다.
+         *
+         * | 값 | 자음 되살림 | 모음 되살림 | 격식체 오교정 |
+         * |---|---|---|---|
+         * | 없음 | 6.6% | 21.9% | 1.53% |
+         * | 2.0 | 58.5% | 54.4% | 2.00% |
+         * | **3.0** | **53.7%** | **46.1%** | **1.67%** (지명 '부트→보트', '행사기→행하기') |
+         * | 4.0 | 49.8% | 40.8% | 1.67% |
+         *
+         * 문지방을 ln 3 까지 넓히면 되살림이 조금 오르지만 오교정이 2.67% 로 뛴다.
+         */
+        const val CJI_COST = 3.0f
+        const val CJI_MAX_LN = 0f
+
+        /** 천지인 편집을 하지 않는 어절 끝 조사. */
+        private const val CJI_PARTICLES = "은을는를이가"
+
+        /** 천지인 한 키에 실린 이웃 자음. 한 번 덜·더 누르면 이리로 간다. */
+        private val CJI_NEIGHBORS = mapOf(
+            'ㄱ' to 'ㅋ', 'ㅋ' to 'ㄱ', 'ㄴ' to 'ㄹ', 'ㄹ' to 'ㄴ', 'ㄷ' to 'ㅌ', 'ㅌ' to 'ㄷ',
+            'ㅂ' to 'ㅍ', 'ㅍ' to 'ㅂ', 'ㅅ' to 'ㅎ', 'ㅎ' to 'ㅅ', 'ㅈ' to 'ㅊ', 'ㅊ' to 'ㅈ', 'ㅇ' to 'ㅁ', 'ㅁ' to 'ㅇ'
+        )
+
+        /** ㆍ를 ㅣ·ㅡ 반대쪽에 찍은 모음. */
+        private val CJI_VOWELS = mapOf(
+            'ㅏ' to 'ㅓ', 'ㅓ' to 'ㅏ', 'ㅗ' to 'ㅜ', 'ㅜ' to 'ㅗ', 'ㅑ' to 'ㅕ', 'ㅕ' to 'ㅑ', 'ㅛ' to 'ㅠ', 'ㅠ' to 'ㅛ'
+        )
 
         private val CONSONANTS = "ㅂㅈㄷㄱㅅㅁㄴㅇㄹㅎㅋㅌㅊㅍ".toSet()
 

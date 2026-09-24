@@ -11,7 +11,9 @@ fun main(args: Array<String>) {
     val spacer = Spacer(SpacingDictionary.open(cache))
     val lm = LanguageModel.open(cache)
     val context = ContextCorrector(lm, spacer)
-    val engine = CorrectionEngine().apply { this.spacer = spacer; this.context = context }
+    val engine = CorrectionEngine().apply {
+        cheonjiin = System.getenv("SPELL_CJI") == "1"; this.spacer = spacer; this.context = context
+    }
 
     // 한 음절 조각을 조사·어미로 볼 것이냐가 '잘해결됐어' 류를 가른다. 사전 판정과
     // 어절 빈도를 나란히 찍는다 — SINGLE_WORD_MIN_LN 을 정할 때 본 표다.

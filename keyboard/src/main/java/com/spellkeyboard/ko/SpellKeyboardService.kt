@@ -366,6 +366,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private fun ensureAutomata(wanted: com.spellkeyboard.core.hangul.JamoAutomata) {
         if (session.automata !== wanted) session.automata = wanted
+        // 천지인으로 치면 오타 모양이 다르다(ㅅ↔ㅎ, ㄴ↔ㄹ, ㅏ↔ㅓ). 교정기가 그것도 보게 한다.
+        // 설정의 자판을 따른다 — 천지인 사용자가 잠깐 딴 쪽을 눌러도 치는 버릇은 그대로다.
+        session.engine.cheonjiin = isCheonjiin()
     }
 
     /**

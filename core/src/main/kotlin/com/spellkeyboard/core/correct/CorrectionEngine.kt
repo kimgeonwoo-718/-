@@ -98,7 +98,18 @@ class CorrectionEngine(
     @Volatile
     var context: ContextCorrector? = null
         set(value) {
+            value?.cheonjiin = cheonjiin
             field = value
+            clearAnalysed()
+        }
+
+    /** 천지인 자판으로 치고 있는가. 문맥 교정기가 천지인 오타도 보게 한다([ContextCorrector.cheonjiin]). */
+    @Volatile
+    var cheonjiin: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            context?.cheonjiin = value
             clearAnalysed()
         }
 

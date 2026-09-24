@@ -18,7 +18,7 @@ import java.io.File
  */
 fun main(args: Array<String>) {
     val cache = File(System.getProperty("java.io.tmpdir"), "spell-live")
-    val engine = CorrectionEngine()
+    val engine = CorrectionEngine().apply { cheonjiin = System.getenv("SPELL_CJI") == "1" }
     val spacer = runCatching { Spacer(SpacingDictionary.open(cache)) }
         .onSuccess { engine.spacer = it; engine.speller = Speller(it) }
         .getOrNull()

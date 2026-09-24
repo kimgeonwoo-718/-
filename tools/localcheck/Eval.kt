@@ -45,6 +45,7 @@ fun main(args: Array<String>) {
     val cache = File(System.getProperty("java.io.tmpdir"), "spell-eval")
     val spacer = Spacer(SpacingDictionary.open(cache))
     val engine = CorrectionEngine().apply {
+        cheonjiin = System.getenv("SPELL_CJI") == "1"
         this.spacer = spacer
         this.speller = Speller(spacer)
         this.context = ContextCorrector(LanguageModel.open(cache), spacer)
