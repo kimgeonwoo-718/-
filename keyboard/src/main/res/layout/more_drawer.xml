@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  더보기 서랍. 첫 화면 오른쪽 위 ☰ 를 누르면 오른쪽에서 밀려 나와 **화면 폭의 반**을 덮고,
+  나머지 반은 어둡게 깔린다(그 어두운 곳을 누르면 닫힌다). 다른 화면으로 넘어가지 않는다.
+
+  폭이 반이라 좁다(360dp 폰에서 180dp). 그래서 카드 대신 구분선으로 나누고, 로그아웃·회원
+  탈퇴 버튼은 나란히가 아니라 위아래로 둔다. 폭은 MoreDrawer 가 코드로 정한다.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/more_drawer"
+    android:layout_width="180dp"
+    android:layout_height="match_parent"
+    android:layout_gravity="end"
+    android:background="@color/toss_card"
+    android:clickable="true"
+    android:elevation="16dp"
+    android:fillViewport="true"
+    android:focusable="true"
+    android:scrollbars="none"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="24dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/more_title"
+                android:textColor="@color/toss_text"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/more_close"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="-8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:contentDescription="@string/more_close"
+                android:focusable="true"
+                android:gravity="center"
+                android:text="✕"
+                android:textColor="@color/toss_text3"
+                android:textSize="18sp" />
+        </LinearLayout>
+
+        <!-- 계정. 빌드에 로그인 클라이언트 ID 가 없으면 통째로 숨는다(MoreDrawer). -->
+        <LinearLayout
+            android:id="@+id/account_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:orientation="vertical">
+
+            <!-- 로그인 전 -->
+            <LinearLayout
+                android:id="@+id/account_signed_out"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/RowSub"
+                    android:layout_marginTop="0dp"
+                    android:text="@string/account_signin_sub" />
+
+                <TextView
+                    android:id="@+id/signin_button"
+                    style="@style/PrimaryButton"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="12dp"
+                    android:textSize="15sp"
+                    android:text="@string/account_signin" />
+            </LinearLayout>
+
+            <!-- 로그인 뒤: 사진 · 이름, 그 밑에 로그아웃 · 회원 탈퇴 (좁아서 위아래로) -->
+            <LinearLayout
+                android:id="@+id/account_signed_in"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <FrameLayout
+                        android:layout_width="44dp"
+                        android:layout_height="44dp">
+
+                        <TextView
+                            android:id="@+id/profile_initial"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:background="@drawable/bg_avatar"
+                            android:gravity="center"
+                            android:textColor="#FFFFFF"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+
+                        <ImageView
+                            android:id="@+id/profile_photo"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:contentDescription="@string/account_photo"
+                            android:scaleType="centerCrop"
+                            android:visibility="gone" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:id="@+id/profile_name"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:layout_weight="1"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="@color/toss_text"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/account_status"
+                    style="@style/RowSub"
+                    android:layout_marginTop="8dp" />
+
+                <TextView
+                    android:id="@+id/signout_button"
+                    style="@style/SecondaryButton"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="12dp"
+                    android:textSize="14sp"
+                    android:text="@string/account_signout" />
+
+                <TextView
+                    android:id="@+id/delete_button"
+                    style="@style/SecondaryButton"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="6dp"
+                    android:textSize="14sp"
+                    android:text="@string/account_delete"
+                    android:textColor="@color/toss_red" />
+            </LinearLayout>
+
+            <View
+                style="@style/Divider"
+                android:layout_marginTop="16dp" />
+        </LinearLayout>
+
+        <!-- 메뉴 -->
+        <TextView
+            android:id="@+id/menu_keyboard"
+            style="@style/MenuRow"
+            android:textSize="15sp"
+            android:text="@string/menu_keyboard" />
+
+        <View style="@style/Divider" />
+
+        <TextView
+            android:id="@+id/menu_privacy"
+            style="@style/MenuRow"
+            android:textSize="15sp"
+            android:text="@string/menu_privacy" />
+
+        <View style="@style/Divider" />
+
+        <TextView
+            android:id="@+id/menu_terms"
+            style="@style/MenuRow"
+            android:textSize="15sp"
+            android:text="@string/menu_terms" />
+
+        <View style="@style/Divider" />
+
+        <TextView
+            android:id="@+id/menu_support"
+            style="@style/MenuRow"
+            android:textSize="15sp"
+            android:text="@string/menu_support" />
+
+        <TextView
+            android:id="@+id/app_info"
+            style="@style/Caption"
+            android:layout_marginTop="20dp"
+            android:textSize="12sp"
+            android:textIsSelectable="true" />
+    </LinearLayout>
+</ScrollView>

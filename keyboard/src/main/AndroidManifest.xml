@@ -39,14 +39,8 @@
             </intent-filter>
         </activity>
 
-        <!-- 더보기. 첫 화면 ☰ 에서만 열리므로 밖으로 내보내지 않는다. -->
-        <activity
-            android:name=".MoreActivity"
-            android:exported="false"
-            android:label="@string/more_title" />
-
         <!--
-          키보드 맞춤설정. 더보기와 자판 도구 줄의 설정 버튼에서만 열리므로 밖으로
+          키보드 맞춤설정. 더보기 서랍과 자판 도구 줄의 설정 버튼에서만 열리므로 밖으로
           내보내지 않는다.
         -->
         <activity

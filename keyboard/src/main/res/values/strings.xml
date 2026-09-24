@@ -63,8 +63,9 @@
     <string name="setting_quota_unlimited">프리미엄 · 이용 중</string>
     <string name="setting_quota_no_server">이 빌드에는 AI 서버 주소가 없어요</string>
     <string name="setting_plan_subscribe">프리미엄 알아보기 · 월 2,990원</string>
-    <!-- 더보기(첫 화면 ☰)와 키보드 맞춤설정. -->
+    <!-- 더보기 서랍(첫 화면 ☰)과 키보드 맞춤설정. -->
     <string name="more_title">더보기</string>
+    <string name="more_close">닫기</string>
     <string name="settings_title">키보드 맞춤설정</string>
     <string name="back">뒤로</string>
     <string name="menu_keyboard">키보드 맞춤설정</string>
@@ -84,7 +85,6 @@
     <string name="support_body">\n\n\n---\n아래 정보는 문제를 찾는 데 쓰여요. 지우지 말아 주세요.\n앱 버전: %1$s\n기기: %2$s (Android %3$s)\n설치 ID: %4$s</string>
 
     <!-- 로그인. 구독을 폰 밖(윈도우·아이폰)에서도 쓰게 하는 칸이다. -->
-    <string name="account_title">로그인</string>
     <string name="account_signin_sub">윈도우·아이폰에서도 같은 구독을 쓰려면 로그인하세요.</string>
     <string name="account_signin">구글로 로그인</string>
     <string name="setting_account_working">로그인 중…</string>

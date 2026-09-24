@@ -5,8 +5,12 @@
   autofill 은 화면 통째로 끈다. 키보드 앱이 비밀번호 관리자를 불러내는 그림은 사용자를
   불안하게 만든다.
 -->
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+<ScrollView
     android:id="@+id/setup_scroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -184,3 +188,20 @@
         </LinearLayout>
     </LinearLayout>
 </ScrollView>
+
+    <!--
+      더보기 서랍이 열렸을 때 나머지 반을 어둡게 까는 막. 누르면 서랍이 닫힌다.
+      clickable 이라 밑의 첫 화면에 손이 닿지 않는다.
+    -->
+    <View
+        android:id="@+id/more_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:clickable="true"
+        android:contentDescription="@string/more_close"
+        android:focusable="false"
+        android:visibility="gone" />
+
+    <include layout="@layout/more_drawer" />
+</FrameLayout>

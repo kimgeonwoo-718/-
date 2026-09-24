@@ -16,9 +16,9 @@ import androidx.core.view.isVisible
  * 첫 화면.
  *
  * 위 막대: 앱 이름과 ☰(더보기). 본문: 시작하기(켜기·선택) → 써 보기 → 사용법 → 프리미엄.
- * **처음 온 사람이 할 일만 둔다.** 로그인·키보드 맞춤설정·약관·고객센터는 ☰ 뒤
- * [MoreActivity] 에 모았다 — 한 화면에 다 넣었더니 너무 길어져서 정작 해야 할 일(키보드 켜기,
- * 써 보기)이 묻혔고, 위 막대에 버튼을 늘어놓았더니 지저분했다.
+ * **처음 온 사람이 할 일만 둔다.** 로그인·키보드 맞춤설정·약관·고객센터는 ☰ 를 누르면
+ * 오른쪽에서 나오는 [MoreDrawer] 에 모았다 — 한 화면에 다 넣었더니 너무 길어져서 정작 해야 할
+ * 일(키보드 켜기, 써 보기)이 묻혔고, 위 막대에 버튼을 늘어놓았더니 지저분했다.
  *
  * 사용법이 써 보기 바로 밑인 이유: 쳐 보다가 "이건 뭐지" 싶을 때 눈이 가는 자리다.
  * 그 칸은 [ToolbarGuideView] 가 알아서 그리고 눌린 것을 가리키므로 여기서 묶을 것이 없다.
@@ -27,6 +27,7 @@ class SetupActivity : AppCompatActivity() {
 
     private var quotaOutput: TextView? = null
     private var billing: BillingManager? = null
+    private var more: MoreDrawer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 앱 화면도 키보드와 같은 밝기를 따른다. 키보드는 어두운데 앱만 하얗게 뜨면 어색하다.
@@ -39,8 +40,11 @@ class SetupActivity : AppCompatActivity() {
             findViewById<View>(R.id.setup_scroll).post { findViewById<View>(R.id.setup_scroll).scrollTo(0, y) }
         }
 
-        findViewById<View>(R.id.menu_button).setOnClickListener {
-            startActivity(Intent(this, MoreActivity::class.java))
+        more = MoreDrawer(this).also { drawer ->
+            findViewById<View>(R.id.menu_button).setOnClickListener { drawer.open() }
+            // 서랍에서 키보드 맞춤설정으로 가 테마를 바꾸고 돌아오면 이 화면이 통째로 다시
+            // 만들어진다. 서랍을 연 채로 되살려야 "어디 갔지" 가 안 된다.
+            if (savedInstanceState?.getBoolean(KEY_MORE_OPEN) == true) drawer.open(animate = false)
         }
         bindSetup()
         bindPremium()
@@ -57,11 +61,26 @@ class SetupActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putInt(KEY_SCROLL, findViewById<View>(R.id.setup_scroll).scrollY)
+        outState.putBoolean(KEY_MORE_OPEN, more?.isOpen == true)
+    }
+
+    /**
+     * 서랍이 열려 있으면 뒤로 가기는 서랍만 닫는다. 앱이 통째로 닫히면 당황스럽다.
+     *
+     * 옛 방식(onBackPressed)이지만 여기 한 곳뿐이라 이걸로 둔다. 앱이 새 뒤로 가기 방식
+     * (enableOnBackInvokedCallback)을 켜지 않아서 그대로 불린다.
+     */
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        val drawer = more
+        if (drawer != null && drawer.isOpen) drawer.close() else super.onBackPressed()
     }
 
     override fun onDestroy() {
         billing?.destroy()
         billing = null
+        more?.destroy()
+        more = null
         super.onDestroy()
     }
 
@@ -146,5 +165,6 @@ class SetupActivity : AppCompatActivity() {
         private const val FREE_PLAN = "free"
 
         private const val KEY_SCROLL = "scroll_y"
+        private const val KEY_MORE_OPEN = "more_open"
     }
 }

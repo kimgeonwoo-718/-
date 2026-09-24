@@ -15,7 +15,7 @@ import androidx.appcompat.app.AppCompatDelegate
  * 키보드 맞춤설정.
  *
  * 실시간 교정 스위치와 자판 모양(종류·밝기·배경·투명도). 한 번 맞춰 두면 잘 안 만지지만
- * 찾으면 있어야 하는 것. 더보기([MoreActivity])의 "키보드 맞춤설정" 과 자판 도구 줄의 설정
+ * 찾으면 있어야 하는 것. 더보기 서랍([MoreDrawer])의 "키보드 맞춤설정" 과 자판 도구 줄의 설정
  * 버튼이 여기로 온다.
  */
 class SettingsActivity : AppCompatActivity() {
@@ -151,7 +151,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 }
 
-/** 앱 화면 밝기. 첫 화면·더보기·키보드 맞춤설정이 같은 값을 따른다. */
+/** 앱 화면 밝기. 첫 화면과 키보드 맞춤설정이 같은 값을 따른다. */
 internal fun ThemeMode.nightMode(): Int = when (this) {
     ThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
     ThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
