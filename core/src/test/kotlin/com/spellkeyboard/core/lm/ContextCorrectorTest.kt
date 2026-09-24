@@ -43,6 +43,16 @@ class ContextCorrectorTest {
     // --- 어절 합치기 ------------------------------------------------------------
 
     @Test
+    fun `띄어 친 가 와 는 조사로 붙이지 않는다`() {
+        // '나 학교 가' 가 '나 학교가' 가 되고 '친구 와' 가 '친구와' 가 됐다(2026-09-24).
+        // 홀로 선 '가·와' 는 '가다·오다' 가 훨씬 흔하다.
+        assertUntouched("나 학교 가")
+        assertUntouched("나 먼저 가")
+        assertUntouched("친구 와")
+        assertUntouched("동생 군대 가")
+    }
+
+    @Test
     fun `떨어진 어절을 합친다`() {
         assertFixed("안녕하세요", "안녕 하세요")
         assertFixed("감사합니다", "감사 합니다")

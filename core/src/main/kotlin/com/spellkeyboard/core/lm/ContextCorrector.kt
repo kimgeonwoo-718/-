@@ -527,6 +527,12 @@ class ContextCorrector(
         for (p in start + 1 until end) {
             if (!layout.boundary[p]) continue
             if (!boundAt(text, p - start)) return null
+            // 띄어 친 **홀로 선 '가'·'와'** 는 붙이지 않는다. 조사로도 읽히지만 '가다'·'오다'의
+            // 반말 명령·평서형이 훨씬 흔하다 — '나 학교 가'가 '나 학교가'가 되고 '친구 와'가
+            // '친구와'가 됐다(실시간 시험지, 2026-09-24). 조사 규칙(SpacingRules)이 같은 까닭으로
+            // '가·와'를 안 붙이는 것과 맞춘다. 조사를 띄어 친 '친구 가 왔어'는 놓친다.
+            val right = layout.owner[p]
+            if (layout.starts[right] == p && layout.cores[right] in STANDALONE_VERBS) return null
             cost += BOUND_MERGE_COST
             merged = true
         }
@@ -862,6 +868,9 @@ class ContextCorrector(
          * 그대로 배웠기 때문이다.
          */
         const val BOUND_MERGE_COST = -3.0f
+
+        /** 조사와 겉모양이 같은 한 음절 용언. 띄어 쳤으면 앞말에 붙이지 않는다. */
+        private val STANDALONE_VERBS = setOf("가", "와")
 
         /** 붙여서 만든 어절이 최소한 이만큼은 흔해야 한다. ln(100). */
         const val MERGE_MIN_LN_COUNT = 4.6f
