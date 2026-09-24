@@ -181,12 +181,14 @@ class ContextCorrector(
         val suffix: String
     ) {
         /**
-         * 고칠 수 있는 어절 — 한글 음절로만 되어 있고, 뒤에는 문장 부호만 붙을 수 있다.
+         * 고칠 수 있는 어절 — 한글 음절로만 되어 있고, 뒤에는 문장 부호나 채팅 장식
+         * ('했어ㅋㅋ', '미안ㅠㅠ', '고마워😂', '좋아^^')만 붙을 수 있다. 장식을 막아 두었더니
+         * 그 어절을 통째로 안 봐서 '햇어😂'·'많이먹어ㅠㅠ'가 그대로 남았다(2026-09-24).
          * '3시에' 처럼 앞에 다른 글자가 붙은 것은 언어모델이 본 적 없는 어절이라 건드리지 않는다.
          */
         val soft: Boolean =
             !whitespace && prefix.isEmpty() && core.isNotEmpty() && core.length <= MAX_TOKEN_SYLLABLES &&
-                core.all { it in HANGUL } && suffix.all { it in PUNCTUATION }
+                core.all { it in HANGUL } && suffix.all { it in PUNCTUATION || isDecoration(it) }
     }
 
     private fun tokenize(window: String): List<Piece> =
@@ -1043,6 +1045,11 @@ class ContextCorrector(
         private val TOKEN = Regex("""\S+|\s+""")
         private val SENTENCE_ENDERS = setOf('.', '!', '?', '…')
         private val PUNCTUATION = setOf('.', ',', '!', '?', '…', '~', ')', '"', '\'', '”', '’', ';', ':')
+
+        /** 어절 끝에 붙는 채팅 장식: 낱자모(ㅋㅋ·ㅠㅠ), 이모지, '^'·'♡' 같은 기호. */
+        private fun isDecoration(c: Char): Boolean =
+            c in '\u3131'..'\u318E' || c in "^♡♥☆★*" || Character.isSurrogate(c) ||
+                Character.getType(c) == Character.OTHER_SYMBOL.toInt()
 
         private fun edits(vararg pairs: Pair<Char, Pair<Char, Float>>): Map<Char, List<Pair<Char, Float>>> =
             pairs.groupBy({ it.first }, { it.second })

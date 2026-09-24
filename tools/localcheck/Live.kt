@@ -26,10 +26,16 @@ fun main(args: Array<String>) {
         .onSuccess { engine.context = ContextCorrector(it, spacer) }
     val show = System.getenv("LIVE_SHOW")?.toIntOrNull() ?: 200
 
-    val rows = args.flatMap { path ->
+    val plain = args.flatMap { path ->
         File(path).readLines().map { it.trimEnd() }
             .filter { it.isNotBlank() && !it.startsWith("#") && '\t' in it }
             .map { line -> line.substringBefore('\t') to line.substringAfter('\t').split(" | ").map { it.trim() } }
+    }
+    // LIVE_DECO=1: 모든 줄 끝에 채팅 장식(ㅋㅋ·ㅠㅠ·이모지…)을 붙여 잰다. 장식 때문에 어절을
+    // 통째로 건너뛰던 일이 있었다('햇어😂'). 문장 부호로 끝나는 줄은 그대로 둔다.
+    val rows = if (System.getenv("LIVE_DECO") != "1") plain else plain.mapIndexed { i, (typed, answers) ->
+        if (answers.first().last() in "?.!") typed to answers
+        else DECORATIONS[i % DECORATIONS.size].let { deco -> typed + deco to answers.map { it + deco } }
     }
 
     var fixed = 0
@@ -64,5 +70,7 @@ fun type(engine: CorrectionEngine, sentence: String): String {
     }
     return buffer.toString().trim().replace(Regex("\\s+"), " ")
 }
+
+val DECORATIONS = listOf("ㅋㅋ", "ㅠㅠ", "~", "!!", "ㅎㅎ", "😂", "..", "^^")
 
 fun pct(a: Int, b: Int) = if (b == 0) "-" else "%.1f%%".format(a * 100.0 / b)

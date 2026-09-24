@@ -4,6 +4,7 @@
 #   tools/localcheck/live.sh                      live/*.tsv 전부
 #   tools/localcheck/live.sh live/typos.tsv       파일 하나
 #   LIVE_SHOW=20 tools/localcheck/live.sh          틀린 것을 몇 개까지 찍을지
+#   LIVE_DECO=1 tools/localcheck/live.sh           줄 끝마다 ㅋㅋ·ㅠㅠ·이모지를 붙여서
 #
 # try.sh 는 전체교정(correctAll)이라 사용자가 치면서 보는 것과 다르다. 실시간은 이걸로 재라.
 # Kiwi 는 여기 없다(안드로이드 AAR). 붙여 친 긴 덩어리는 실기기가 더 낫다.
