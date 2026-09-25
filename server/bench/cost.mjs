@@ -50,21 +50,37 @@ function textOf(length) {
   return pool.slice(0, length);
 }
 
-function requestBody(text) {
+function requestBody(text, thinkingOff) {
+  const generationConfig = { temperature: 0, candidateCount: 1, maxOutputTokens: 4096 };
+  if (thinkingOff) generationConfig.thinkingConfig = { thinkingBudget: 0 };
   return JSON.stringify({
     system_instruction: { parts: [{ text: APP_PROMPT }] },
     contents: [{ role: 'user', parts: [{ text }] }],
-    generationConfig: { temperature: 0, candidateCount: 1, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } },
+    generationConfig,
   });
 }
 
+/**
+ * 앱과 똑같이: 숙고를 끄고 보내 보고, 400 이면 그 설정을 빼고 다시 보낸다(GeminiCorrector 의
+ * thinkingRejected). 거절된 요청은 값이 안 나간다. **실제로 청구되는 것은 받아 준 쪽이다.**
+ */
+let thinkingRejected = false;
 async function call(text) {
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: requestBody(text),
-  });
-  const body = await res.json();
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${body?.error?.message ?? ''}`);
-  return body.usageMetadata ?? {};
+  for (;;) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: requestBody(text, !thinkingRejected),
+    });
+    const body = await res.json();
+    if (res.status === 400 && !thinkingRejected) {
+      thinkingRejected = true;
+      console.log(`(숙고 끔을 거절했다: ${body?.error?.message ?? ''} — 앱처럼 빼고 다시 보낸다)`);
+      continue;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${body?.error?.message ?? ''}`);
+    return body.usageMetadata ?? {};
+  }
 }
 
 const won = (usd) => usd * FX;
