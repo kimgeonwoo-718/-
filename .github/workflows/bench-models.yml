@@ -83,7 +83,12 @@ jobs:
           fi
           limit="$extra"
           # 결과를 실행 요약에 그대로 남긴다. 로그를 뒤지지 않고 바로 보려고.
-          node bench/models.mjs $models $limit | tee bench.txt
+          # 'cost' 면 겨루기 대신 한 번 값을 잰다(bench/cost.mjs, 약 20원).
+          if [ "$models" = "cost" ]; then
+            node bench/cost.mjs | tee bench.txt
+          else
+            node bench/models.mjs $models $limit | tee bench.txt
+          fi
           {
             echo '## 모델 겨루기'
             echo
