@@ -4,14 +4,22 @@
 
     python3 tools/sounds/sealion.py      → keyboard/src/main/res/raw/sealion_*.wav
 
-바다사자 울음은 목이 쉰 듯 거칠고 콧소리가 섞인 짧은 '아우/오우' 다. 그걸 흉내 낸다:
-  - 소리의 뼈대: 톱니파(배음이 많아 거칠다). 높이는 살짝 내려가며 끝난다.
-  - 거친 느낌: 30~50Hz 로 소리 크기를 떨게 한다(바다사자 울음의 '드르르' 결).
-  - 모음: 공명 필터 셋(포먼트)으로 '아'→'우' 로 입 모양이 바뀌게 한다.
-  - 짧게 치고 빠진다. 타자 소리는 0.1초 남짓이어야 다음 키와 겹치지 않는다.
+## 첫 판이 '레이저' 였던 까닭 (2026-09-26 사용자 평)
 
-numpy 없이 표준 라이브러리만 쓴다 — 이 저장소의 어디서든 그냥 돈다.
-진짜 녹음으로 바꾸고 싶으면 같은 이름의 파일(16비트 모노 WAV)만 갈아 끼우면 된다.
+매끈한 톱니파의 높이를 쭉 미끄러뜨렸다 — 그게 정확히 레이저 '퓨웅' 을 만드는 방법이다.
+생물 소리는 그렇지 않다:
+  - 성대가 **한 번씩 열렸다 닫히는 펄스**로 울린다(여기서는 Rosenberg 펄스의 미분).
+  - 펄스 간격(지터)과 세기(시머)가 **매번 조금씩 흔들린다.** 이게 없으면 기계음이다.
+  - 숨이 섞인다(성대 펄스에 맞춰 커졌다 작아지는 잡음).
+  - 높이는 크게 미끄러지지 않는다. 오르내림이 작다.
+
+## 두 가지 울음
+
+  아아악  거칠게 긁는 소리. 펄스를 하나 걸러 약하게·늦게 해서(주기 두 배 떨림) 쉰 소리를 내고,
+          숨을 많이 섞고, 끝을 '악' 처럼 뚝 끊은 뒤 짧게 '윽' 터뜨린다.  → 스페이스·지우기·엔터
+  아웅!   '아' 로 열었다가 입을 오므려 '우', 콧소리 '웅' 으로 닫는다. 높이는 거의 평평. → 글자 키
+
+numpy 없이 표준 라이브러리만 쓴다. 진짜 녹음으로 바꾸려면 같은 이름의 WAV(16비트 모노)만 갈아 끼운다.
 """
 import math
 import os
@@ -20,67 +28,155 @@ import struct
 import wave
 
 RATE = 22050
+T = 1.0 / RATE
 OUT = os.path.join(os.path.dirname(__file__), '..', '..', 'keyboard', 'src', 'main', 'res', 'raw')
-
-
-def resonator(signal, freq, bandwidth):
-    """2차 공명 필터 하나. 포먼트(모음의 입 모양)를 만든다. freq 는 매 샘플 값의 목록."""
-    out = [0.0] * len(signal)
-    y1 = y2 = 0.0
-    r = math.exp(-math.pi * bandwidth / RATE)
-    for i, x in enumerate(signal):
-        theta = 2 * math.pi * freq[i] / RATE
-        a1 = 2 * r * math.cos(theta)
-        a2 = -r * r
-        gain = (1 - r) * math.sqrt(1 - 2 * r * math.cos(2 * theta) + r * r)
-        y = gain * x + a1 * y1 + a2 * y2
-        out[i] = y
-        y2, y1 = y1, y
-    return out
 
 
 def lerp(a, b, t):
     return a + (b - a) * t
 
 
-def bark(duration, f0_start, f0_end, vowel_from, vowel_to, rough_hz, seed, attack=0.008, noise=0.08):
-    """바다사자 울음 하나. vowel_* 는 (F1, F2, F3) 포먼트 주파수."""
-    rnd = random.Random(seed)
-    n = int(duration * RATE)
-    phase = 0.0
-    source = []
-    for i in range(n):
+def glottal_source(n, f0_at, rnd, jitter=0.04, shimmer=0.15, doubling=0.0, breath=0.25, amp_at=None):
+    """
+    성대 펄스열. f0_at(t)·amp_at(t) 는 0..1 시각에 대한 높이·세기.
+    doubling: 0..1, 펄스를 하나 걸러 약하고 늦게 — 쉰 소리·으르렁.
+    """
+    out = [0.0] * n
+    i = 0
+    k = 0
+    while i < n:
         t = i / n
-        # 높이: 처음엔 살짝 오르다가 끝으로 떨어진다(울음의 억양).
-        f0 = lerp(f0_start, f0_end, t) * (1 + 0.06 * math.sin(math.pi * min(1, t * 3)))
-        phase += f0 / RATE
-        phase -= math.floor(phase)
-        saw = 2 * phase - 1
-        # 거친 떨림 + 숨소리
-        rough = 0.65 + 0.35 * math.sin(2 * math.pi * rough_hz * i / RATE + rnd.random() * 0.3)
-        source.append(saw * rough + noise * (rnd.random() * 2 - 1))
+        f0 = f0_at(t)
+        period = RATE / f0 * (1 + rnd.gauss(0, jitter))
+        if k % 2 == 1:
+            period *= 1 + 0.12 * doubling
+        period = max(8, int(period))
+        amp = (amp_at(t) if amp_at else 1.0) * max(0.2, 1 + rnd.gauss(0, shimmer))
+        if k % 2 == 1:
+            amp *= 1 - 0.55 * doubling
+        # Rosenberg 펄스: 열림 60%, 닫힘 25%. 미분해서 넣는다(입술에서 나가는 소리가 그 모양이다).
+        open_n = int(period * 0.6)
+        close_n = max(2, int(period * 0.25))
+        prev = 0.0
+        for j in range(period):
+            if j < open_n:
+                g = 0.5 * (1 - math.cos(math.pi * j / open_n))
+            elif j < open_n + close_n:
+                g = math.cos(math.pi / 2 * (j - open_n) / close_n)
+            else:
+                g = 0.0
+            if i + j >= n:
+                break
+            d = (g - prev) * amp
+            # 숨소리: 성대가 열려 있을 때 더 세다
+            d += breath * amp * (0.3 + g) * (rnd.random() * 2 - 1) * 0.35
+            out[i + j] = d
+            prev = g
+        i += period
+        k += 1
+    return out
 
-    def track(k):
-        return [lerp(vowel_from[k], vowel_to[k], min(1.0, (i / n) * 1.4)) for i in range(n)]
 
-    f1 = resonator(source, track(0), 90)
-    f2 = resonator(source, track(1), 120)
-    f3 = resonator(source, track(2), 180)
-    mixed = [a * 1.0 + b * 0.7 + c * 0.35 for a, b, c in zip(f1, f2, f3)]
+def formant(x, freq_at, bw):
+    """Klatt 공명기(직류 이득 1). freq_at(t) 는 시각별 주파수."""
+    n = len(x)
+    y1 = y2 = 0.0
+    out = [0.0] * n
+    c = -math.exp(-2 * math.pi * bw * T)
+    for i in range(n):
+        f = freq_at(i / n)
+        b = 2 * math.exp(-math.pi * bw * T) * math.cos(2 * math.pi * f * T)
+        a = 1 - b - c
+        y = a * x[i] + b * y1 + c * y2
+        out[i] = y
+        y2, y1 = y1, y
+    return out
 
-    # 크기 모양: 빠르게 올라와 머물다 사라진다.
+
+def vocal_tract(src, tracks, bws):
+    """공명기를 줄줄이 잇는다(모음). tracks 는 시각별 (F1..F4) 를 주는 함수들."""
+    y = src
+    for track, bw in zip(tracks, bws):
+        y = formant(y, track, bw)
+    return y
+
+
+def envelope(x, attack, release_frac, hard_stop=False):
+    n = len(x)
     att = max(1, int(attack * RATE))
-    rel = int(n * 0.45)
+    rel = max(1, int(n * release_frac))
     for i in range(n):
         if i < att:
-            env = i / att
-        elif i > n - rel:
-            env = ((n - i) / rel) ** 1.6
+            e = (i / att) ** 0.7
+        elif hard_stop and i > n - int(0.006 * RATE):
+            e = (n - i) / (0.006 * RATE)          # '악': 뚝 끊는다
+        elif not hard_stop and i > n - rel:
+            e = ((n - i) / rel) ** 1.5
         else:
-            env = 1.0
-        mixed[i] *= env
-    peak = max(abs(v) for v in mixed) or 1.0
-    return [v / peak * 0.85 for v in mixed]
+            e = 1.0
+        x[i] *= e
+    return x
+
+
+def normalize(x, peak=0.85):
+    m = max(abs(v) for v in x) or 1.0
+    return [v / m * peak for v in x]
+
+
+def stepwise(points):
+    """[(t, v), ...] 사이를 부드럽게 잇는 함수."""
+    def f(t):
+        for (t0, v0), (t1, v1) in zip(points, points[1:]):
+            if t <= t1:
+                u = (t - t0) / (t1 - t0) if t1 > t0 else 1
+                u = u * u * (3 - 2 * u)
+                return v0 + (v1 - v0) * u
+        return points[-1][1]
+    return f
+
+
+def aaak(duration, f0, seed, doubling=0.75, breath=0.55):
+    """'아아악' — 거칠게 긁다가 뚝."""
+    rnd = random.Random(seed)
+    n = int(duration * RATE)
+    # 높이: 살짝 올랐다 그대로 버틴다(미끄러뜨리지 않는다).
+    pitch = stepwise([(0, f0 * 0.93), (0.15, f0 * 1.04), (0.8, f0), (1, f0 * 0.97)])
+    loud = stepwise([(0, 0.6), (0.2, 1.0), (1, 0.95)])
+    src = glottal_source(n, pitch, rnd, jitter=0.05, shimmer=0.22, doubling=doubling, breath=breath, amp_at=loud)
+    # '애/아' 사이의 넓게 벌린 입. 대역폭을 넓게 — 짐승 소리는 모음이 뚜렷하지 않다.
+    tracks = [stepwise([(0, 820), (1, 900)]), stepwise([(0, 1350), (1, 1450)]),
+              lambda t: 2600, lambda t: 3500]
+    y = vocal_tract(src, tracks, [160, 200, 260, 320])
+    y = envelope(y, 0.012, 0, hard_stop=True)
+    # '윽' — 목을 닫았다 여는 짧은 터짐
+    gap = [0.0] * int(0.018 * RATE)
+    burst_n = int(0.022 * RATE)
+    burst = [(rnd.random() * 2 - 1) * (1 - i / burst_n) ** 2 * 0.15 for i in range(burst_n)]
+    burst = formant(burst, lambda t: 1800, 900)
+    return normalize(y + gap + burst)
+
+
+def aung(duration, f0, seed, rough=0.25, breath=0.22):
+    """'아웅!' — 열었다가 오므려 콧소리로 닫는다."""
+    rnd = random.Random(seed)
+    n = int(duration * RATE)
+    pitch = stepwise([(0, f0 * 0.96), (0.3, f0 * 1.05), (1, f0 * 0.9)])
+    loud = stepwise([(0, 0.7), (0.25, 1.0), (0.7, 0.8), (1, 0.45)])
+    src = glottal_source(n, pitch, rnd, jitter=0.035, shimmer=0.16, doubling=rough, breath=breath, amp_at=loud)
+    # 아(800,1250) → 우(380,800) → 웅(콧소리: F1 낮고 약함)
+    f1 = stepwise([(0, 800), (0.35, 760), (0.65, 400), (1, 280)])
+    f2 = stepwise([(0, 1250), (0.35, 1200), (0.65, 820), (1, 950)])
+    f3 = stepwise([(0, 2500), (1, 2300)])
+    y = vocal_tract(src, [f1, f2, f3, lambda t: 3400], [130, 150, 220, 300])
+    # 콧소리 구간은 윗소리가 죽는다 — 끝으로 갈수록 한 번 더 걸러 둥글게.
+    tail = int(n * 0.35)
+    smooth = 0.0
+    for i in range(n - tail, n):
+        u = (i - (n - tail)) / tail
+        smooth = smooth + (0.25 + 0.75 * (1 - u)) * (y[i] - smooth)
+        y[i] = smooth
+    y = envelope(y, 0.01, 0.3)
+    return normalize(y, 0.8)
 
 
 def save(name, samples):
@@ -94,23 +190,13 @@ def save(name, samples):
     print(path, f'{len(samples) / RATE:.2f}s')
 
 
-# 모음 입 모양 (F1, F2, F3)
-A = (780, 1150, 2500)   # 아
-O = (520, 880, 2400)    # 오
-U = (360, 760, 2300)    # 우
-
 if __name__ == '__main__':
-    # 글자 키: 짧은 '뿍/옥' 넷. 번갈아 내서 같은 소리가 되풀이되지 않게.
-    save('sealion_key_1', bark(0.10, 420, 330, O, U, 38, seed=1))
-    save('sealion_key_2', bark(0.09, 470, 380, A, O, 44, seed=2))
-    save('sealion_key_3', bark(0.11, 380, 300, O, U, 34, seed=3))
-    save('sealion_key_4', bark(0.10, 440, 350, A, U, 40, seed=4))
-    # 스페이스: 제대로 된 '아우!'
-    save('sealion_space', bark(0.30, 360, 250, A, U, 36, seed=5, attack=0.012))
-    # 엔터: 두 번 짖기 '아우 아우'
-    first = bark(0.20, 380, 280, A, U, 36, seed=6, attack=0.01)
-    gap = [0.0] * int(0.05 * RATE)
-    second = bark(0.24, 340, 240, A, U, 33, seed=7, attack=0.01)
-    save('sealion_enter', first + gap + second)
-    # 지우기: 낮고 짧게 '웅'
-    save('sealion_delete', bark(0.10, 260, 200, O, U, 30, seed=8, noise=0.05))
+    # 글자 키: 짧은 '아웅' 넷. 높이·길이가 조금씩 달라 되풀이가 덜 느껴진다.
+    save('sealion_key_1', aung(0.16, 330, seed=11))
+    save('sealion_key_2', aung(0.14, 380, seed=12, rough=0.3))
+    save('sealion_key_3', aung(0.17, 300, seed=13, rough=0.2))
+    save('sealion_key_4', aung(0.15, 355, seed=14))
+    # 스페이스·지우기·엔터: '아아악'
+    save('sealion_space', aaak(0.26, 470, seed=21))
+    save('sealion_delete', aaak(0.18, 430, seed=22, doubling=0.85))
+    save('sealion_enter', aaak(0.40, 440, seed=23, doubling=0.8, breath=0.6))

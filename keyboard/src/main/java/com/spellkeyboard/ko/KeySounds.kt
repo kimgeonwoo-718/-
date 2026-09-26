@@ -12,7 +12,7 @@ enum class KeySound { LETTER, SPACE, ENTER, DELETE }
 /** 키 소리 묶음. [premium] 이면 구독자 전용. */
 enum class SoundPack(val premium: Boolean = false) {
     NONE,
-    /** 짧은 '뿍'(글자), '아우!'(스페이스), '아우 아우'(엔터), 낮은 '웅'(지우기). */
+    /** 짧은 '아웅!'(글자 키 넷을 번갈아), 거친 '아아악'(스페이스·지우기·엔터). */
     SEA_LION(premium = true)
 }
 
@@ -62,7 +62,7 @@ class KeySounds(private val context: Context) {
         if (audio != null && audio.ringerMode != AudioManager.RINGER_MODE_NORMAL) return
         val sounds = loaded?.get(kind) ?: return
         if (sounds.isEmpty()) return
-        // 글자 키는 넷을 번갈아 — 같은 소리가 연달아 나지 않게. 높이도 살짝씩 흔든다.
+        // 글자 키는 '아웅' 넷을 번갈아 — 같은 소리가 연달아 나지 않게. 높이도 살짝씩 흔든다.
         val id = if (kind == KeySound.LETTER && sounds.size > 1) {
             var pick = random.nextInt(sounds.size)
             if (pick == lastLetter) pick = (pick + 1) % sounds.size
