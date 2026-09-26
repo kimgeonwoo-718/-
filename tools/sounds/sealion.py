@@ -3,7 +3,7 @@
 바다사자 소리팩을 **합성**한다. 녹음을 복사한 것이 아니라 코드로 새로 만든 소리다.
 
     pip install numpy scipy
-    python3 tools/sounds/sealion.py            → keyboard/src/main/res/raw/sealion_*.wav
+    python3 tools/sounds/sealion.py            → tools/sounds/out/sealion_*.wav (앱 것을 덮지 않는다)
     python3 tools/sounds/sealion.py --measure  만든 소리의 특징값을 찍는다(아래 목표와 견준다)
 
 ## 어떻게 맞췄나 (2026-09-26)
@@ -32,7 +32,8 @@ import numpy as np
 from scipy import signal
 
 RATE = 22050
-OUT = os.path.join(os.path.dirname(__file__), '..', '..', 'keyboard', 'src', 'main', 'res', 'raw')
+# 앱에는 지금 **녹음**이 들어 있다(HANDOFF). 합성 소리가 앱 소리를 덮어쓰지 않게 따로 뽑는다.
+OUT = os.path.join(os.path.dirname(__file__), 'out')
 
 
 def glottal(f0_curve, amp_curve, rnd, jitter, shimmer, doubling, breath, open_q=0.6, close_q=0.12):

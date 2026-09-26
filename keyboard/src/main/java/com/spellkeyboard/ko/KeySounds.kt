@@ -12,7 +12,10 @@ enum class KeySound { LETTER, SPACE, ENTER, DELETE }
 /** 키 소리 묶음. [premium] 이면 구독자 전용. */
 enum class SoundPack(val premium: Boolean = false) {
     NONE,
-    /** 짧은 '아웅!'(글자 키 넷을 번갈아), 거친 '아아악'(스페이스·지우기·엔터). */
+    /**
+     * 짧은 '아웅!'(글자 키 여섯을 번갈아), 긴 '아아악'(스페이스·지우기·엔터).
+     * 소리는 사용자 친구의 릴스 영상 녹음을 잘라 쓴 것이다 — 출처와 허락은 HANDOFF '바다사자 테마·소리팩'.
+     */
     SEA_LION(premium = true)
 }
 
@@ -62,7 +65,7 @@ class KeySounds(private val context: Context) {
         if (audio != null && audio.ringerMode != AudioManager.RINGER_MODE_NORMAL) return
         val sounds = loaded?.get(kind) ?: return
         if (sounds.isEmpty()) return
-        // 글자 키는 '아웅' 넷을 번갈아 — 같은 소리가 연달아 나지 않게. 높이도 살짝씩 흔든다.
+        // 글자 키는 '아웅' 여섯을 번갈아 — 같은 소리가 연달아 나지 않게. 높이도 살짝씩 흔든다.
         val id = if (kind == KeySound.LETTER && sounds.size > 1) {
             var pick = random.nextInt(sounds.size)
             if (pick == lastLetter) pick = (pick + 1) % sounds.size
@@ -82,7 +85,8 @@ class KeySounds(private val context: Context) {
 
     private fun loadSeaLion(): Map<KeySound, List<Int>> = mapOf(
         KeySound.LETTER to listOf(
-            R.raw.sealion_key_1, R.raw.sealion_key_2, R.raw.sealion_key_3, R.raw.sealion_key_4
+            R.raw.sealion_key_1, R.raw.sealion_key_2, R.raw.sealion_key_3,
+            R.raw.sealion_key_4, R.raw.sealion_key_5, R.raw.sealion_key_6
         ).map { pool.load(context, it, 1) },
         KeySound.SPACE to listOf(pool.load(context, R.raw.sealion_space, 1)),
         KeySound.ENTER to listOf(pool.load(context, R.raw.sealion_enter, 1)),
