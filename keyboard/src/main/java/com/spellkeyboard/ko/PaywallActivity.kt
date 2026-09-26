@@ -114,7 +114,10 @@ class PaywallActivity : AppCompatActivity() {
         Row(getString(R.string.paywall_row_device_translate), CHECK, CHECK),
         Row(getString(R.string.paywall_row_keyboard), CHECK, CHECK),
         Row(getString(R.string.paywall_row_ai), CROSS, CHECK, getString(R.string.paywall_row_ai_sub)),
-        Row(getString(R.string.paywall_row_ai_translate), CROSS, CHECK, getString(R.string.paywall_row_ai_translate_sub))
+        Row(getString(R.string.paywall_row_ai_translate), CROSS, CHECK, getString(R.string.paywall_row_ai_translate_sub)),
+        // 테마와 소리는 따로 고른다(설정에서 각각 켠다). 표에서도 한 줄씩.
+        Row(getString(R.string.paywall_row_sealion_theme), CROSS, CHECK, getString(R.string.paywall_row_sealion_theme_sub)),
+        Row(getString(R.string.paywall_row_sealion_sound), CROSS, CHECK, getString(R.string.paywall_row_sealion_sound_sub))
     )
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()

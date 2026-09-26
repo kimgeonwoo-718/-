@@ -134,6 +134,10 @@
     <string name="paywall_row_ai_sub">글 전체를 AI 가 다듬어요 · 정확도 100%</string>
     <string name="paywall_row_ai_translate">AI 번역</string>
     <string name="paywall_row_ai_translate_sub">현지인처럼 자연스러운 번역</string>
+    <string name="paywall_row_sealion_theme">🦭 귀여운 바다사자 테마</string>
+    <string name="paywall_row_sealion_theme_sub">바다 빛 자판에 바다사자 스페이스바</string>
+    <string name="paywall_row_sealion_sound">🦭 귀여운 바다사자 사운드팩</string>
+    <string name="paywall_row_sealion_sound_sub">누를 때마다 \'아웅!\' · 스페이스·엔터는 \'아아악\'</string>
     <string name="paywall_restore">구독 복원</string>
     <string name="paywall_cta_upgrade">₩2,990에 업그레이드하세요</string>
     <string name="paywall_footer">매월 자동 갱신됩니다. 언제든지 취소할 수 있습니다.</string>
