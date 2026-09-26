@@ -1,202 +1,187 @@
 #!/usr/bin/env python3
 """
-바다사자 소리팩을 **합성**한다. 녹음이 아니라 코드로 만든 소리라 저작권이 없다.
+바다사자 소리팩을 **합성**한다. 녹음을 복사한 것이 아니라 코드로 새로 만든 소리다.
 
-    python3 tools/sounds/sealion.py      → keyboard/src/main/res/raw/sealion_*.wav
+    pip install numpy scipy
+    python3 tools/sounds/sealion.py            → keyboard/src/main/res/raw/sealion_*.wav
+    python3 tools/sounds/sealion.py --measure  만든 소리의 특징값을 찍는다(아래 목표와 견준다)
 
-## 첫 판이 '레이저' 였던 까닭 (2026-09-26 사용자 평)
+## 어떻게 맞췄나 (2026-09-26)
 
-매끈한 톱니파의 높이를 쭉 미끄러뜨렸다 — 그게 정확히 레이저 '퓨웅' 을 만드는 방법이다.
-생물 소리는 그렇지 않다:
-  - 성대가 **한 번씩 열렸다 닫히는 펄스**로 울린다(여기서는 Rosenberg 펄스의 미분).
-  - 펄스 간격(지터)과 세기(시머)가 **매번 조금씩 흔들린다.** 이게 없으면 기계음이다.
-  - 숨이 섞인다(성대 펄스에 맞춰 커졌다 작아지는 잡음).
-  - 높이는 크게 미끄러지지 않는다. 오르내림이 작다.
+첫 판은 톱니파의 높이를 미끄러뜨려 '레이저' 였고, 둘째 판은 성대 펄스로 바꿨지만 여전히 맞출
+기준이 없었다. 셋째 판은 사용자가 준 바다사자 울음 녹음 둘에서 **특징값만 재어**(녹음은 쓰지
+않는다 — 남의 영상 소리라 앱에 넣을 수 없다) 그 숫자에 맞게 합성했다. 잰 값:
 
-## 두 가지 울음
+  (아래 수치에 맞는 공명 세기·숨 양은 격자 탐색으로 찾았다. 합성 결과: 아웅 주기성 0.90, 57/32/10%,
+  아아악 주기성 0.48, 50/44/3% — 녹음과 거의 같다. 들어 보고 정한 게 아니라 잰 것이다.)
 
-  아아악  거칠게 긁는 소리. 펄스를 하나 걸러 약하게·늦게 해서(주기 두 배 떨림) 쉰 소리를 내고,
-          숨을 많이 섞고, 끝을 '악' 처럼 뚝 끊은 뒤 짧게 '윽' 터뜨린다.  → 스페이스·지우기·엔터
-  아웅!   '아' 로 열었다가 입을 오므려 '우', 콧소리 '웅' 으로 닫는다. 높이는 거의 평평. → 글자 키
-
-numpy 없이 표준 라이브러리만 쓴다. 진짜 녹음으로 바꾸려면 같은 이름의 WAV(16비트 모노)만 갈아 끼운다.
+  짧은 울음('아웅', 글자 키)   0.14초. 높이 700Hz 로 치고 들어가 20ms 만에 500Hz 로 떨어져
+                              머물다가 끝으로 600Hz 까지 오르며 가장 커지고, 뚝 끊긴 뒤 300Hz 로
+                              잠깐 꺾인다. 맑은 소리(주기성 0.85). 에너지 300~800Hz 58%,
+                              800~1500Hz 28%, 1500~3000Hz 13%. 공명 봉우리 600·1600·3800Hz.
+  긴 울음('아아악', 스페이스 등) 높이 730Hz 인데 **떨림이 한 번 걸러 어긋나서** 365Hz 반음(아래 옥타브)이
+                              섞인다 — 쉰 소리. 거칠다(주기성 0.5). 에너지 300~800Hz 50%,
+                              800~1500Hz 43%, 1500Hz 위는 거의 없다(어둡다). 처음 0.1초는 높게
+                              긁고 들어간다.
 """
-import math
 import os
-import random
-import struct
+import sys
 import wave
 
+import numpy as np
+from scipy import signal
+
 RATE = 22050
-T = 1.0 / RATE
 OUT = os.path.join(os.path.dirname(__file__), '..', '..', 'keyboard', 'src', 'main', 'res', 'raw')
 
 
-def lerp(a, b, t):
-    return a + (b - a) * t
-
-
-def glottal_source(n, f0_at, rnd, jitter=0.04, shimmer=0.15, doubling=0.0, breath=0.25, amp_at=None):
+def glottal(f0_curve, amp_curve, rnd, jitter, shimmer, doubling, breath, open_q=0.6, close_q=0.12):
     """
-    성대 펄스열. f0_at(t)·amp_at(t) 는 0..1 시각에 대한 높이·세기.
-    doubling: 0..1, 펄스를 하나 걸러 약하고 늦게 — 쉰 소리·으르렁.
+    성대 펄스열(Rosenberg 펄스의 미분). f0_curve·amp_curve 는 샘플마다의 높이·세기.
+    doubling 0..1: 펄스를 하나 걸러 약하고 늦게 — 아래 옥타브가 섞인 쉰 소리.
     """
-    out = [0.0] * n
-    i = 0
-    k = 0
+    n = len(f0_curve)
+    out = np.zeros(n)
+    i, k = 0, 0
     while i < n:
-        t = i / n
-        f0 = f0_at(t)
-        period = RATE / f0 * (1 + rnd.gauss(0, jitter))
+        period = RATE / f0_curve[i] * (1 + rnd.normal(0, jitter))
+        amp = amp_curve[i] * max(0.2, 1 + rnd.normal(0, shimmer))
         if k % 2 == 1:
-            period *= 1 + 0.12 * doubling
-        period = max(8, int(period))
-        amp = (amp_at(t) if amp_at else 1.0) * max(0.2, 1 + rnd.gauss(0, shimmer))
-        if k % 2 == 1:
-            amp *= 1 - 0.55 * doubling
-        # Rosenberg 펄스: 열림 60%, 닫힘 25%. 미분해서 넣는다(입술에서 나가는 소리가 그 모양이다).
-        open_n = int(period * 0.6)
-        close_n = max(2, int(period * 0.25))
-        prev = 0.0
-        for j in range(period):
-            if j < open_n:
-                g = 0.5 * (1 - math.cos(math.pi * j / open_n))
-            elif j < open_n + close_n:
-                g = math.cos(math.pi / 2 * (j - open_n) / close_n)
-            else:
-                g = 0.0
-            if i + j >= n:
-                break
-            d = (g - prev) * amp
-            # 숨소리: 성대가 열려 있을 때 더 세다
-            d += breath * amp * (0.3 + g) * (rnd.random() * 2 - 1) * 0.35
-            out[i + j] = d
-            prev = g
-        i += period
+            period *= 1 + 0.15 * doubling
+            amp *= 1 - 0.8 * doubling
+        p = max(8, int(period))
+        on = int(p * open_q)
+        close = max(2, int(p * close_q))
+        g = np.zeros(p)
+        g[:on] = 0.5 * (1 - np.cos(np.pi * np.arange(on) / on))
+        g[on:on + close] = np.cos(np.pi / 2 * np.arange(min(close, p - on)) / close)
+        d = np.diff(np.concatenate([[0.0], g])) * amp
+        # 숨: 성대가 열려 있을 때 더 센 잡음
+        d += breath * amp * (0.2 + g) * rnd.uniform(-1, 1, p) * 0.08
+        end = min(n, i + p)
+        out[i:end] = d[:end - i]
+        i += p
         k += 1
     return out
 
 
-def formant(x, freq_at, bw):
-    """Klatt 공명기(직류 이득 1). freq_at(t) 는 시각별 주파수."""
+def resonate(x, freq, bw):
+    """2차 공명기(포먼트). 고정 주파수. **봉우리 높이를 1 로 맞춘다** — 안 맞추면 높은 공명일수록
+    약해져서 크기 숫자가 뜻을 잃는다(첫 시도가 그랬다: 에너지가 전부 800Hz 아래로 갔다)."""
+    r = np.exp(-np.pi * bw / RATE)
+    theta = 2 * np.pi * freq / RATE
+    a = [1, -2 * r * np.cos(theta), r * r]
+    _, h = signal.freqz([1], a, worN=[theta])
+    return signal.lfilter([1 / abs(h[0])], a, x)
+
+
+def tract(x, formants):
+    """공명기를 나란히 두고 섞는다(병렬). formants 는 (주파수, 대역폭, 크기)."""
+    return sum(g * resonate(x, f, bw) for f, bw, g in formants)
+
+
+def curve(points, n):
+    """[(t 0..1, 값)] 을 부드럽게 이은 샘플별 곡선."""
+    ts = np.linspace(0, 1, n)
+    xs, ys = zip(*points)
+    return np.interp(ts, xs, ys)
+
+
+def shape(x, attack, release, hard=False):
     n = len(x)
-    y1 = y2 = 0.0
-    out = [0.0] * n
-    c = -math.exp(-2 * math.pi * bw * T)
-    for i in range(n):
-        f = freq_at(i / n)
-        b = 2 * math.exp(-math.pi * bw * T) * math.cos(2 * math.pi * f * T)
-        a = 1 - b - c
-        y = a * x[i] + b * y1 + c * y2
-        out[i] = y
-        y2, y1 = y1, y
-    return out
+    env = np.ones(n)
+    a = max(1, int(attack * RATE))
+    env[:a] = np.linspace(0, 1, a) ** 0.7
+    r = max(1, int(release * RATE))
+    env[-r:] = np.linspace(1, 0, r) ** (1.0 if hard else 1.8)
+    return x * env
 
 
-def vocal_tract(src, tracks, bws):
-    """공명기를 줄줄이 잇는다(모음). tracks 는 시각별 (F1..F4) 를 주는 함수들."""
-    y = src
-    for track, bw in zip(tracks, bws):
-        y = formant(y, track, bw)
-    return y
+def normalize(x, peak=0.9):
+    x = x - np.mean(x)
+    return x / (np.max(np.abs(x)) or 1) * peak
 
 
-def envelope(x, attack, release_frac, hard_stop=False):
-    n = len(x)
-    att = max(1, int(attack * RATE))
-    rel = max(1, int(n * release_frac))
-    for i in range(n):
-        if i < att:
-            e = (i / att) ** 0.7
-        elif hard_stop and i > n - int(0.006 * RATE):
-            e = (n - i) / (0.006 * RATE)          # '악': 뚝 끊는다
-        elif not hard_stop and i > n - rel:
-            e = ((n - i) / rel) ** 1.5
-        else:
-            e = 1.0
-        x[i] *= e
-    return x
-
-
-def normalize(x, peak=0.85):
-    m = max(abs(v) for v in x) or 1.0
-    return [v / m * peak for v in x]
-
-
-def stepwise(points):
-    """[(t, v), ...] 사이를 부드럽게 잇는 함수."""
-    def f(t):
-        for (t0, v0), (t1, v1) in zip(points, points[1:]):
-            if t <= t1:
-                u = (t - t0) / (t1 - t0) if t1 > t0 else 1
-                u = u * u * (3 - 2 * u)
-                return v0 + (v1 - v0) * u
-        return points[-1][1]
-    return f
-
-
-def aaak(duration, f0, seed, doubling=0.75, breath=0.55):
-    """'아아악' — 거칠게 긁다가 뚝."""
-    rnd = random.Random(seed)
+def aung(duration, base, seed, lift=1.2):
+    """짧은 '아웅'. base 는 머무는 높이(Hz). 녹음의 모양: 치고 들어가 떨어졌다가 끝에서 올라간다."""
+    rnd = np.random.default_rng(seed)
     n = int(duration * RATE)
-    # 높이: 살짝 올랐다 그대로 버틴다(미끄러뜨리지 않는다).
-    pitch = stepwise([(0, f0 * 0.93), (0.15, f0 * 1.04), (0.8, f0), (1, f0 * 0.97)])
-    loud = stepwise([(0, 0.6), (0.2, 1.0), (1, 0.95)])
-    src = glottal_source(n, pitch, rnd, jitter=0.05, shimmer=0.22, doubling=doubling, breath=breath, amp_at=loud)
-    # '애/아' 사이의 넓게 벌린 입. 대역폭을 넓게 — 짐승 소리는 모음이 뚜렷하지 않다.
-    tracks = [stepwise([(0, 820), (1, 900)]), stepwise([(0, 1350), (1, 1450)]),
-              lambda t: 2600, lambda t: 3500]
-    y = vocal_tract(src, tracks, [160, 200, 260, 320])
-    y = envelope(y, 0.012, 0, hard_stop=True)
-    # '윽' — 목을 닫았다 여는 짧은 터짐
-    gap = [0.0] * int(0.018 * RATE)
-    burst_n = int(0.022 * RATE)
-    burst = [(rnd.random() * 2 - 1) * (1 - i / burst_n) ** 2 * 0.15 for i in range(burst_n)]
-    burst = formant(burst, lambda t: 1800, 900)
-    return normalize(y + gap + burst)
+    f0 = curve([(0, base * 1.4), (0.12, base), (0.55, base * 1.02), (0.86, base * lift), (0.9, base * 0.6), (1, base * 0.58)], n)
+    amp = curve([(0, 0.4), (0.1, 0.9), (0.6, 0.85), (0.85, 1.25), (0.92, 0.6), (1, 0.2)], n)
+    src = glottal(f0, amp, rnd, jitter=0.012, shimmer=0.06, doubling=0.08, breath=2.0)
+    # 공명 세기는 녹음의 대역별 에너지에 맞춰 찾은 값이다(맨 위 주석의 표).
+    y = tract(src, [(600, 110, 1.0), (1050, 160, 1.5), (1600, 180, 1.0), (3800, 300, 0.3)])
+    y = signal.lfilter(*signal.butter(2, 3200 / (RATE / 2)), y)
+    return normalize(shape(y, 0.004, 0.012))
 
 
-def aung(duration, f0, seed, rough=0.25, breath=0.22):
-    """'아웅!' — 열었다가 오므려 콧소리로 닫는다."""
-    rnd = random.Random(seed)
+def aaak(duration, seed, f0=730):
+    """거친 '아아악'. 730Hz 에 한 번 걸러 어긋나는 떨림(365Hz 가 섞인다), 1.5kHz 위는 거의 없다."""
+    rnd = np.random.default_rng(seed)
     n = int(duration * RATE)
-    pitch = stepwise([(0, f0 * 0.96), (0.3, f0 * 1.05), (1, f0 * 0.9)])
-    loud = stepwise([(0, 0.7), (0.25, 1.0), (0.7, 0.8), (1, 0.45)])
-    src = glottal_source(n, pitch, rnd, jitter=0.035, shimmer=0.16, doubling=rough, breath=breath, amp_at=loud)
-    # 아(800,1250) → 우(380,800) → 웅(콧소리: F1 낮고 약함)
-    f1 = stepwise([(0, 800), (0.35, 760), (0.65, 400), (1, 280)])
-    f2 = stepwise([(0, 1250), (0.35, 1200), (0.65, 820), (1, 950)])
-    f3 = stepwise([(0, 2500), (1, 2300)])
-    y = vocal_tract(src, [f1, f2, f3, lambda t: 3400], [130, 150, 220, 300])
-    # 콧소리 구간은 윗소리가 죽는다 — 끝으로 갈수록 한 번 더 걸러 둥글게.
-    tail = int(n * 0.35)
-    smooth = 0.0
-    for i in range(n - tail, n):
-        u = (i - (n - tail)) / tail
-        smooth = smooth + (0.25 + 0.75 * (1 - u)) * (y[i] - smooth)
-        y[i] = smooth
-    y = envelope(y, 0.01, 0.3)
-    return normalize(y, 0.8)
+    head = min(0.3, 0.1 / duration)
+    pitch = curve([(0, f0 * 1.0), (head, f0 * 0.98), (1, f0 * 0.99)], n)
+    amp = curve([(0, 0.5), (head * 0.4, 1.0), (1, 1.0)], n)
+    # 처음 0.1초는 떨림이 덜 어긋나(높게 긁고 들어감), 그 뒤로 쉰 소리가 된다.
+    src_a = glottal(pitch, amp, rnd, jitter=0.03, shimmer=0.18, doubling=0.2, breath=10.0)
+    src_b = glottal(pitch, amp, rnd, jitter=0.03, shimmer=0.18, doubling=0.7, breath=10.0)
+    mix = curve([(0, 0), (head, 0), (head + 0.05, 1), (1, 1)], n)
+    src = src_a * (1 - mix) + src_b * mix
+    y = tract(src, [(720, 140, 0.6), (1100, 160, 1.3), (1650, 220, 0.3)])
+    y = signal.lfilter(*signal.butter(4, 1700 / (RATE / 2)), y)
+    return normalize(shape(y, 0.008, 0.035, hard=True))
 
 
-def save(name, samples):
+def save(name, x):
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, name + '.wav')
+    data = (np.clip(x, -1, 1) * 32767).astype('<i2').tobytes()
     with wave.open(path, 'wb') as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(RATE)
-        w.writeframes(b''.join(struct.pack('<h', int(max(-1, min(1, s)) * 32767)) for s in samples))
-    print(path, f'{len(samples) / RATE:.2f}s')
+        w.writeframes(data)
+    print(path, f'{len(x) / RATE:.2f}s')
+    return x
+
+
+def measure(name, x):
+    """녹음을 잰 것과 같은 자로 잰다."""
+    frame, hop = int(0.025 * RATE), int(0.01 * RATE)
+    rms = np.array([np.sqrt(np.mean(x[i:i + frame] ** 2)) for i in range(0, len(x) - frame, hop)])
+    f0s, per = [], []
+    for k, i in enumerate(range(0, len(x) - frame, hop)):
+        if rms[k] < rms.max() * 0.2:
+            continue
+        fr = x[i:i + frame] * np.hanning(frame)
+        ac = np.correlate(fr, fr, 'full')[frame - 1:]
+        ac /= ac[0] + 1e-9
+        lo, hi = int(RATE / 1200), int(RATE / 80)
+        lag = lo + np.argmax(ac[lo:hi])
+        f0s.append(RATE / lag)
+        per.append(ac[lag])
+    f, p = signal.welch(x, RATE, nperseg=1024)
+    tot = p.sum()
+    band = lambda a, b: 100 * p[(f >= a) & (f < b)].sum() / tot
+    print(f'{name:16s} f0 {np.median(f0s):4.0f}Hz  주기성 {np.median(per):.2f}  '
+          f'300-800 {band(300, 800):.0f}%  800-1500 {band(800, 1500):.0f}%  1500-3000 {band(1500, 3000):.0f}%')
 
 
 if __name__ == '__main__':
-    # 글자 키: 짧은 '아웅' 넷. 높이·길이가 조금씩 달라 되풀이가 덜 느껴진다.
-    save('sealion_key_1', aung(0.16, 330, seed=11))
-    save('sealion_key_2', aung(0.14, 380, seed=12, rough=0.3))
-    save('sealion_key_3', aung(0.17, 300, seed=13, rough=0.2))
-    save('sealion_key_4', aung(0.15, 355, seed=14))
-    # 스페이스·지우기·엔터: '아아악'
-    save('sealion_space', aaak(0.26, 470, seed=21))
-    save('sealion_delete', aaak(0.18, 430, seed=22, doubling=0.85))
-    save('sealion_enter', aaak(0.40, 440, seed=23, doubling=0.8, breath=0.6))
+    sounds = {
+        # 글자 키: '아웅' 넷. 머무는 높이를 조금씩 달리한다(녹음은 500Hz 언저리).
+        'sealion_key_1': aung(0.14, 505, seed=1),
+        'sealion_key_2': aung(0.13, 540, seed=2, lift=1.15),
+        'sealion_key_3': aung(0.15, 480, seed=3, lift=1.25),
+        'sealion_key_4': aung(0.14, 520, seed=4),
+        # 스페이스·지우기·엔터: '아아악'
+        'sealion_space': aaak(0.34, seed=11),
+        'sealion_delete': aaak(0.24, seed=12, f0=700),
+        'sealion_enter': aaak(0.55, seed=13, f0=745),
+    }
+    for name, x in sounds.items():
+        save(name, x)
+    if '--measure' in sys.argv:
+        print('\n목표  아웅: f0 ~520  주기성 0.85  58/28/13%   아아악: f0 365(반음 섞임)  주기성 0.5  50/43/6%')
+        for name, x in sounds.items():
+            measure(name, x)
