@@ -72,7 +72,7 @@
     <string name="menu_privacy">개인정보 처리방침</string>
     <string name="menu_terms">서비스 이용약관</string>
     <string name="menu_support">고객센터</string>
-    <string name="app_info">버전 %1$s · 설치 ID %2$s (길게 눌러 복사)</string>
+    <string name="app_info">버전 %1$s</string>
     <string name="open_failed">열 수 있는 앱이 없어요.</string>
 
     <!--
@@ -167,9 +167,6 @@
     <string name="setting_key_transparency">키 투명도</string>
     <string name="setting_key_transparency_sub">배경 사진을 썼을 때 키를 얼마나 비치게 할지 정해요. 오른쪽으로 갈수록 사진이 잘 보여요.</string>
     <string name="setting_key_transparency_value">%1$d%%</string>
-    <!-- 설치 ID. 서버가 이 기기를 부르는 이름이라 문의·시험용 구독자 등록에 쓴다. -->
-    <string name="setting_install_id_label">설치 ID</string>
-    <string name="setting_install_id_copied">설치 ID 를 복사했다</string>
     <string name="ai_notice">AI 교정·AI 번역을 누를 때만 그 입력란의 글이 서버를 거쳐 AI 로 가요(지금은 구글 제미나이). 타이핑 중 실시간 교정과 \'전체\' 교정은 기기 안에서만 처리돼요.</string>
 
     <!-- 예전 문구는 "타이핑한 내용은 기기 밖으로 나가지 않아요" 였다. AI 를 누르면 나가니 틀린 말이었다. -->

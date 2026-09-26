@@ -3,8 +3,6 @@ package com.spellkeyboard.ko
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -248,26 +246,18 @@ class MoreDrawer(private val activity: Activity) {
         }
     }
 
-    // --- 버전 · 설치 ID ---------------------------------------------------------
+    // --- 버전 ------------------------------------------------------------------
 
     /**
-     * 맨 밑 흐린 한 줄. 길게 누르면 설치 ID 가 복사된다.
+     * 맨 밑 흐린 한 줄. 버전만 보인다.
      *
-     * 설치 ID 는 이 기기가 서버에 자기를 밝히는 이름이다. 문의할 때 알려 주면 어느 기기인지
-     * 짚을 수 있고, 출시 전에는 서버의 시험용 구독자 목록에 넣어 유료 기능을 실기기에서
-     * 확인한다. 앱이 처음 켜질 때 만든 무작위 값이라 개인 정보가 아니다.
+     * 예전엔 설치 ID 도 여기 있었다(길게 눌러 복사). 사용자에게는 뜻 모를 숫자이고, 시험용
+     * 구독자 목록(TEST_INSTALL_IDS)에 든 ID 가 스크린샷으로 퍼지면 남이 그 ID 로 AI 를 쓸 수
+     * 있어서 뺐다. 문의 메일 밑에는 여전히 붙는다([writeToSupport]) — 시험 기기의 ID 가
+     * 필요하면 고객센터를 눌러 메일 본문에서 보면 된다.
      */
     private fun showAppInfo() {
-        val id = Prefs.installId(activity)
-        activity.findViewById<TextView>(R.id.app_info).apply {
-            text = activity.getString(R.string.app_info, versionName(), id)
-            setOnLongClickListener {
-                val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText(activity.getString(R.string.setting_install_id_label), id))
-                Toast.makeText(activity, R.string.setting_install_id_copied, Toast.LENGTH_SHORT).show()
-                true
-            }
-        }
+        activity.findViewById<TextView>(R.id.app_info).text = activity.getString(R.string.app_info, versionName())
     }
 
     private fun versionName(): String =

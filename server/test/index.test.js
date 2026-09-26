@@ -516,6 +516,17 @@ test('개인정보 처리방침 페이지는 키 없이도 뜬다', async () => 
   assert.ok(!body.includes('문의:'), '연락처가 설정돼 있지 않으면 빈 줄을 만들지 않는다');
 });
 
+test('개인정보 처리방침은 권리 행사 방법과 보호책임자를 적는다', async () => {
+  const body = await (await handle(new Request('https://spell.test/privacy'),
+    env({ OPERATOR_NAME: '홍길동', CONTACT_EMAIL: 'help@example.com' }))).text();
+  assert.match(body, /열람, 정정, 삭제, 처리 정지/);
+  assert.match(body, /10일 안에/);
+  assert.match(body, /파기/);
+  assert.match(body, /개인정보 보호책임자: 홍길동/);
+  assert.match(body, /연락처: help@example\.com/);
+  assert.match(body, /118/);
+});
+
 test('개인정보 처리방침은 실제로 보내는 곳을 적는다', async () => {
   // 기본 모델 이름(OPENAI_MODEL)은 늘 있다. 그걸 보고 OpenAI 라고 적으면 안 된다.
   const google = await (await handle(new Request('https://spell.test/privacy'),
