@@ -210,17 +210,5 @@
             android:layout_marginTop="20dp"
             android:paddingHorizontal="4dp"
             android:text="@string/privacy_notice" />
-
-        <TextView
-            android:id="@+id/ai_consent_withdraw"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:paddingHorizontal="4dp"
-            android:paddingVertical="8dp"
-            android:text="@string/ai_consent_withdraw"
-            android:textColor="@color/toss_blue"
-            android:textSize="14sp"
-            android:visibility="gone" />
     </LinearLayout>
 </ScrollView>

@@ -2,8 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-      AI 교정·번역, 구독 확인, 로그인에 쓴다. 글은 사용자가 AI 버튼을 누르고, 처음 한 번
-      동의했을 때만 나간다. 온디바이스 교정은 이 권한 없이도 그대로 동작한다.
+      AI 교정·번역, 구독 확인, 로그인에 쓴다. 글은 사용자가 AI 버튼을 누를 때만 나간다.
+      온디바이스 교정은 이 권한 없이도 그대로 동작한다.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -53,18 +53,6 @@
             android:name=".PaywallActivity"
             android:exported="false"
             android:label="@string/app_name" />
-
-        <!--
-          AI 로 글을 보내기 전에 한 번 묻는 창. 키보드가 띄운다. 첫 화면의 작업에 끼어들지
-          않게 따로 떠서, 최근 앱 목록에도 안 남는다.
-        -->
-        <activity
-            android:name=".AiConsentActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:taskAffinity=""
-            android:label="@string/ai_consent_title"
-            android:theme="@style/Theme.SpellKeyboard.Dialog" />
     </application>
 
 </manifest>

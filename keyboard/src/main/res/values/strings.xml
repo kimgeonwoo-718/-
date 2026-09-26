@@ -79,7 +79,7 @@
       고객센터 메일 주소. 비어 있으면 고객센터를 눌렀을 때 "준비 중" 이라고 뜬다.
       서버 설정 CONTACT_EMAIL(개인정보 처리방침 페이지에 뜨는 주소)과 같은 값을 넣는다.
     -->
-    <string name="support_email" translatable="false"></string>
+    <string name="support_email" translatable="false">tamtech828282@gmail.com</string>
     <string name="support_not_ready">고객센터 이메일을 준비 중이에요.</string>
     <string name="support_subject">[맞춤법 키보드] 문의</string>
     <string name="support_body">\n\n\n---\n아래 정보는 문제를 찾는 데 쓰여요. 지우지 말아 주세요.\n앱 버전: %1$s\n기기: %2$s (Android %3$s)\n설치 ID: %4$s</string>
@@ -170,20 +170,10 @@
     <!-- 설치 ID. 서버가 이 기기를 부르는 이름이라 문의·시험용 구독자 등록에 쓴다. -->
     <string name="setting_install_id_label">설치 ID</string>
     <string name="setting_install_id_copied">설치 ID 를 복사했다</string>
-    <string name="ai_notice">AI 교정·AI 번역을 누를 때만 그 입력란의 글이 서버를 거쳐 AI 로 가요(지금은 구글 제미나이). 처음 한 번은 보내도 되는지 물어봐요. 타이핑 중 실시간 교정과 \'전체\' 교정은 기기 안에서만 처리돼요.</string>
+    <string name="ai_notice">AI 교정·AI 번역을 누를 때만 그 입력란의 글이 서버를 거쳐 AI 로 가요(지금은 구글 제미나이). 타이핑 중 실시간 교정과 \'전체\' 교정은 기기 안에서만 처리돼요.</string>
 
     <!-- 예전 문구는 "타이핑한 내용은 기기 밖으로 나가지 않아요" 였다. AI 를 누르면 나가니 틀린 말이었다. -->
-    <string name="privacy_notice">실시간 교정과 \'전체\' 교정은 전부 기기 안에서 처리해요. 글이 기기 밖으로 나가는 건 AI 교정·AI 번역을 직접 누를 때뿐이고, 처음 한 번 동의를 받아요. 비밀번호·이메일·URL 입력란에서는 교정도 AI 도 자동으로 꺼져요.</string>
-    <string name="ai_consent_withdraw">AI 전송 동의 거두기</string>
-    <string name="ai_consent_withdrawn">동의를 거뒀어요. 다음에 AI 를 누르면 다시 물어볼게요.</string>
-
-    <!-- AI 전송 동의 창. AI 교정·번역을 처음 누를 때 뜬다. -->
-    <string name="ai_consent_title">AI 로 글을 보낼까요?</string>
-    <string name="ai_consent_body">AI 교정이나 AI 번역을 누르면, 지금 입력란의 글(커서 앞뒤 최대 2,000자)이 저희 서버를 거쳐 구글 제미나이 AI 로 가서 고쳐지거나 옮겨져 돌아와요.\n\n• 누를 때만 보내요. 치는 동안 저절로 보내지 않아요.\n• 비밀번호·이메일·URL 입력란의 글은 보내지 않아요.\n• 서버는 글을 저장하지 않고, 하루 쓴 글자 수만 세요.</string>
-    <string name="ai_consent_note">실시간 교정과 \'전체\' 교정은 동의와 상관없이 기기 안에서만 돌아요. 자세한 내용은 더보기 → 개인정보 처리방침.</string>
-    <string name="ai_consent_agree">동의하고 쓰기</string>
-    <string name="ai_consent_decline">안 쓸래요</string>
-    <string name="ai_consent_done">동의했어요. AI 버튼을 다시 눌러 주세요.</string>
+    <string name="privacy_notice">실시간 교정과 \'전체\' 교정은 전부 기기 안에서 처리해요. 글이 기기 밖으로 나가는 건 AI 교정·AI 번역을 직접 누를 때뿐이에요. 비밀번호·이메일·URL 입력란에서는 교정도 AI 도 자동으로 꺼져요.</string>
     <!-- 사용법. 첫 화면 '써 보기' 밑에 그림으로 들어간다. 도구 줄을 그대로 그려 놓고
          동그라미를 누르면 막대기가 그 자리를 가리키며 설명이 뜬다. 글로만 늘어놓으면
          어느 동그라미 이야기인지 짚어 가며 읽어야 한다. -->

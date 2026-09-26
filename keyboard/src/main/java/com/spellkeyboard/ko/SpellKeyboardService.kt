@@ -788,24 +788,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     /** 서버 번역을 쓸 수 있는가. 구독자 전용이고 서버가 있어야 한다. */
     private fun canPolish(): Boolean =
-        !polishing && Prefs.aiAvailable() && isSubscriber() && currentInputConnection != null &&
-            Prefs.aiConsented(this)
-
-    /**
-     * AI 로 글을 보내도 된다고 동의했는가. 아직이면 동의 창을 띄우고 false.
-     *
-     * 글이 기기 밖으로 나가는 문은 셋이다 — AI 교정, 입력란 통째 번역, 번역 입력줄의 엔터
-     * ([canPolish]). 앞의 둘은 여기서 묻고, 엔터는 묻지 않고 기기 번역으로 보낸다(보내려던
-     * 글을 창으로 가로막지 않는다).
-     */
-    private fun aiConsentGiven(): Boolean {
-        if (Prefs.aiConsented(this)) return true
-        startActivity(
-            Intent(this, AiConsentActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-        return false
-    }
+        !polishing && Prefs.aiAvailable() && isSubscriber() && currentInputConnection != null
 
     /** 서버가 마지막으로 알려 준 요금제. 폰의 숫자는 못 믿지만 기능을 여는 데는 이걸로 충분하다 —
      *  진짜 판단은 서버가 한다. 구독자가 아닌데 보내도 서버가 막는다. */
@@ -887,7 +870,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             notify(getString(R.string.ai_no_key))
             return
         }
-        if (!aiConsentGiven()) return
         // 입력줄이 열려 있으면 닫는다. 여기서 옮기는 것은 입력란의 글이다.
         if (translating) exitTranslate()
 
@@ -1031,7 +1013,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             notify(getString(R.string.ai_no_key))
             return
         }
-        if (!aiConsentGiven()) return
 
         // 되읽기가 안 되는 앱에서는 우리가 써 넣은 사본으로 대신한다. 온디바이스 교정이
         // 쓰는 것과 같은 폴백이다 — 이게 없으면 그런 앱에서 AI 만 영영 안 된다.

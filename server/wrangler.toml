@@ -21,6 +21,9 @@ new_sqlite_classes = ["GoogleRelay"]
 
 [vars]
 PLAY_PACKAGE = "com.spellkeyboard.ko"
+# 개인정보 처리방침·이용약관 아래에 "문의:" 로 뜬다. 앱의 strings.xml support_email 과 같게 둔다.
+# 공개하려고 둔 주소라 여기 적어도 된다. 운영자 이름(OPERATOR_NAME)은 정해지면 이 밑에 넣는다.
+CONTACT_EMAIL = "tamtech828282@gmail.com"
 # 구글 로그인에서 받아 줄 OAuth 클라이언트 ID(쉼표로 여럿). ID 토큰의 `aud` 가 여기 있어야
 # 통과한다 — 이 검사가 없으면 **남의 앱에 발급된 멀쩡한 구글 토큰으로도** 우리 계정에
 # 들어온다. 비어 있으면 로그인을 아예 안 받는다(503).

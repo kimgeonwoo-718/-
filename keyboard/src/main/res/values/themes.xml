@@ -9,14 +9,4 @@
         <item name="android:textColorPrimary">@color/toss_text</item>
         <item name="android:textColorSecondary">@color/toss_text2</item>
     </style>
-
-    <!-- 키보드 위에 뜨는 작은 창(AI 전송 동의). 뒤의 앱이 비쳐 보여야 "잠깐 묻는 것" 으로 읽힌다. -->
-    <style name="Theme.SpellKeyboard.Dialog" parent="Theme.AppCompat.DayNight.Dialog">
-        <item name="windowNoTitle">true</item>
-        <item name="android:windowMinWidthMajor">80%</item>
-        <item name="android:windowMinWidthMinor">90%</item>
-        <item name="colorAccent">@color/toss_blue</item>
-        <item name="android:textColorPrimary">@color/toss_text</item>
-        <item name="android:textColorSecondary">@color/toss_text2</item>
-    </style>
 </resources>
