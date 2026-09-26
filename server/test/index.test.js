@@ -516,6 +516,22 @@ test('개인정보 처리방침 페이지는 키 없이도 뜬다', async () => 
   assert.ok(!body.includes('문의:'), '연락처가 설정돼 있지 않으면 빈 줄을 만들지 않는다');
 });
 
+test('개인정보 처리방침은 실제로 보내는 곳을 적는다', async () => {
+  // 기본 모델 이름(OPENAI_MODEL)은 늘 있다. 그걸 보고 OpenAI 라고 적으면 안 된다.
+  const google = await (await handle(new Request('https://spell.test/privacy'),
+    env({ AI_PROVIDER: 'gemini', OPENAI_MODEL: 'gpt-5-nano' }))).text();
+  assert.match(google, /Google Gemini API/);
+  assert.ok(!google.includes('OpenAI'), '구글로 보내는데 OpenAI 라고 적혀 있다');
+  const openai = await (await handle(new Request('https://spell.test/privacy'),
+    env({ AI_PROVIDER: 'openai', OPENAI_API_KEY: 'k' }))).text();
+  assert.match(openai, /OpenAI API/);
+});
+
+test('health 는 어느 AI 로 보내는지 알려 준다', async () => {
+  const res = await handle(new Request('https://spell.test/health'), env({ AI_PROVIDER: 'gemini', OPENAI_API_KEY: 'k' }));
+  assert.deepEqual(await res.json(), { ok: true, provider: 'gemini' });
+});
+
 test('개인정보 처리방침은 계정과 탈퇴를 설명한다', async () => {
   // Play 는 계정을 만드는 앱에 "웹에서 삭제를 요청하는 길" 을 요구한다. 이 페이지의
   // #delete 가 그 자리다.

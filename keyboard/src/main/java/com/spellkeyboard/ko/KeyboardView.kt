@@ -327,6 +327,22 @@ class KeyboardView @JvmOverloads constructor(
         addView(emojiPanel, LayoutParams(LayoutParams.MATCH_PARENT, dp(CLIPBOARD_HEIGHT_DP)))
 
         applyAppearance(force = true)
+        padForNavigationBar()
+    }
+
+    /**
+     * Android 15(targetSdk 35) 부터 키보드 창이 내비게이션 바 밑까지 그려진다. 그대로 두면 맨 아랫줄
+     * (스페이스·엔터)이 제스처 막대나 세 단추에 가린다. 바가 차지한 높이만큼 아래를 띄운다.
+     * 그보다 낮은 버전은 시스템이 창을 바 위에 올려 주므로 손대지 않는다 — 두 번 띄우게 된다.
+     */
+    private fun padForNavigationBar() {
+        if (android.os.Build.VERSION.SDK_INT < 35) return
+        setOnApplyWindowInsetsListener { view, insets ->
+            val bottom = insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom
+            view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, bottom)
+            insets
+        }
+        requestApplyInsets()
     }
 
     /** '교정' 동그라미의 켜짐 표시. 켜져 있으면 강조색, 꺼져 있으면 흐리게. */

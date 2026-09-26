@@ -4,6 +4,7 @@
   실시간 교정 스위치와 자판 모양(종류·밝기·배경·투명도). 첫 화면과 같은 토스 톤을 쓴다.
 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:fitsSystemWindows="true"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/settings_scroll"
     android:layout_width="match_parent"
@@ -209,5 +210,17 @@
             android:layout_marginTop="20dp"
             android:paddingHorizontal="4dp"
             android:text="@string/privacy_notice" />
+
+        <TextView
+            android:id="@+id/ai_consent_withdraw"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="8dp"
+            android:text="@string/ai_consent_withdraw"
+            android:textColor="@color/toss_blue"
+            android:textSize="14sp"
+            android:visibility="gone" />
     </LinearLayout>
 </ScrollView>

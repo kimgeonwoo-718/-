@@ -2660,3 +2660,30 @@ LIVE 짚기는 뺐다(한 쪽에 작대기 둘은 어수선하고, LIVE 는 2쪽
 - 출처 문제가 생기면 `tools/sounds/sealion.py` 의 합성 소리(`tools/sounds/out/`)로 되돌린다.
   녹음의 특징값에 맞춰 만든 것이라 느낌은 비슷하다. 되돌릴 때는 `KeySounds` 의 글자 키 목록을 넷으로.
 
+
+## 출시 준비 — 16KB, SDK 36, AI 전송 동의, 방침의 보내는 곳 (2026-09-26)
+
+출시 전 체크리스트의 필수 1·2·4·12번.
+
+- **Kiwi v0.23.2 → v0.24.0.** 옛 판의 `libKiwiJava.so` 는 LOAD 정렬이 4KB 였다. Play 는
+  16KB 페이지 기기 때문에 네이티브 라이브러리를 16KB 로 정렬하라고 요구한다(안 되면 올리기가
+  막힌다). v0.24.0 은 16384. API 는 더해지기만 해서 우리 코드는 그대로다.
+- **targetSdk·compileSdk 36, AGP 8.10.1.** 35부터 **가장자리까지 그리기(edge-to-edge)** 가 강제다.
+  - 설정·첫 화면·결제 화면: 뿌리에 `fitsSystemWindows="true"` — 상태 표시줄·내비 막대 밑으로
+    글이 안 들어가게.
+  - 키보드: `KeyboardView.padForNavigationBar()` 가 내비 막대 높이만큼 밑을 띄운다(35 이상에서만).
+  - 36 은 **뒤로 가기 예측**(predictive back)이라 `onBackPressed` 가 안 불린다. 첫 화면은
+    `OnBackPressedCallback` 으로 바꿨다(안내 끝내기 → 서랍 닫기 → 그 외엔 원래대로).
+  - **기기에서 볼 것:** 키보드 밑이 내비 막대에 안 가리는가, 첫 화면 글이 상태 표시줄 밑에 안
+    깔리는가, 뒤로 가기가 안내·서랍을 먼저 닫는가.
+- **AI 전송 동의(`AiConsentActivity`).** 설정의 문구가 "타이핑한 내용은 기기 밖으로 나가지
+  않아요" 였다 — AI 를 누르면 나가니 틀렸다. 이제 AI 교정·입력란 통째 번역을 **처음** 누르면
+  무엇이 어디로 가는지 보여 주고 동의를 받는다(`Prefs.aiConsented`). 동의 전에는 안 보낸다.
+  번역 입력줄의 엔터(구독자 서버 번역)는 창으로 가로막지 않고, 동의 전이면 기기 번역으로 보낸다.
+  설정 맨 밑 "AI 전송 동의 거두기" 로 되돌린다.
+- **방침 페이지가 OpenAI 라고 적고 있었다(12번에서 찾음).** `privacyPage` 가 `openAiModel(env)`
+  로 갈랐는데, 그건 기본 모델 이름 때문에 늘 참이다. 실제로는 `AI_PROVIDER = "gemini"` 로 구글에
+  보내고 있었다. `provider(env)` 로 바꿨고, `/health` 가 `provider` 를 실어 배포 기록에 찍힌다 —
+  OpenAI 키가 비밀값에 남아 있어도 `AI_PROVIDER` 가 gemini 로 못박혀 있어 그쪽으로 새지 않는다.
+- **남은 것(6번):** `strings.xml` 의 `support_email`, 서버 `CONTACT_EMAIL`·`OPERATOR_NAME`.
+  사용자가 주소와 운영자 이름을 정하면 넣는다.

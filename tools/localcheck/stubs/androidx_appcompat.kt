@@ -1,6 +1,7 @@
 package androidx.appcompat.app
 
 open class AppCompatActivity : android.app.Activity() {
+    val onBackPressedDispatcher: androidx.activity.OnBackPressedDispatcher = androidx.activity.OnBackPressedDispatcher()
     fun <I, O> registerForActivityResult(
         contract: androidx.activity.result.contract.ActivityResultContract<I, O>,
         callback: (O) -> Unit

@@ -51,7 +51,9 @@ val googleClientId: String = (System.getenv("GOOGLE_CLIENT_ID")
  * AAR(10MB)과 모델(84MB)은 **저장소에 넣지 않고 빌드할 때 받는다.** 둘 다 남의 산출물이고,
  * 합쳐 94MB 를 git 에 넣으면 clone 이 그만큼 무거워진다.
  */
-val kiwiVersion = "v0.23.2"
+// v0.24.0: 네이티브 라이브러리가 16KB 페이지 정렬이다. Play 는 Android 15+ 를 겨냥하는 앱에
+// 16KB 정렬을 요구해서 v0.23.2(4KB)로는 등록이 거절된다. 자바 쪽은 더해지기만 해서 코드는 그대로다.
+val kiwiVersion = "v0.24.0"
 val kiwiHome: File = layout.buildDirectory.dir("kiwi").get().asFile
 val kiwiAar: File = File(kiwiHome, "kiwi-android-$kiwiVersion.aar")
 val kiwiModelAssets: File = File(kiwiHome, "assets")
@@ -103,12 +105,16 @@ val keystoreFile: File? = System.getenv("KEYSTORE_FILE")?.let { file(it) }?.take
 
 android {
     namespace = "com.spellkeyboard.ko"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.spellkeyboard.ko"
         minSdk = 24
-        targetSdk = 34
+        // Play 는 매년 8월 말에 새 앱의 최소 targetSdk 를 올린다(2025→35, 2026→36).
+        // 35 부터 화면이 상태바·내비게이션 바 밑까지 그려지고(edge-to-edge), 36 부터 뒤로 가기가
+        // onBackPressed 로 안 온다 — 둘 다 대비해 뒀다(fitsSystemWindows, OnBackPressedCallback,
+        // KeyboardView 의 아래 여백).
+        targetSdk = 36
         // Play 는 올릴 때마다 versionCode 가 커져야 한다. CI 가 실행 번호를 넣어 준다.
         versionCode = (System.getenv("VERSION_CODE")?.toIntOrNull()) ?: 1
         versionName = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "0.1"

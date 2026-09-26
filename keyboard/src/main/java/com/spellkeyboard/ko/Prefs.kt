@@ -28,6 +28,7 @@ object Prefs {
     private const val KEY_QUOTA_UNIT = "quota_unit"
     private const val KEY_SOUND_PACK = "sound_pack"
     private const val KEY_SOUND_VOLUME = "sound_volume"
+    private const val KEY_AI_CONSENT = "ai_consent"
 
     fun autoCorrectEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_AUTO_CORRECT, true)
@@ -129,6 +130,17 @@ object Prefs {
 
     fun setOnboardingSeen(context: Context, seen: Boolean) {
         prefs(context).edit().putBoolean(KEY_ONBOARDING_SEEN, seen).apply()
+    }
+
+    /**
+     * AI 로 글을 보내는 데 동의했는가. AI 교정·AI 번역을 **처음** 누를 때 [AiConsentActivity] 가
+     * 묻는다. 동의 전에는 한 글자도 기기 밖으로 안 나간다. 설정에서 언제든 거둘 수 있다.
+     */
+    fun aiConsented(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AI_CONSENT, false)
+
+    fun setAiConsented(context: Context, consented: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AI_CONSENT, consented).apply()
     }
 
     // --- AI 경로 ----------------------------------------------------------------

@@ -128,7 +128,9 @@ export async function handle(request, env, deps = {}) {
   const now = deps.now ?? (() => Date.now());
   const url = new URL(request.url);
 
-  if (url.pathname === '/health') return json(200, { ok: true });
+  // 어느 AI 로 보내는지도 싣는다. 비밀이 아니고(방침 페이지에도 적힌다), 배포 기록에서
+  // "OpenAI 키가 남아 있어 그쪽으로 새는가" 를 값 한 푼 안 들이고 확인하는 자리다.
+  if (url.pathname === '/health') return json(200, { ok: true, provider: provider(env) });
   // Play 는 키보드 앱에 개인정보 처리방침 주소를 요구한다. 따로 호스팅할 데가 없어 여기서 낸다.
   if (request.method === 'GET' && url.pathname === '/privacy') return privacyPage(env);
   if (request.method === 'GET' && url.pathname === '/terms') return termsPage(env);
@@ -747,13 +749,16 @@ ${operator}${contact}
 }
 
 /** 두 문서의 시행일. 내용을 바꾸면 같이 올린다. */
-const DOCS_EFFECTIVE = '2026-09-24';
+const DOCS_EFFECTIVE = '2026-09-26';
 
 function privacyPage(env) {
   // 어느 회사로 보내는지는 방침의 핵심이라 실제 설정을 그대로 따라가게 둔다.
-  const provider = openAiModel(env) ? 'OpenAI API' : 'Google Gemini API';
-  const providerName = openAiModel(env) ? 'OpenAI' : 'Google';
-  const aiAbroad = openAiModel(env)
+  // **실제로 보내는 곳(provider)** 을 봐야 한다. 예전에는 openAiModel(env) 를 봤는데, 그건
+  // 기본 모델 이름이 늘 있어서 참이다 — 구글로 보내면서 방침에는 OpenAI 라고 적혀 있었다.
+  const openai = provider(env) === 'openai';
+  const providerApi = openai ? 'OpenAI API' : 'Google Gemini API';
+  const providerName = openai ? 'OpenAI' : 'Google';
+  const aiAbroad = openai
     ? '<li><strong>OpenAI (미국)</strong> — AI 교정·번역 처리. 누를 때 그 입력란의 글. 처리 즉시 결과만 돌려받습니다.</li>'
     : '';
   return docPage(env, '개인정보 처리방침', `
@@ -763,7 +768,12 @@ function privacyPage(env) {
 <p>실시간 맞춤법·띄어쓰기 교정과 전체 교정(짧게 누르기)은 <strong>전부 기기 안에서</strong> 처리됩니다. 타이핑한 글은 어디로도 전송되거나 저장되지 않습니다. 비밀번호·이메일·URL 입력란에서는 교정이 자동으로 꺼집니다.</p>
 
 <h2>2. AI 교정·번역 (프리미엄)</h2>
-<p>자판 위 전체 교정이나 번역 버튼을 <strong>직접 꾹 누를 때만</strong>, 그 입력란의 글이 앱 서버를 거쳐 ${provider} 로 전송되고 결과가 돌아옵니다. 서버는 글을 저장하지 않으며, 하루 사용량(글자 수)만 셉니다. ${providerName} 의 처리에는 ${providerName} 의 개인정보 처리방침이 적용됩니다.</p>
+<p>다음 경우에만 글이 앱 서버를 거쳐 ${providerApi} 로 전송되고 결과가 돌아옵니다. <strong>처음 쓸 때 한 번 동의를 받으며</strong>, 동의하기 전에는 보내지 않습니다. 동의는 키보드 맞춤설정에서 언제든 거둘 수 있습니다.</p>
+<ul>
+<li>자판 위 전체 교정이나 번역 버튼을 <strong>직접 꾹 누를 때</strong> — 그 입력란의 글(커서 앞뒤 최대 2,000자).</li>
+<li>프리미엄 구독자가 번역 입력줄에서 <strong>보내기(엔터)를 누를 때</strong> — 그 입력줄에 쓴 글.</li>
+</ul>
+<p>치는 동안 저절로 보내는 일은 없습니다. 비밀번호·이메일·URL 입력란의 글은 보내지 않습니다. 서버는 글을 저장하지 않으며, 하루 사용량(글자 수)만 셉니다. ${providerName} 의 처리에는 ${providerName} 의 개인정보 처리방침이 적용됩니다.</p>
 
 <h2>3. 서버가 보관하는 것</h2>
 <ul>
@@ -780,7 +790,7 @@ function privacyPage(env) {
 <p>서비스 제공을 위해 아래 업체의 해외 서버에서 정보가 처리됩니다. 보관 기간은 위 3번과 같습니다.</p>
 <ul>
 <li><strong>Cloudflare (미국 등)</strong> — 앱 서버 운영. 위 3번의 정보.</li>
-<li><strong>Google (미국)</strong> — ${openAiModel(env) ? '' : 'AI 교정·번역 처리(누를 때 그 입력란의 글), '}구독 확인(구매 토큰), 로그인 확인(구글이 발급한 로그인 증명).</li>
+<li><strong>Google (미국)</strong> — ${openai ? '' : 'AI 교정·번역 처리(누를 때 그 입력란의 글), '}구독 확인(구매 토큰), 로그인 확인(구글이 발급한 로그인 증명).</li>
 ${aiAbroad}
 </ul>
 

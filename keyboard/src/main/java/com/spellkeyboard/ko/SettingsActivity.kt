@@ -54,17 +54,36 @@ class SettingsActivity : AppCompatActivity() {
         bindCorrection()
         bindKeyboard()
         bindSound()
+        bindAiConsent()
     }
 
     override fun onResume() {
         super.onResume()
         // 자판 위 '교정' 버튼으로 껐다 켜고 돌아올 수 있다. 스위치가 그걸 따라가야 한다.
         findViewById<CompoundButton>(R.id.auto_correct_switch).isChecked = Prefs.autoCorrectEnabled(this)
+        showAiConsent()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putInt(KEY_SCROLL, findViewById<View>(R.id.settings_scroll).scrollY)
+    }
+
+    // --- AI 전송 동의 -------------------------------------------------------------
+
+    /** 동의한 사람에게만 '거두기' 가 보인다. 거두면 다음 AI 버튼에서 다시 묻는다. */
+    private fun bindAiConsent() {
+        findViewById<View>(R.id.ai_consent_withdraw).setOnClickListener {
+            Prefs.setAiConsented(this, false)
+            Toast.makeText(this, R.string.ai_consent_withdrawn, Toast.LENGTH_LONG).show()
+            showAiConsent()
+        }
+        showAiConsent()
+    }
+
+    private fun showAiConsent() {
+        findViewById<View>(R.id.ai_consent_withdraw).visibility =
+            if (Prefs.aiConsented(this)) View.VISIBLE else View.GONE
     }
 
     // --- 교정 -----------------------------------------------------------------

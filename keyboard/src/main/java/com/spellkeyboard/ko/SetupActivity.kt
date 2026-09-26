@@ -7,6 +7,7 @@ import android.provider.Settings
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
@@ -35,6 +36,7 @@ class SetupActivity : AppCompatActivity() {
         AppCompatDelegate.setDefaultNightMode(Prefs.themeMode(this).nightMode())
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_setup)
+        onBackPressedDispatcher.addCallback(this, backHandler)
         // 키보드 맞춤설정에서 테마를 바꾸고 돌아오면 이 화면도 통째로 다시 만들어진다. 스크롤
         // 위치를 살려 놓지 않으면 맨 위로 튄다. 레이아웃이 끝난 뒤에 옮겨야 한다.
         savedInstanceState?.getInt(KEY_SCROLL, 0)?.takeIf { it > 0 }?.let { y ->
@@ -77,16 +79,21 @@ class SetupActivity : AppCompatActivity() {
     /**
      * 둘러보기 중이면 둘러보기를, 서랍이 열려 있으면 서랍만 닫는다. 앱이 통째로 닫히면 당황스럽다.
      *
-     * 옛 방식(onBackPressed)이지만 여기 한 곳뿐이라 이걸로 둔다. 앱이 새 뒤로 가기 방식
-     * (enableOnBackInvokedCallback)을 켜지 않아서 그대로 불린다.
+     * targetSdk 36 부터 뒤로 가기가 onBackPressed 로 오지 않는다(예측 뒤로 가기). 그래서
+     * [OnBackPressedCallback] 으로 받는다. 닫을 것이 없으면 잠깐 꺼서 기본 동작(앱 닫기)으로 넘긴다.
      */
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        val drawer = more
-        when {
-            tour?.isShowing == true -> tour?.finish()
-            drawer != null && drawer.isOpen -> drawer.close()
-            else -> super.onBackPressed()
+    private val backHandler = object : OnBackPressedCallback(true) {
+        override fun handleOnBackPressed() {
+            val drawer = more
+            when {
+                tour?.isShowing == true -> tour?.finish()
+                drawer != null && drawer.isOpen -> drawer.close()
+                else -> {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
         }
     }
 
