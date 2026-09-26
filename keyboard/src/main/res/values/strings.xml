@@ -146,6 +146,17 @@
     <string name="setting_theme">테마</string>
     <string name="setting_theme_light">밝게</string>
     <string name="setting_theme_dark">어둡게</string>
+    <string name="setting_theme_sealion">바다사자</string>
+    <string name="section_sound">소리</string>
+    <string name="setting_key_sound">키 소리</string>
+    <string name="setting_key_sound_sub">무음·진동 모드에서는 소리가 안 나요</string>
+    <string name="setting_sound_none">끔</string>
+    <string name="setting_sound_sealion">바다사자</string>
+    <string name="setting_sound_volume">소리 크기</string>
+    <string name="setting_sound_volume_value">%1$d%%</string>
+    <string name="premium_only_sealion">바다사자 테마·소리는 프리미엄 구독자 전용이에요</string>
+    <string name="premium_lock_suffix">%1$s 🔒</string>
+    <string name="key_space">스페이스</string>
     <string name="setting_background">배경 사진</string>
     <string name="setting_background_pick">고르기</string>
     <string name="setting_background_clear">지우기</string>

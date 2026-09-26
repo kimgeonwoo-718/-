@@ -26,6 +26,8 @@ object Prefs {
     private const val KEY_QUOTA_REMAINING = "quota_remaining"
     private const val KEY_QUOTA_LIMIT = "quota_limit"
     private const val KEY_QUOTA_UNIT = "quota_unit"
+    private const val KEY_SOUND_PACK = "sound_pack"
+    private const val KEY_SOUND_VOLUME = "sound_volume"
 
     fun autoCorrectEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_AUTO_CORRECT, true)
@@ -43,6 +45,35 @@ object Prefs {
     fun setThemeMode(context: Context, mode: ThemeMode) {
         prefs(context).edit().putString(KEY_THEME, mode.name).apply()
     }
+
+    /**
+     * 실제로 쓸 테마. 바다사자는 구독자 것이라, 구독이 끝났으면 저장된 값과 상관없이
+     * 밝게로 그린다(저장된 값은 두어 다시 구독하면 되살아나게).
+     */
+    fun effectiveTheme(context: Context): ThemeMode {
+        val chosen = themeMode(context)
+        return if (chosen.premium && !Premium.active(context)) ThemeMode.LIGHT else chosen
+    }
+
+    // --- 소리 ------------------------------------------------------------------
+
+    fun soundPack(context: Context): SoundPack =
+        runCatching { SoundPack.valueOf(prefs(context).getString(KEY_SOUND_PACK, "").orEmpty()) }
+            .getOrDefault(SoundPack.NONE)
+
+    fun setSoundPack(context: Context, pack: SoundPack) {
+        prefs(context).edit().putString(KEY_SOUND_PACK, pack.name).apply()
+    }
+
+    /** 키 소리 크기(0~100). */
+    fun soundVolume(context: Context): Int =
+        prefs(context).getInt(KEY_SOUND_VOLUME, DEFAULT_SOUND_VOLUME).coerceIn(0, 100)
+
+    fun setSoundVolume(context: Context, percent: Int) {
+        prefs(context).edit().putInt(KEY_SOUND_VOLUME, percent.coerceIn(0, 100)).apply()
+    }
+
+    const val DEFAULT_SOUND_VOLUME = 50
 
     /** 한글 자판: 쿼티(두벌식) 또는 천지인. */
     fun layoutType(context: Context): LayoutType =

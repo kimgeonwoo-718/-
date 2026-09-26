@@ -166,6 +166,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             ic.getTextBeforeCursor(maxChars, 0)?.toString().orEmpty()
     }
 
+    /** 소리팩. 소리를 안 쓰는 사람은 소리 파일을 올리지도 않는다([KeySounds.refresh]). */
+    private val keySounds by lazy { KeySounds(this) }
+
     override fun onCreate() {
         super.onCreate()
         loadSpacingDictionary()
@@ -242,6 +245,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onCreateInputView(): View =
         KeyboardView(this).also {
             it.listener = this
+            it.keySound = { kind -> keySounds.play(kind) }
             keyboard = it
         }
 
@@ -266,6 +270,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         syncAutomata()
         // 설정에서 테마나 배경을 바꾸고 돌아왔을 수 있다. 바뀐 게 없으면 싸게 끝난다.
         keyboard?.applyAppearance()
+        // 소리팩도 설정에서 바뀌었을 수 있다(켜기·끄기·크기, 구독 만료).
+        keySounds.refresh()
         // 비밀번호 입력란에서는 교정을 아예 내놓지 않는다. 기기 안에서 도는 일이라도
         // 비밀번호를 고쳐 주는 것은 도움이 아니라 사고다.
         // 다만 자동 교정 스위치와는 묶지 않는다 — 그건 실시간 교정만 끄는 스위치다.
@@ -294,6 +300,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         session.engine.typoFixer = null
         runCatching { kiwi?.close() }
         kiwi = null
+        keySounds.release()
         super.onDestroy()
     }
 

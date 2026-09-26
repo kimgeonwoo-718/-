@@ -114,6 +114,9 @@ class KeyboardView @JvmOverloads constructor(
 
     var listener: Listener? = null
 
+    /** 키를 누르는 순간 불린다. 소리팩([KeySounds])이 여기서 소리를 낸다. */
+    var keySound: ((KeySound) -> Unit)? = null
+
     private var mode = KeyboardMode.KOREAN
     private var shifted = false
     private var symbolPage = 0
@@ -545,7 +548,9 @@ class KeyboardView @JvmOverloads constructor(
     private fun updateBackground() {
         val source = photo
         if (source == null || width <= 0 || height <= 0) {
-            background = ColorDrawable(theme.background)
+            // 사진이 없으면 테마 그림(바다사자 바다), 그것도 없으면 바탕색.
+            val art = theme.backgroundArt.takeIf { it != 0 }?.let { ContextCompat.getDrawable(context, it) }
+            background = art ?: ColorDrawable(theme.background)
             return
         }
         val scale = maxOf(width / source.width.toFloat(), height / source.height.toFloat())
@@ -1045,10 +1050,18 @@ class KeyboardView @JvmOverloads constructor(
         repeatable: Boolean = false,
         letterKey: Boolean = false
     ) {
-        val view = keyView(label, keyBackground(isAction = !letterKey))
+        // 테마가 스페이스에 글자를 얹을 수 있다(바다사자 테마의 🦭).
+        val shown = if (action == KeyAction.SPACE && label.isEmpty()) theme.spaceLabel else label
+        val view = keyView(shown, keyBackground(isAction = !letterKey))
+        if (action == KeyAction.SPACE && shown.isNotEmpty()) view.contentDescription = context.getString(R.string.key_space)
+        val sound = when (action) {
+            KeyAction.BACKSPACE -> KeySound.DELETE
+            KeyAction.ENTER -> KeySound.ENTER
+            else -> KeySound.LETTER
+        }
         val touch =
             if (action == KeyAction.SPACE) spaceTouch(view)
-            else charTouch(view, onPress = { listener?.onAction(action) }, repeatable = repeatable)
+            else charTouch(view, onPress = { listener?.onAction(action) }, repeatable = repeatable, sound = sound)
         addPadKey(view, weight, touch)
     }
 
@@ -1091,6 +1104,7 @@ class KeyboardView @JvmOverloads constructor(
                 HapticFeedbackConstants.KEYBOARD_TAP,
                 HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
             )
+            keySound?.invoke(KeySound.SPACE)
             repeatHandler.postDelayed(enterCursorMode, SPACE_HOLD_MS)
             // 다음 키가 눌리면 그 키보다 먼저 이 스페이스를 넣는다.
             heldSpaceFlush = {
@@ -1273,7 +1287,9 @@ class KeyboardView @JvmOverloads constructor(
         key: View,
         onPress: () -> Unit,
         alternate: Char? = null,
-        repeatable: Boolean = false
+        repeatable: Boolean = false,
+        /** null 이면 소리를 안 낸다 — 자판 밖 도구 줄 단추가 그렇다. */
+        sound: KeySound? = KeySound.LETTER
     ): KeyTouch = object : KeyTouch {
         // **이 상태는 키마다 따로 있어야 한다.** 빠르게 치면 앞 손가락이 떨어지기 전에
         // 다음 손가락이 닿아서 두 키가 동시에 눌린 상태가 된다. 상태를 하나로 공유하면
@@ -1296,6 +1312,7 @@ class KeyboardView @JvmOverloads constructor(
                 HapticFeedbackConstants.KEYBOARD_TAP,
                 HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
             )
+            sound?.let { keySound?.invoke(it) }
             onPress()
             showPreview?.let { repeatHandler.postDelayed(it, LONG_PRESS_MS) }
             if (repeatable) repeatHandler.postDelayed(repeatBackspace, REPEAT_DELAY_MS)
@@ -1396,7 +1413,7 @@ class KeyboardView @JvmOverloads constructor(
      */
     @SuppressLint("ClickableViewAccessibility")
     private fun attachKeyTouch(view: View, onPress: () -> Unit) {
-        val touch = charTouch(view, onPress)
+        val touch = charTouch(view, onPress, sound = null)
         view.setOnTouchListener { target, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> touch.down(event.x, event.y)

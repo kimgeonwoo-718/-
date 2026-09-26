@@ -53,4 +53,14 @@
     <color name="toss_green">#00B26B</color>
     <!-- 결제 화면 비교표의 ✗. 무료에 없는 것이 한눈에 보여야 한다. -->
     <color name="toss_red">#F04452</color>
+    <!-- 바다사자 테마(구독자 전용). 밝은 바다, 모래빛 기능 키, 비치볼 주황 강조. -->
+    <color name="sealion_background">#7ACDE6</color>
+    <color name="sealion_key">#FFFFFF</color>
+    <color name="sealion_action_key">#F3DDB3</color>
+    <color name="sealion_pressed">#BDE6F2</color>
+    <color name="sealion_text">#123B52</color>
+    <color name="sealion_hint">#4E7587</color>
+    <color name="sealion_accent">#F28A2E</color>
+    <color name="sealion_on_accent">#FFFFFF</color>
+    <color name="sealion_shadow">#2B7FA0</color>
 </resources>

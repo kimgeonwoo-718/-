@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  바다사자 테마의 바탕 그림(구독자 전용). 코드로 그린 벡터라 어느 화면 크기에서도 깨지지 않는다.
+  키보드 크기에 맞춰 늘어나므로 비율이 조금 달라져도 괜찮은 그림(하늘·바다·파도)으로 했다.
+  진짜 그림으로 바꾸려면 이 파일 대신 같은 이름의 PNG(drawable-nodpi/sealion_background.png)를 넣으면 된다.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="400dp"
+    android:height="300dp"
+    android:viewportWidth="400"
+    android:viewportHeight="300">
+
+    <!-- 하늘과 바다. 자판 윗줄(도구 줄, 위 16% 쯤)만 키에 안 가리므로 볼거리는 거기 둔다. -->
+    <path android:fillColor="#CFF0F9" android:pathData="M0,0 H400 V30 H0 Z" />
+    <path android:fillColor="#9CDBEC" android:pathData="M0,30 H400 V110 H0 Z" />
+    <path android:fillColor="#78C9E2" android:pathData="M0,110 H400 V200 H0 Z" />
+    <path android:fillColor="#58B4D4" android:pathData="M0,200 H400 V300 H0 Z" />
+
+    <!-- 해 -->
+    <path android:fillColor="#FFF1A8" android:pathData="M245,14 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0 Z" />
+
+    <!-- 파도: 키 사이로 비친다 -->
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.55"
+        android:pathData="M0,34 Q25,26 50,34 T100,34 T150,34 T200,34 T250,34 T300,34 T350,34 T400,34 V42 H0 Z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.35"
+        android:pathData="M0,115 Q25,107 50,115 T100,115 T150,115 T200,115 T250,115 T300,115 T350,115 T400,115 V122 H0 Z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.3"
+        android:pathData="M0,205 Q25,197 50,205 T100,205 T150,205 T200,205 T250,205 T300,205 T350,205 T400,205 V212 H0 Z" />
+
+    <!-- 물 위로 머리만 내민 새끼 바다사자 -->
+    <group android:translateX="283" android:translateY="20" android:scaleX="0.28" android:scaleY="0.28">
+        <path android:fillColor="#946443" android:pathData="M57,18 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0 Z" />
+        <path android:fillColor="#B98A63" android:pathData="M73,22 a7,4.5 0 1,0 14,0 a7,4.5 0 1,0 -14,0 Z" />
+        <path android:fillColor="#2A1A10" android:pathData="M84.2,20 a1.8,1.8 0 1,0 3.6,0 a1.8,1.8 0 1,0 -3.6,0 Z" />
+        <path android:fillColor="#2A1A10" android:pathData="M68,14 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 Z" />
+    </group>
+
+    <!-- 바위와 바다사자: 도구 줄 오른쪽 빈자리 -->
+    <path android:fillColor="#8A9A9B"
+        android:pathData="M318,52 C322,40 352,34 380,36 C394,37 400,40 400,52 Z" />
+    <path android:fillColor="#A3B3B4"
+        android:pathData="M330,46 C340,40 360,38 378,40 C360,42 344,44 330,46 Z" />
+
+    <group android:translateX="340" android:translateY="3" android:scaleX="0.4" android:scaleY="0.4">
+        <path android:fillColor="#8B5E3C"
+            android:pathData="M14,94 C10,74 26,58 44,50 C56,45 60,34 60,24 L76,22 C78,40 72,56 62,66 C54,76 52,86 56,94 Z" />
+        <path android:fillColor="#6B4329"
+            android:pathData="M50,70 C44,80 38,90 28,95 L50,95 C54,86 56,78 56,72 Z" />
+        <path android:fillColor="#6B4329" android:pathData="M16,92 C10,93 4,95 0,98 L22,98 Z" />
+        <path android:fillColor="#946443" android:pathData="M57,18 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0 Z" />
+        <path android:fillColor="#B98A63" android:pathData="M73,22 a7,4.5 0 1,0 14,0 a7,4.5 0 1,0 -14,0 Z" />
+        <path android:fillColor="#2A1A10" android:pathData="M84.2,20 a1.8,1.8 0 1,0 3.6,0 a1.8,1.8 0 1,0 -3.6,0 Z" />
+        <path android:fillColor="#2A1A10" android:pathData="M68,14 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 Z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M70.0,13.3 a0.7,0.7 0 1,0 1.4,0 a0.7,0.7 0 1,0 -1.4,0 Z" />
+        <path android:strokeColor="#5A3A22" android:strokeWidth="0.8"
+            android:pathData="M80,24 L90,27 M80,25 L89,30 M79,23 L90,24" />
+    </group>
+</vector>

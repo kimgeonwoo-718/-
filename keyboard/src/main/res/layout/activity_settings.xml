@@ -92,6 +92,7 @@
                 <LinearLayout style="@style/Segment">
                     <TextView android:id="@+id/theme_light" style="@style/SegmentItem" android:text="@string/setting_theme_light" />
                     <TextView android:id="@+id/theme_dark" style="@style/SegmentItem" android:text="@string/setting_theme_dark" />
+                    <TextView android:id="@+id/theme_sealion" style="@style/SegmentItem" android:text="@string/setting_theme_sealion" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -143,6 +144,59 @@
 
                 <SeekBar
                     android:id="@+id/key_transparency"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:max="100" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 소리 (바다사자 소리팩은 구독자 전용) -->
+        <LinearLayout style="@style/Card">
+            <TextView style="@style/CardTitle" android:text="@string/section_sound" />
+
+            <LinearLayout style="@style/Row">
+                <LinearLayout style="@style/RowText">
+                    <TextView style="@style/RowTitle" android:text="@string/setting_key_sound" />
+                    <TextView style="@style/RowSub" android:text="@string/setting_key_sound_sub" />
+                </LinearLayout>
+                <LinearLayout style="@style/Segment">
+                    <TextView android:id="@+id/sound_none" style="@style/SegmentItem" android:text="@string/setting_sound_none" />
+                    <TextView android:id="@+id/sound_sealion" style="@style/SegmentItem" android:text="@string/setting_sound_sealion" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="14dp"
+                android:paddingBottom="6dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        style="@style/RowTitle"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="@string/setting_sound_volume" />
+
+                    <TextView
+                        android:id="@+id/sound_volume_value"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/toss_blue"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <SeekBar
+                    android:id="@+id/sound_volume"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"

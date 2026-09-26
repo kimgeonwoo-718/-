@@ -53,6 +53,7 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<View>(R.id.back_button).setOnClickListener { finish() }
         bindCorrection()
         bindKeyboard()
+        bindSound()
     }
 
     override fun onResume() {
@@ -93,11 +94,16 @@ class SettingsActivity : AppCompatActivity() {
 
         val light = findViewById<TextView>(R.id.theme_light)
         val dark = findViewById<TextView>(R.id.theme_dark)
-        val currentTheme = Prefs.themeMode(this)
+        val seaLion = findViewById<TextView>(R.id.theme_sealion)
+        // 구독이 끝났으면 저장된 값이 바다사자여도 밝게로 그려진다 — 표시도 실제를 따른다.
+        val currentTheme = Prefs.effectiveTheme(this)
         light.isSelected = currentTheme == ThemeMode.LIGHT
         dark.isSelected = currentTheme == ThemeMode.DARK
+        seaLion.isSelected = currentTheme == ThemeMode.SEA_LION
+        markPremium(seaLion, R.string.setting_theme_sealion)
         light.setOnClickListener { chooseTheme(ThemeMode.LIGHT) }
         dark.setOnClickListener { chooseTheme(ThemeMode.DARK) }
+        seaLion.setOnClickListener { chooseTheme(ThemeMode.SEA_LION) }
 
         backgroundStatus = findViewById(R.id.background_status)
         showBackgroundStatus()
@@ -135,9 +141,63 @@ class SettingsActivity : AppCompatActivity() {
      * 없다. 뒤에 깔린 첫 화면도 돌아갈 때 같은 밝기로 다시 만들어진다.
      */
     private fun chooseTheme(mode: ThemeMode) {
-        if (mode == Prefs.themeMode(this)) return
+        if (mode.premium && !premiumOrPaywall()) return
+        val before = Prefs.effectiveTheme(this)
+        if (mode == before) return
         Prefs.setThemeMode(this, mode)
         AppCompatDelegate.setDefaultNightMode(mode.nightMode())
+        // 밝기가 같은 테마끼리(밝게 ↔ 바다사자)는 화면이 다시 안 만들어져서 선택 표시가 그대로다.
+        if (before.nightMode() == mode.nightMode()) recreate()
+    }
+
+    // --- 소리 -----------------------------------------------------------------
+
+    private fun bindSound() {
+        val none = findViewById<TextView>(R.id.sound_none)
+        val seaLion = findViewById<TextView>(R.id.sound_sealion)
+        markPremium(seaLion, R.string.setting_sound_sealion)
+        fun show() {
+            val chosen = Prefs.soundPack(this)
+            val current = if (chosen.premium && !Premium.active(this)) SoundPack.NONE else chosen
+            none.isSelected = current == SoundPack.NONE
+            seaLion.isSelected = current == SoundPack.SEA_LION
+        }
+        show()
+        none.setOnClickListener { Prefs.setSoundPack(this, SoundPack.NONE); show() }
+        seaLion.setOnClickListener {
+            if (!premiumOrPaywall()) return@setOnClickListener
+            Prefs.setSoundPack(this, SoundPack.SEA_LION)
+            show()
+        }
+
+        val volumeValue = findViewById<TextView>(R.id.sound_volume_value)
+        findViewById<SeekBar>(R.id.sound_volume).apply {
+            fun showVolume(percent: Int) {
+                volumeValue.text = getString(R.string.setting_sound_volume_value, percent)
+            }
+            progress = Prefs.soundVolume(this@SettingsActivity)
+            showVolume(progress)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) = showVolume(value)
+                override fun onStartTrackingTouch(bar: SeekBar) = Unit
+                override fun onStopTrackingTouch(bar: SeekBar) {
+                    Prefs.setSoundVolume(this@SettingsActivity, bar.progress)
+                }
+            })
+        }
+    }
+
+    /** 구독자 전용 항목에 자물쇠를 단다. 구독자에게는 안 단다. */
+    private fun markPremium(view: TextView, label: Int) {
+        view.text = if (Premium.active(this)) getString(label) else getString(R.string.premium_lock_suffix, getString(label))
+    }
+
+    /** 구독자면 true. 아니면 알려 주고 구독 화면을 연다. */
+    private fun premiumOrPaywall(): Boolean {
+        if (Premium.active(this)) return true
+        Toast.makeText(this, R.string.premium_only_sealion, Toast.LENGTH_SHORT).show()
+        startActivity(android.content.Intent(this, PaywallActivity::class.java))
+        return false
     }
 
     private fun showBackgroundStatus() {
@@ -153,6 +213,6 @@ class SettingsActivity : AppCompatActivity() {
 
 /** 앱 화면 밝기. 첫 화면과 키보드 맞춤설정이 같은 값을 따른다. */
 internal fun ThemeMode.nightMode(): Int = when (this) {
-    ThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
+    ThemeMode.LIGHT, ThemeMode.SEA_LION -> AppCompatDelegate.MODE_NIGHT_NO
     ThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
 }
