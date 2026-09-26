@@ -822,9 +822,11 @@ ${aiAbroad}
 <p>인터넷 권한은 AI 교정·번역, 구독 확인, 로그인에만 쓰입니다. 그 외에 연락처·위치·마이크 같은 권한은 요구하지 않습니다.</p>
 
 <h2>11. 개인정보 보호책임자</h2>
+${'' /* 법(개인정보 보호법 30조)은 책임자 "성명 또는 담당 부서의 명칭" 과 연락처를 요구한다.
+      OPERATOR_NAME 이 없으면 담당 이름으로 적는다 — 사용자가 실명을 싣지 않기로 했다(2026-09-26). */}
 <p>개인정보 처리에 관한 문의, 불만, 피해 구제는 아래로 연락해 주세요.</p>
 <ul>
-${env.OPERATOR_NAME ? `<li>개인정보 보호책임자: ${escapeHtml(env.OPERATOR_NAME)}</li>` : ''}
+<li>개인정보 보호책임자: ${env.OPERATOR_NAME ? escapeHtml(env.OPERATOR_NAME) : '맞춤법 키보드 고객지원 담당'}</li>
 ${env.CONTACT_EMAIL ? `<li>연락처: ${escapeHtml(env.CONTACT_EMAIL)}</li>` : ''}
 </ul>
 <p>개인정보 침해에 대한 신고나 상담은 아래 기관에도 할 수 있습니다.</p>

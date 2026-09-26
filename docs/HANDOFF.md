@@ -2687,8 +2687,9 @@ LIVE 짚기는 뺐다(한 쪽에 작대기 둘은 어수선하고, LIVE 는 2쪽
   보내고 있었다. `provider(env)` 로 바꿨고, `/health` 가 `provider` 를 실어 배포 기록에 찍힌다 —
   OpenAI 키가 비밀값에 남아 있어도 `AI_PROVIDER` 가 gemini 로 못박혀 있어 그쪽으로 새지 않는다.
 - **문의 메일(6번):** `tamtech828282@gmail.com` — `strings.xml` 의 `support_email`, 서버
-  `wrangler.toml` 의 `CONTACT_EMAIL`. **운영자 이름(`OPERATOR_NAME`)은 아직 없다** — 방침 페이지에
-  그 줄이 안 뜬다. 정해지면 `wrangler.toml` 에 넣는다.
+  `wrangler.toml` 의 `CONTACT_EMAIL`. **운영자 실명(`OPERATOR_NAME`)은 싣지 않기로 했다**(사용자
+  결정). 법은 책임자 "성명 또는 담당 부서 명칭" 과 연락처를 요구하므로, 방침에는 "맞춤법 키보드
+  고객지원 담당" + 메일로 적힌다. 실명을 싣고 싶어지면 `wrangler.toml` 에 `OPERATOR_NAME` 만 넣으면 된다.
 - **방침에 법정 항목을 채웠다.** 이용자 권리(열람·정정·삭제·처리 정지, 10일 안에 처리), 파기,
   안전성 확보 조치, 만 14세 미만, 개인정보 보호책임자(`OPERATOR_NAME`·`CONTACT_EMAIL`)와 신고 기관.
   `#delete` 앵커는 6번 제목에 그대로 있다(Play 의 삭제 요청 주소).

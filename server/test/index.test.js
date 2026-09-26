@@ -527,6 +527,13 @@ test('개인정보 처리방침은 권리 행사 방법과 보호책임자를 �
   assert.match(body, /118/);
 });
 
+test('운영자 이름이 없으면 보호책임자를 담당 이름으로 적는다', async () => {
+  const body = await (await handle(new Request('https://spell.test/privacy'),
+    env({ CONTACT_EMAIL: 'help@example.com' }))).text();
+  assert.match(body, /개인정보 보호책임자: 맞춤법 키보드 고객지원 담당/);
+  assert.match(body, /연락처: help@example\.com/);
+});
+
 test('개인정보 처리방침은 실제로 보내는 곳을 적는다', async () => {
   // 기본 모델 이름(OPENAI_MODEL)은 늘 있다. 그걸 보고 OpenAI 라고 적으면 안 된다.
   const google = await (await handle(new Request('https://spell.test/privacy'),
