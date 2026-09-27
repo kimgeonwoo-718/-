@@ -331,15 +331,28 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     /**
-     * Android 15(targetSdk 35) 부터 키보드 창이 내비게이션 바 밑까지 그려진다. 그대로 두면 맨 아랫줄
-     * (스페이스·엔터)이 제스처 막대나 세 단추에 가린다. 바가 차지한 높이만큼 아래를 띄운다.
-     * 그보다 낮은 버전은 시스템이 창을 바 위에 올려 주므로 손대지 않는다 — 두 번 띄우게 된다.
+     * Android 15(targetSdk 35) 부터 키보드 창이 화면 맨 밑까지 그려진다. 그대로 두면 맨 아랫줄
+     * (스페이스·엔터)이 밑의 시스템 단추(키보드 바꾸기 ⌨, 내리기 ∨)에 가리고, 가린 곳은 눌러도
+     * 시스템이 받는다 — 스페이스가 반만 눌렸다. 바가 차지한 높이만큼 아래를 띄운다.
+     *
+     * **`navigationBars()` 만 보면 안 된다.** 제스처 내비게이션에서 그 단추 줄은 키보드 창 **안에**
+     * 시스템이 그려 넣는 'IME 내비게이션 바' 이고, 키보드 창에는 **captionBar** 로 알려진다
+     * (AOSP `inputmethodservice/NavigationBarController`). 첫 판은 navigationBars 만 봐서 0 을
+     * 받았고, 삼성 폰에서 아랫줄이 단추 밑에 깔렸다(2026-09-27). 시스템이 그 단추 줄 높이를 잴
+     * 때와 같은 식 — systemBars | displayCutout 의 아래 — 으로 잰다. 세 단추 내비게이션이면
+     * navigationBars 가, 제스처면 captionBar 가 여기에 들어온다.
+     *
+     * 34 이하는 시스템이 창 내용을 바 위로 올려 주므로(decorFitsSystemWindows) 손대지 않는다.
      */
     private fun padForNavigationBar() {
         if (android.os.Build.VERSION.SDK_INT < 35) return
         setOnApplyWindowInsetsListener { view, insets ->
-            val bottom = insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom
-            view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, bottom)
+            val types = android.view.WindowInsets.Type.systemBars() or
+                android.view.WindowInsets.Type.displayCutout()
+            val bottom = insets.getInsets(types).bottom
+            if (view.paddingBottom != bottom) {
+                view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, bottom)
+            }
             insets
         }
         requestApplyInsets()

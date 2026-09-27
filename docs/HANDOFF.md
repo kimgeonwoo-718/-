@@ -2672,6 +2672,11 @@ LIVE 짚기는 뺐다(한 쪽에 작대기 둘은 어수선하고, LIVE 는 2쪽
   - 설정·첫 화면·결제 화면: 뿌리에 `fitsSystemWindows="true"` — 상태 표시줄·내비 막대 밑으로
     글이 안 들어가게.
   - 키보드: `KeyboardView.padForNavigationBar()` 가 내비 막대 높이만큼 밑을 띄운다(35 이상에서만).
+    **첫 판은 `navigationBars()` 만 봐서 삼성 폰에서 0 을 받았다** — 아랫줄이 키보드 바꾸기·내리기
+    단추 밑에 깔리고 스페이스가 반만 눌렸다(2026-09-27 사용자 제보). 제스처 내비게이션에서 그 단추
+    줄은 시스템이 키보드 창 안에 그려 넣는 'IME 내비게이션 바' 이고, 키보드 창에는 **captionBar** 로
+    알려진다(AOSP `NavigationBarController`). 지금은 시스템이 그 줄 높이를 재는 식과 같이
+    `systemBars() | displayCutout()` 의 아래로 잰다.
   - 36 은 **뒤로 가기 예측**(predictive back)이라 `onBackPressed` 가 안 불린다. 첫 화면은
     `OnBackPressedCallback` 으로 바꿨다(안내 끝내기 → 서랍 닫기 → 그 외엔 원래대로).
   - **기기에서 볼 것:** 키보드 밑이 내비 막대에 안 가리는가, 첫 화면 글이 상태 표시줄 밑에 안
