@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  이모티콘 아이콘. 삼성 키보드 도구 줄의 것과 같은 모양 — 동그라미 얼굴에 점 눈, 웃는 입.
+  사용자가 준 삼성 키보드 캡처를 재어(선 굵기·지름·눈 위치) 새로 그렸다. 삼성 그림 파일을 옮긴 것이 아니다.
+  예전에는 글꼴 기호 '☺' 였는데 글꼴마다 모양이 달랐다. 색은 코드에서 테마 글자색으로 입힌다.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <path
+        android:pathData="M12,2.94 A9.06,9.06 0 1 1 11.99,2.94 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#000000"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:pathData="M7.75,10.3 a0.95,0.95 0 1 0 1.9,0 a0.95,0.95 0 1 0 -1.9,0 Z M14.35,10.3 a0.95,0.95 0 1 0 1.9,0 a0.95,0.95 0 1 0 -1.9,0 Z"
+        android:fillColor="#000000" />
+
+    <path
+        android:pathData="M7.95,13.6 A4.05,2.6 0 0 0 16.05,13.6"
+        android:fillColor="#00000000"
+        android:strokeColor="#000000"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

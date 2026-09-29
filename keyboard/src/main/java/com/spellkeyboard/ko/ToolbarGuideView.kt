@@ -53,12 +53,12 @@ class ToolbarGuideView @JvmOverloads constructor(
 
     private val spots = listOf(
         Spot("▲", 9f, R.string.guide_collapse_name, R.string.guide_collapse_desc, bare = true),
-        Spot("☺︎", 15f, R.string.guide_emoji_name, R.string.guide_emoji_desc),
+        Spot("", 0f, R.string.guide_emoji_name, R.string.guide_emoji_desc, icon = R.drawable.ic_emoji),
         Spot("ALL", 9.5f, R.string.guide_all_name, R.string.guide_all_desc),
         Spot("", 0f, R.string.guide_clipboard_name, R.string.guide_clipboard_desc, icon = R.drawable.ic_clipboard),
         Spot("LIVE", 9.5f, R.string.guide_live_name, R.string.guide_live_desc, accent = true),
         Spot("번역", 9.5f, R.string.guide_translate_name, R.string.guide_translate_desc),
-        Spot("⚙︎", 15f, R.string.guide_settings_name, R.string.guide_settings_desc)
+        Spot("", 0f, R.string.guide_settings_name, R.string.guide_settings_desc, icon = R.drawable.ic_settings)
     )
 
     private var selected = 2
@@ -228,6 +228,7 @@ class ToolbarGuideView @JvmOverloads constructor(
         const val CIRCLE = 28f
         const val STICK_H = 26f
         const val BOX_PAD = 2f
-        const val ICON_RATIO = 0.55f
+        /** 자판 도구 줄과 같은 비율 — 28dp 동그라미에 18dp 아이콘 판(KeyboardView.TOOLBAR_ICON_DP). */
+        const val ICON_RATIO = 18f / 28f
     }
 }

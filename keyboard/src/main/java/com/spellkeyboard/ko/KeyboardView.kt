@@ -200,8 +200,10 @@ class KeyboardView @JvmOverloads constructor(
         orientation = VERTICAL
         setPadding(0, dp(2), 0, 0)
 
-        // 컬러 이모지는 삼성 키보드의 단색 선 아이콘과 톤이 어긋난다. 글꼴에 든 기호를 쓴다.
-        emojiButton = toolbarButton("☺\uFE0E") { showEmoji() }
+        // 이모티콘·클립보드·설정은 글자가 아니라 그림이다(삼성 키보드와 같은 모양, styleIconButton).
+        emojiButton = toolbarButton("") { showEmoji() }.apply {
+            contentDescription = context.getString(R.string.emoji_title)
+        }
         // 짧게 누르면 **기기 안에서** 글 전체를 고친다 — 공짜고, 빠르고, 인터넷이 없어도 된다.
         // 길게 누르면 서버 AI(프리미엄). 자주 쓰는 쪽이 짧은 누르기다.
         //
@@ -219,8 +221,6 @@ class KeyboardView @JvmOverloads constructor(
             // 읽어 주는 이름은 우리말로 둔다. 화면에 쓰인 글자는 짧아야 해서 영문이다.
             contentDescription = context.getString(R.string.toolbar_correct_all_desc)
         }
-        // 클립보드는 글꼴 기호로 삼성과 같은 모양이 안 나온다 — '▤' 는 줄 친 네모라 표에
-        // 가깝다. 벡터로 그린 아이콘을 배경에 얹는다(styleClipboardButton).
         clipboardButton = toolbarButton("") { showClipboard() }.apply {
             contentDescription = context.getString(R.string.clipboard_title)
         }
@@ -242,7 +242,9 @@ class KeyboardView @JvmOverloads constructor(
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
-        settingsButton = toolbarButton("⚙\uFE0E") { listener?.onOpenSettings() }
+        settingsButton = toolbarButton("") { listener?.onOpenSettings() }.apply {
+            contentDescription = context.getString(R.string.settings_title)
+        }
 
         // 도구 줄 접기. 안 쓰는 사람에게는 34dp 를 늘 잡아먹는 줄이라, 접으면 자판이
         // 통째로 그만큼 내려앉는다. 접힌 상태에서는 이 손잡이가 줄 전체로 넓어져서
@@ -543,8 +545,10 @@ class KeyboardView @JvmOverloads constructor(
 
     /** 자판 밖의 것들(도구 줄, 클립보드 머리)에 팔레트를 입힌다. 키는 [render] 가 한다. */
     private fun restyle() {
-        listOf(emojiButton, aiButton, settingsButton).forEach { styleToolbarButton(it) }
-        styleClipboardButton()
+        styleToolbarButton(aiButton)
+        styleIconButton(emojiButton, R.drawable.ic_emoji)
+        styleIconButton(clipboardButton, R.drawable.ic_clipboard)
+        styleIconButton(settingsButton, R.drawable.ic_settings)
         styleCollapseButton()
         styleCorrectionButton()
         styleTranslateButton()
@@ -558,19 +562,20 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     /**
-     * 클립보드 동그라미. 글자가 아니라 그림이라 배경을 두 겹으로 쌓는다 — 아래가 동그라미,
-     * 위가 아이콘. 아이콘은 사방에 같은 여백을 두고 넣어서 가운데에 놓이게 한다.
+     * 그림 아이콘 동그라미(이모티콘·클립보드·설정). 글자가 아니라 그림이라 배경을 두 겹으로
+     * 쌓는다 — 아래가 동그라미, 위가 아이콘. 아이콘은 사방에 같은 여백을 두고 넣어서 가운데에
+     * 놓이게 한다. 셋 다 같은 크기·같은 선 굵기라 나란히 놓아도 톤이 맞는다.
      */
-    private fun styleClipboardButton() {
+    private fun styleIconButton(button: TextView, iconRes: Int) {
         val face = circle(keyFill(theme.toolbarButton))
-        val icon = ContextCompat.getDrawable(context, R.drawable.ic_clipboard)?.mutate()
+        val icon = ContextCompat.getDrawable(context, iconRes)?.mutate()
         if (icon == null) {
-            clipboardButton.background = face
+            button.background = face
             return
         }
         icon.setTint(theme.text)
         val inset = (dp(TOOLBAR_BUTTON_DP) - dp(TOOLBAR_ICON_DP)) / 2
-        clipboardButton.background = LayerDrawable(arrayOf(face, InsetDrawable(icon, inset)))
+        button.background = LayerDrawable(arrayOf(face, InsetDrawable(icon, inset)))
     }
 
     private fun styleCorrectionButton() {
@@ -1797,8 +1802,11 @@ class KeyboardView @JvmOverloads constructor(
          */
         const val TOOLBAR_LABEL_SP = 10f
 
-        /** 그림 아이콘이 동그라미 안에서 차지하는 크기. 옆의 글꼴 기호들과 눈높이를 맞춘 값이다. */
-        const val TOOLBAR_ICON_DP = 16
+        /**
+         * 그림 아이콘(24 칸 판)이 동그라미 안에서 차지하는 크기. 삼성 키보드 캡처에서 아이콘 지름이
+         * 동그라미의 절반쯤이었다 — 28dp 동그라미에 18dp 판이면 그 비율이 된다.
+         */
+        const val TOOLBAR_ICON_DP = 18
         const val FLASH_MS = 1600L
         // 삼성 키보드 실측에 맞춘 값. 키는 조금 높고, 틈은 조금 넓다.
         const val KEY_HEIGHT_DP = 48
