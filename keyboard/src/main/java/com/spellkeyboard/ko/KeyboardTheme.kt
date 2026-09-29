@@ -39,6 +39,14 @@ data class KeyboardTheme(
     val keyShadow: Int,
     /** 바탕 그림(drawable). 0 이면 [background] 색만 칠한다. 사용자가 고른 사진이 있으면 사진이 먼저다. */
     val backgroundArt: Int = 0,
+    /**
+     * 바탕 사진(비트맵 drawable). 있으면 [backgroundArt] 보다 먼저다. 사용자 사진처럼 키보드 크기에
+     * 맞춰 가운데를 잘라 깐다 — 그래서 그림은 미리 옆으로 넓혀 둔다(tools/theme/widen.py).
+     * 사용자가 고른 사진이 있으면 사용자 사진이 먼저다.
+     */
+    val backgroundPhoto: Int = 0,
+    /** [backgroundPhoto] 위에서 자판 키가 얼마나 진한가(0~1). 도구 줄 단추는 비치지 않는다. */
+    val photoKeyAlpha: Float = 1f,
     /** 스페이스 키에 쓸 글자. 보통은 비워 둔다. */
     val spaceLabel: String = ""
 ) {
@@ -100,7 +108,12 @@ data class KeyboardTheme(
             onAccent = color(context, R.color.sealion_on_accent),
             panelItem = color(context, R.color.sealion_key),
             keyShadow = color(context, R.color.sealion_shadow),
+            // 사용자가 AI 로 만든 바다사자 그림(2026-09-29). 키는 연하게(35%) 비쳐 그림이 보이고,
+            // 도구 줄 단추는 원래대로 진하게 — 사용자가 미리보기 두 판(55%·35%)을 보고 골랐다.
+            backgroundPhoto = R.drawable.sealion_photo,
+            // 사진을 못 풀었을 때(메모리 부족 등) 깔리는 옛 바다 그림.
             backgroundArt = R.drawable.sealion_background,
+            photoKeyAlpha = 0.35f,
             spaceLabel = "🦭"
         )
 

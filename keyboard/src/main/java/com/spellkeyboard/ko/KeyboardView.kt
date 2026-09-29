@@ -131,6 +131,10 @@ class KeyboardView @JvmOverloads constructor(
     /** 사용자가 고른 배경 사진. 없으면 팔레트의 바탕색. */
     private var photo: Bitmap? = null
     private var photoStamp = -1L
+
+    /** 테마의 바탕 사진(바다사자). 사용자 사진이 없을 때만 깐다. 테마가 바뀔 때 푼다. */
+    private var themePhoto: Bitmap? = null
+    private var themePhotoRes = 0
     private var layoutType: LayoutType = Prefs.layoutType(context)
     private var keyAlpha = alphaFor(Prefs.keyTransparency(context))
 
@@ -426,7 +430,7 @@ class KeyboardView @JvmOverloads constructor(
      */
     private fun styleCollapseButton() {
         collapseButton.setTextColor(theme.hint)
-        collapseButton.background = if (toolbarCollapsed) roundRect(keyFill(theme.toolbarButton)) else null
+        collapseButton.background = if (toolbarCollapsed) roundRect(toolbarFill(theme.toolbarButton)) else null
     }
 
     /** AI 가 도는 동안 AI 버튼을 흐리게. */
@@ -465,7 +469,7 @@ class KeyboardView @JvmOverloads constructor(
         translateSource.setHintTextColor(theme.hint)
         translateTarget.setTextColor(theme.onAccent)
         translateTarget.background = roundRect(theme.accent)
-        translatePanel.background = roundRect(keyFill(theme.panelItem))
+        translatePanel.background = roundRect(toolbarFill(theme.panelItem))
     }
 
     /**
@@ -538,6 +542,18 @@ class KeyboardView @JvmOverloads constructor(
             photo = if (nextStamp == 0L) null else BackgroundImage.load(context)
             photoStamp = nextStamp
         }
+        if (theme.backgroundPhoto != themePhotoRes) {
+            themePhotoRes = theme.backgroundPhoto
+            // RGB_565 — 투명이 없는 그림이라 절반 메모리로 충분하다(3000×1000 이 6MB).
+            themePhoto = themePhotoRes.takeIf { it != 0 }?.let { res ->
+                runCatching {
+                    android.graphics.BitmapFactory.decodeResource(
+                        resources, res,
+                        android.graphics.BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }
+                    )
+                }.getOrNull()
+            }
+        }
         restyle()
         render()
         updateBackground()
@@ -558,7 +574,7 @@ class KeyboardView @JvmOverloads constructor(
 
     private fun styleToolbarButton(view: TextView) {
         view.setTextColor(theme.text)
-        view.background = circle(keyFill(theme.toolbarButton))
+        view.background = circle(toolbarFill(theme.toolbarButton))
     }
 
     /**
@@ -567,7 +583,7 @@ class KeyboardView @JvmOverloads constructor(
      * 놓이게 한다. 셋 다 같은 크기·같은 선 굵기라 나란히 놓아도 톤이 맞는다.
      */
     private fun styleIconButton(button: TextView, iconRes: Int) {
-        val face = circle(keyFill(theme.toolbarButton))
+        val face = circle(toolbarFill(theme.toolbarButton))
         val icon = ContextCompat.getDrawable(context, iconRes)?.mutate()
         if (icon == null) {
             button.background = face
@@ -584,7 +600,7 @@ class KeyboardView @JvmOverloads constructor(
             correctionButton.background = circle(theme.accent)
         } else {
             correctionButton.setTextColor(theme.hint)
-            correctionButton.background = circle(keyFill(theme.toolbarButton))
+            correctionButton.background = circle(toolbarFill(theme.toolbarButton))
         }
     }
 
@@ -600,7 +616,7 @@ class KeyboardView @JvmOverloads constructor(
      * 열면 높이가 바뀌므로 그때도 다시 잘린다.
      */
     private fun updateBackground() {
-        val source = photo
+        val source = photo ?: themePhoto
         if (source == null || width <= 0 || height <= 0) {
             // 사진이 없으면 테마 그림(바다사자 바다), 그것도 없으면 바탕색.
             val art = theme.backgroundArt.takeIf { it != 0 }?.let { ContextCompat.getDrawable(context, it) }
@@ -622,7 +638,18 @@ class KeyboardView @JvmOverloads constructor(
      * 86% → 50% → 30% 로, "사진이 더 보여야 한다" 는 말을 두 번 듣고 내렸다. 글자는
      * 진한 색 그대로라 키가 거의 비쳐도 읽힌다.
      */
-    private fun keyFill(color: Int): Int = if (photo != null) withAlpha(color, keyAlpha) else color
+    private fun keyFill(color: Int): Int = when {
+        photo != null -> withAlpha(color, keyAlpha)
+        themePhoto != null -> withAlpha(color, theme.photoKeyAlpha)
+        else -> color
+    }
+
+    /**
+     * 도구 줄 단추·번역 입력줄. 사용자 사진 위에서는 키처럼 비치지만, **테마 사진 위에서는 비치지
+     * 않는다** — 바다사자 테마에서 사용자가 "위 기능키는 원래에 가깝게" 를 골랐다. 단추가 작아서
+     * 비치면 무엇인지 안 보인다.
+     */
+    private fun toolbarFill(color: Int): Int = if (photo != null) withAlpha(color, keyAlpha) else color
 
     private fun withAlpha(color: Int, alpha: Float): Int =
         Color.argb((alpha * 255).toInt(), Color.red(color), Color.green(color), Color.blue(color))
