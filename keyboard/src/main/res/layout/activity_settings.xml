@@ -51,25 +51,10 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- 교정 -->
-        <LinearLayout style="@style/Card">
-            <TextView style="@style/CardTitle" android:text="@string/section_correction" />
-
-            <LinearLayout style="@style/Row">
-                <LinearLayout style="@style/RowText">
-                    <TextView style="@style/RowTitle" android:text="@string/setting_auto_correct" />
-                    <TextView style="@style/RowSub" android:text="@string/setting_auto_correct_sub" />
-                </LinearLayout>
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/auto_correct_switch"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:thumb="@drawable/switch_thumb"
-                    app:showText="false"
-                    app:track="@drawable/switch_track" />
-            </LinearLayout>
-        </LinearLayout>
-
+        <!--
+          실시간 교정 켬/끔 스위치는 뺐다(2026-09-29, 사용자 결정 — 헷갈린다). 켜고 끄는 곳은 자판 위
+          'LIVE' 동그라미 하나다. 두 군데 있으면 어느 쪽이 진짜인지 헷갈린다.
+        -->
         <!-- 키보드 -->
         <LinearLayout style="@style/Card">
             <TextView style="@style/CardTitle" android:text="@string/section_keyboard" />

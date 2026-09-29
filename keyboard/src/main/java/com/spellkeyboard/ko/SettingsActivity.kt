@@ -2,7 +2,6 @@ package com.spellkeyboard.ko
 
 import android.os.Bundle
 import android.view.View
-import android.widget.CompoundButton
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -14,7 +13,7 @@ import androidx.appcompat.app.AppCompatDelegate
 /**
  * 키보드 맞춤설정.
  *
- * 실시간 교정 스위치와 자판 모양(종류·밝기·배경·투명도). 한 번 맞춰 두면 잘 안 만지지만
+ * 자판 모양(종류·밝기·배경·투명도)과 소리. 실시간 교정 켬/끔은 자판 위 'LIVE' 에만 있다. 한 번 맞춰 두면 잘 안 만지지만
  * 찾으면 있어야 하는 것. 더보기 서랍([MoreDrawer])의 "키보드 맞춤설정" 과 자판 도구 줄의 설정
  * 버튼이 여기로 온다.
  */
@@ -51,31 +50,13 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         findViewById<View>(R.id.back_button).setOnClickListener { finish() }
-        bindCorrection()
         bindKeyboard()
         bindSound()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // 자판 위 '교정' 버튼으로 껐다 켜고 돌아올 수 있다. 스위치가 그걸 따라가야 한다.
-        findViewById<CompoundButton>(R.id.auto_correct_switch).isChecked = Prefs.autoCorrectEnabled(this)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putInt(KEY_SCROLL, findViewById<View>(R.id.settings_scroll).scrollY)
-    }
-
-    // --- 교정 -----------------------------------------------------------------
-
-    private fun bindCorrection() {
-        findViewById<CompoundButton>(R.id.auto_correct_switch).apply {
-            isChecked = Prefs.autoCorrectEnabled(this@SettingsActivity)
-            setOnCheckedChangeListener { _, checked ->
-                Prefs.setAutoCorrectEnabled(this@SettingsActivity, checked)
-            }
-        }
     }
 
     // --- 키보드 ---------------------------------------------------------------
