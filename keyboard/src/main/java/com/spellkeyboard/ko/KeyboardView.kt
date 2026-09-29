@@ -120,6 +120,10 @@ class KeyboardView @JvmOverloads constructor(
     private var mode = KeyboardMode.KOREAN
     private var shifted = false
     private var symbolPage = 0
+    /** 숫자 키패드의 모양. [KeyboardMode.DIGITS] 일 때만 쓴다. */
+    private var digitPad = DigitPad.NUMBER
+    /** 숫자 키패드가 뜨기 전의 자판. 숫자 입력란을 떠나면 이리로 돌아간다. */
+    private var modeBeforeDigits = KeyboardMode.KOREAN
 
     /** 지금 팔레트. [applyAppearance] 가 설정을 읽어 바꾼다. */
     private var theme: KeyboardTheme = KeyboardTheme.current(context)
@@ -637,6 +641,24 @@ class KeyboardView @JvmOverloads constructor(
         translateButton.isVisible = available
     }
 
+    /**
+     * 숫자 입력란에 들어왔다. 숫자 키패드를 띄운다. 이미 떠 있어도 모양([pad])이 다르면 다시 그린다.
+     */
+    fun showDigitPad(pad: DigitPad) {
+        if (mode == KeyboardMode.DIGITS && digitPad == pad) return
+        if (mode != KeyboardMode.DIGITS) modeBeforeDigits = mode
+        digitPad = pad
+        mode = KeyboardMode.DIGITS
+        shifted = false
+        render()
+    }
+
+    /** 숫자 입력란을 떠났다. 숫자 키패드였으면 그 전 자판(한글·영문)으로 돌아간다. */
+    fun leaveDigitPad() {
+        if (mode != KeyboardMode.DIGITS) return
+        setMode(if (modeBeforeDigits == KeyboardMode.ENGLISH) KeyboardMode.ENGLISH else KeyboardMode.KOREAN)
+    }
+
     fun setMode(newMode: KeyboardMode) {
         if (mode == newMode) return
         mode = newMode
@@ -871,12 +893,14 @@ class KeyboardView @JvmOverloads constructor(
         keySlots.clear()
         activeSlots.clear()
         rowContainer.removeAllViews()
+        // 숫자 키패드는 자판 종류(쿼티·천지인)와 상관없이 같다.
+        if (mode == KeyboardMode.DIGITS) return renderDigits()
         if (layoutType == LayoutType.CHEONJIIN) {
             when (mode) {
                 KeyboardMode.KOREAN -> return renderCheonjiin()
                 KeyboardMode.NUMPAD -> return renderNumpad()
                 KeyboardMode.SYMBOLS -> return renderCheonjiinSymbols()
-                KeyboardMode.ENGLISH -> Unit
+                KeyboardMode.ENGLISH, KeyboardMode.DIGITS -> Unit
             }
         }
         if (mode == KeyboardMode.SYMBOLS || mode == KeyboardMode.NUMPAD) {
@@ -981,6 +1005,39 @@ class KeyboardView @JvmOverloads constructor(
             addActionKey("", KeyAction.SPACE, weight = GRID_W, letterKey = true)
             addCharKey(',', weight = GRID_W)
         })
+    }
+
+    /**
+     * 숫자 입력란용 키패드(삼성처럼 숫자 입력란에서 저절로 뜬다). 모양은 [DigitPad] 주석.
+     *
+     * 숫자 키는 **길게 눌러도 기호가 안 나온다** — 인증번호 칸에서 꾹 눌렀다가 '!' 가 들어가면
+     * 안 된다. '가A' 로 온 자판으로 나갈 수 있다(입력란이 숫자라고 잘못 알려 주는 앱도 있다).
+     */
+    private fun renderDigits() {
+        val side = listOf<LinearLayout.() -> Unit>(
+            { addActionKey("⌫", KeyAction.BACKSPACE, weight = GRID_W, repeatable = true) },
+            { addActionKey("↵", KeyAction.ENTER, weight = GRID_W) },
+            { addDigitKey(digitPad.third) }
+        )
+        KeyboardLayout.CHEONJIIN_NUMPAD.forEachIndexed { index, digits ->
+            rowContainer.addView(buildRow(heightDp = CHEONJIIN_KEY_HEIGHT_DP) {
+                digits.forEach { addDigitKey(it) }
+                side[index](this)
+            })
+        }
+        rowContainer.addView(buildRow(heightDp = CHEONJIIN_KEY_HEIGHT_DP) {
+            addDigitKey(digitPad.bottom[0])
+            addDigitKey('0')
+            addDigitKey(digitPad.bottom[1])
+            addActionKey("가A", KeyAction.KOREAN, weight = GRID_W)
+        })
+    }
+
+    /** 숫자 키패드의 한 칸. 길게 누르기 없음. 빈 글자면 빈칸. */
+    private fun LinearLayout.addDigitKey(c: Char) {
+        if (c == ' ') return addSpacer(GRID_W)
+        val view = keyView(c.toString(), keyBackground(isAction = false))
+        addPadKey(view, GRID_W, charTouch(view, onPress = { listener?.onChar(c) }))
     }
 
     /**

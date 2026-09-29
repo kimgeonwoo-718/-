@@ -96,6 +96,28 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      */
     private var fieldSendable = true
 
+    /** 이 입력란에 띄울 숫자 키패드. 숫자 입력란이 아니면 null — 평소 자판을 쓴다. */
+    private var fieldDigitPad: DigitPad? = null
+
+    /**
+     * 이 입력란에는 숫자와 지우기를 **글이 아니라 키 누름으로** 보낸다.
+     *
+     * 구글 패스키 PIN, 인증번호 칸 같은 숫자 입력란 중에는 키 누름(KEYCODE_0~9, DEL)만 듣고
+     * 글 넣기(commitText)는 무시하는 것이 있다. 예전에는 글로만 넣어서 그런 칸에서는 **아예
+     * 입력이 안 됐다**(2026-09-29 사용자 제보). 삼성·지보드는 숫자를 키 누름으로 보낸다
+     * ([sendKeyChar] 가 그렇게 한다). 숫자·전화·날짜 입력란, 그리고 inputType 이 없는(TYPE_NULL)
+     * 칸 — 키 누름을 달라는 뜻이다 — 에서 그렇게 한다. 글 입력란은 교정이 글의 흐름을 따라가야
+     * 해서 그대로 둔다.
+     */
+    private var rawKeyField = false
+
+    /**
+     * 이 입력란에서 사용자가 '가A' 로 숫자 키패드를 닫았다. 같은 입력란에 머무는 동안은 다시
+     * 띄우지 않는다 — 글자마다 입력을 다시 시작하는(restarting) 앱이 있어서, 안 막으면 닫자마자
+     * 숫자 키패드가 도로 튀어나온다. 다른 입력란으로 가면 풀린다.
+     */
+    private var digitPadDismissed = false
+
     /** 우리가 마지막으로 편집한 시각. 우리가 일으킨 커서 알림을 가려내는 데 쓴다. */
     @Volatile
     private var lastEditAt = 0L
@@ -258,6 +280,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         syncAutomata()
         fieldCorrectable = isCorrectableField(info)
         fieldSendable = isSendableField(info)
+        fieldDigitPad = digitPadFor(info)
+        if (!restarting) digitPadDismissed = false
+        rawKeyField = info != null &&
+            (info.inputType == InputType.TYPE_NULL || fieldDigitPad != null)
         session.correctionEnabled = Prefs.autoCorrectEnabled(this) && fieldCorrectable
         keyboard?.setAutoCorrectOn(Prefs.autoCorrectEnabled(this))
     }
@@ -270,6 +296,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         syncAutomata()
         // 설정에서 테마나 배경을 바꾸고 돌아왔을 수 있다. 바뀐 게 없으면 싸게 끝난다.
         keyboard?.applyAppearance()
+        // 숫자 입력란이면 숫자 키패드, 아니면 평소 자판(숫자 키패드였으면 그 전 자판으로).
+        val pad = fieldDigitPad
+        if (pad != null && !digitPadDismissed) keyboard?.showDigitPad(pad)
+        else if (pad == null) keyboard?.leaveDigitPad()
         // 소리팩도 설정에서 바뀌었을 수 있다(켜기·끄기·크기, 구독 만료).
         keySounds.refresh()
         // 밑의 시스템 단추 줄만큼 띄운다. 알림을 놓쳤으면 여기서 따라잡는다(KeyboardView 주석).
@@ -362,6 +392,12 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         lastTapKey = null
         punctuationIndex = -1
 
+        if (rawKeyField && !Hangul.isJamo(c)) {
+            // 숫자 입력란: 키 누름으로 보낸다([rawKeyField]). 숫자가 아닌 것은 sendKeyChar 가 글로 넣는다.
+            session.commitPending(editor)
+            sendKeyChar(c)
+            return
+        }
         if (keyboard?.currentMode() == KeyboardMode.KOREAN && Hangul.isJamo(c)) {
             // 자모가 onChar 로 온다는 것은 쿼티 자판이라는 뜻이다. 조립기가 다른 것이면
             // 지금 갈아 끼운다 — 천지인 키가 자기 조립기를 끼우는 것과 대칭.
@@ -460,7 +496,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         when (action) {
             KeyAction.SHIFT -> keyboard?.toggleShift()
 
-            KeyAction.BACKSPACE -> if (!session.pressBackspace(editor)) {
+            // 숫자 입력란: 지우기도 키 누름으로. 키 누름만 듣는 칸은 글 지우기도 무시한다.
+            KeyAction.BACKSPACE -> if (rawKeyField && session.composingText().isEmpty()) {
+                sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
+            } else if (!session.pressBackspace(editor)) {
                 // 조합 중인 글자도 없고 되돌릴 교정도 없으면 평범한 삭제다.
                 editor.deleteBefore(1)
                 session.notifyDeleted(1)
@@ -478,7 +517,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 pressEnterWhileTranslating(editor)
             } else {
                 session.pressEnter(editor)
-                if (!sendDefaultEditorAction(true)) session.pressText(editor, '\n')
+                if (!sendDefaultEditorAction(true)) {
+                    if (rawKeyField) sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER) else session.pressText(editor, '\n')
+                }
             }
 
             KeyAction.LANGUAGE -> switchMode(editor, KeyboardMode.ENGLISH)
@@ -486,6 +527,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             KeyAction.SYMBOL_PAGE -> keyboard?.flipSymbolPage()
             KeyAction.NUMPAD -> switchMode(editor, KeyboardMode.NUMPAD)
             KeyAction.KOREAN -> {
+                if (keyboard?.currentMode() == KeyboardMode.DIGITS) digitPadDismissed = true
                 session.commitPending(editor)
                 keyboard?.setMode(KeyboardMode.KOREAN)
             }
@@ -1214,6 +1256,19 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 옛 안드로이드에서도 그냥 0 과 비교하는 셈이라 안전하다.
         val options = info?.imeOptions ?: return false
         return options and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING == 0
+    }
+
+    /** 숫자 입력란이면 그에 맞는 숫자 키패드. 글 입력란이면 null. */
+    private fun digitPadFor(info: EditorInfo?): DigitPad? {
+        val type = info?.inputType ?: return null
+        return when (type and InputType.TYPE_MASK_CLASS) {
+            InputType.TYPE_CLASS_NUMBER ->
+                if (type and InputType.TYPE_MASK_VARIATION == InputType.TYPE_NUMBER_VARIATION_PASSWORD) DigitPad.PIN
+                else DigitPad.NUMBER
+            InputType.TYPE_CLASS_PHONE -> DigitPad.PHONE
+            InputType.TYPE_CLASS_DATETIME -> DigitPad.DATETIME
+            else -> null
+        }
     }
 
     private fun isCorrectableField(info: EditorInfo?): Boolean {

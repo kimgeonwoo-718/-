@@ -22,7 +22,33 @@ enum class KeyboardMode {
     ENGLISH,
     SYMBOLS,
     /** 천지인 전용 숫자 판. 쿼티에서는 쓰지 않는다. */
-    NUMPAD
+    NUMPAD,
+    /**
+     * 숫자 입력란(인증번호·PIN·전화번호)용 숫자 키패드. 입력란이 숫자를 원할 때 **저절로** 뜬다
+     * — 삼성 키보드처럼. 모양은 [DigitPad] 가 정한다.
+     */
+    DIGITS
+}
+
+/**
+ * 숫자 키패드의 종류. 입력란이 알려 주는 inputType 으로 고른다.
+ *
+ *     1 2 3 ⌫
+ *     4 5 6 ↵
+ *     7 8 9 [third]
+ *     [bottom[0]] 0 [bottom[1]] 가A
+ *
+ * 빈 글자(' ')는 빈칸이다 — PIN 에는 숫자 말고 넣을 것이 없다.
+ */
+enum class DigitPad(val third: Char, val bottom: String) {
+    /** 수량·금액·인증번호. */
+    NUMBER('-', ",."),
+    /** 비밀 숫자(PIN, 구글 패스키). 숫자만. */
+    PIN(' ', "  "),
+    /** 전화번호. */
+    PHONE('+', "*#"),
+    /** 날짜·시각. */
+    DATETIME(':', "/-")
 }
 
 /** 한글 자판 종류. 영문·기호 자판은 둘 다 같다. */
@@ -151,7 +177,7 @@ object KeyboardLayout {
         KeyboardMode.KOREAN -> if (shifted) KOREAN_SHIFTED else KOREAN
         KeyboardMode.ENGLISH -> if (shifted) ENGLISH.map { it.uppercase() } else ENGLISH
         KeyboardMode.SYMBOLS -> SYMBOL_PAGES.first().rows
-        KeyboardMode.NUMPAD -> CHEONJIIN_NUMPAD
+        KeyboardMode.NUMPAD, KeyboardMode.DIGITS -> CHEONJIIN_NUMPAD
     }
 
     /** 시프트가 의미 있는 배열인지. 기호 자판에는 시프트가 없다. */
