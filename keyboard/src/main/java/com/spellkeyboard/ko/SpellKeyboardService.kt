@@ -118,6 +118,15 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      */
     private var digitPadDismissed = false
 
+    /**
+     * 입력란에서 글이 골라져(선택돼) 있는가. [onUpdateSelection] 과 입력 시작 때 맞춘다.
+     *
+     * 골라 둔 채 ⌫ 를 누르면 **고른 글을 지워야 한다.** 예전에는 늘 "커서 앞 한 글자 지우기"
+     * (deleteSurroundingText)를 불렀는데, 그건 선택을 건드리지 않고 선택 **앞** 글자를 지운다 —
+     * 전체 선택하고 ⌫ 를 눌러도 안 지워졌다(2026-09-29 사용자 제보).
+     */
+    private var hasSelection = false
+
     /** 우리가 마지막으로 편집한 시각. 우리가 일으킨 커서 알림을 가려내는 데 쓴다. */
     @Volatile
     private var lastEditAt = 0L
@@ -281,6 +290,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         fieldCorrectable = isCorrectableField(info)
         fieldSendable = isSendableField(info)
         fieldDigitPad = digitPadFor(info)
+        hasSelection = info != null && info.initialSelStart >= 0 && info.initialSelStart != info.initialSelEnd
         if (!restarting) digitPadDismissed = false
         rawKeyField = info != null &&
             (info.inputType == InputType.TYPE_NULL || fieldDigitPad != null)
@@ -353,6 +363,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         super.onUpdateSelection(
             oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd
         )
+        hasSelection = newSelStart != newSelEnd
         // **번역 모드에서는 이 알림이 전부 우리 것이다.**
         //
         // 사용자는 앱 입력란이 아니라 번역 입력줄에 쓰고 있고, 앱 입력란이 바뀌는 것은
@@ -497,7 +508,10 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             KeyAction.SHIFT -> keyboard?.toggleShift()
 
             // 숫자 입력란: 지우기도 키 누름으로. 키 누름만 듣는 칸은 글 지우기도 무시한다.
-            KeyAction.BACKSPACE -> if (rawKeyField && session.composingText().isEmpty()) {
+            // 골라 둔 글이 있으면 그걸 지운다. 조합·교정 되돌리기보다 먼저다 — 고른 것이 사용자의 뜻이다.
+            KeyAction.BACKSPACE -> if (hasSelection && deleteSelection()) {
+                Unit
+            } else if (rawKeyField && session.composingText().isEmpty()) {
                 sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
             } else if (!session.pressBackspace(editor)) {
                 // 조합 중인 글자도 없고 되돌릴 교정도 없으면 평범한 삭제다.
@@ -1256,6 +1270,27 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 옛 안드로이드에서도 그냥 0 과 비교하는 셈이라 안전하다.
         val options = info?.imeOptions ?: return false
         return options and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING == 0
+    }
+
+    /**
+     * 골라 둔 글을 지운다. 정말 골라져 있었으면 true.
+     *
+     * 알림으로 아는 [hasSelection] 이 늦을 수 있어 입력란에 한 번 더 묻는다. 지우는 건 빈 글로
+     * 바꿔 넣기(commitText "")다 — 선택을 지우는 표준 방법이고, 키 누름만 듣는 칸이면 DEL 키를 보낸다.
+     */
+    private fun deleteSelection(): Boolean {
+        val ic = currentInputConnection ?: return false
+        if (ic.getSelectedText(0).isNullOrEmpty()) {
+            hasSelection = false
+            return false
+        }
+        // 조합 중인 글자나 되돌릴 교정은 이제 뜻이 없다. 자판 쪽 기억을 비운다.
+        ic.finishComposingText()
+        session.reset()
+        if (rawKeyField) sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL) else ic.commitText("", 1)
+        lastEditAt = android.os.SystemClock.uptimeMillis()
+        hasSelection = false
+        return true
     }
 
     /** 숫자 입력란이면 그에 맞는 숫자 키패드. 글 입력란이면 null. */

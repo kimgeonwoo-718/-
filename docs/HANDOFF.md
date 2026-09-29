@@ -2734,3 +2734,10 @@ LIVE 짚기는 뺐다(한 쪽에 작대기 둘은 어수선하고, LIVE 는 2쪽
   번역 입력줄은 비치지 않는다(`KeyboardView.toolbarFill`) — 사용자가 골랐다. 사용자가 자기 사진을 깔면
   그 사진이 먼저다. 옛 바다 그림(`sealion_background.xml`)은 사진을 못 풀었을 때의 대비책으로 남겼다.
 - 비트맵은 RGB_565 로 푼다(6MB).
+
+## 골라 둔 글을 ⌫ 로 지우기 (2026-09-29)
+
+전체 선택하고 ⌫ 를 눌러도 안 지워졌다(사용자 제보). ⌫ 는 늘 "커서 앞 한 글자 지우기"
+(deleteSurroundingText)였는데, 그건 선택을 건드리지 않는다. 이제 `onUpdateSelection` 으로 선택을 알고
+(`hasSelection`), 입력란에 `getSelectedText` 로 한 번 더 확인한 뒤 빈 글로 바꿔 넣어(commitText "") 지운다.
+조합·교정 되돌리기보다 먼저다. 키 누름만 듣는 칸이면 DEL 키.
