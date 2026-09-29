@@ -272,6 +272,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         keyboard?.applyAppearance()
         // 소리팩도 설정에서 바뀌었을 수 있다(켜기·끄기·크기, 구독 만료).
         keySounds.refresh()
+        // 밑의 시스템 단추 줄만큼 띄운다. 알림을 놓쳤으면 여기서 따라잡는다(KeyboardView 주석).
+        keyboard?.syncNavigationBarPadding()
         // 비밀번호 입력란에서는 교정을 아예 내놓지 않는다. 기기 안에서 도는 일이라도
         // 비밀번호를 고쳐 주는 것은 도움이 아니라 사고다.
         // 다만 자동 교정 스위치와는 묶지 않는다 — 그건 실시간 교정만 끄는 스위치다.
@@ -281,6 +283,12 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         keyboard?.setTranslateAvailable(fieldSendable)
         // 예전에는 여기서 서버를 한 번 두드려 모델 목록을 미리 받았다. 뺐다 —
         // 아래 [corrector] 주석에 이유를 적어 뒀다.
+    }
+
+    override fun onWindowShown() {
+        super.onWindowShown()
+        // 창이 막 보였을 때 시스템이 단추 줄 높이를 다시 정한다. 그 값으로 한 번 더 맞춘다.
+        keyboard?.syncNavigationBarPadding()
     }
 
     override fun onFinishInput() {

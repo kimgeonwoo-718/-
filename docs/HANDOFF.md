@@ -2677,6 +2677,11 @@ LIVE 짚기는 뺐다(한 쪽에 작대기 둘은 어수선하고, LIVE 는 2쪽
     줄은 시스템이 키보드 창 안에 그려 넣는 'IME 내비게이션 바' 이고, 키보드 창에는 **captionBar** 로
     알려진다(AOSP `NavigationBarController`). 지금은 시스템이 그 줄 높이를 재는 식과 같이
     `systemBars() | displayCutout()` 의 아래로 잰다.
+    **그래도 됐다 안 됐다 했다(2026-09-29)** — 멀티윈도우를 들어갔다 나오면 됐다. 시스템은 여백이
+    바뀔 때만 알리는데, 키보드 화면이 그 알림 뒤에 창에 붙으면(설정 변경으로 onCreateInputView 가
+    다시 불리는 등) 다음 알림까지 여백 0 이었다. 이제 창에 붙을 때(onAttachedToWindow), 키보드가
+    뜰 때(onStartInputView·onWindowShown), 그 한 박자 뒤에 창의 지금 여백(rootWindowInsets)을
+    직접 읽어 맞춘다 — `KeyboardView.syncNavigationBarPadding()`.
   - 36 은 **뒤로 가기 예측**(predictive back)이라 `onBackPressed` 가 안 불린다. 첫 화면은
     `OnBackPressedCallback` 으로 바꿨다(안내 끝내기 → 서랍 닫기 → 그 외엔 원래대로).
   - **기기에서 볼 것:** 키보드 밑이 내비 막대에 안 가리는가, 첫 화면 글이 상태 표시줄 밑에 안

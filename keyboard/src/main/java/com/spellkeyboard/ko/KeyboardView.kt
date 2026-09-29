@@ -343,19 +343,35 @@ class KeyboardView @JvmOverloads constructor(
      * navigationBars 가, 제스처면 captionBar 가 여기에 들어온다.
      *
      * 34 이하는 시스템이 창 내용을 바 위로 올려 주므로(decorFitsSystemWindows) 손대지 않는다.
+     *
+     * **알림(insets 전달)만 믿으면 안 된다.** 시스템은 창의 여백이 바뀔 때만 알린다. 키보드 화면이
+     * 그 알림 **뒤에** 창에 붙으면(설정이 바뀌어 [SpellKeyboardService.onCreateInputView] 가 새로
+     * 불렸을 때 등) 다음 알림까지 여백 0 으로 산다 — "됐다 안 됐다, 멀티윈도우 들어갔다 나오면
+     * 된다" 가 그것이었다(2026-09-29). 그래서 창에 붙을 때와 키보드가 뜰 때마다 창의 **지금**
+     * 여백([getRootWindowInsets])을 직접 읽어 맞춘다([syncNavigationBarPadding]).
      */
     private fun padForNavigationBar() {
         if (android.os.Build.VERSION.SDK_INT < 35) return
-        setOnApplyWindowInsetsListener { view, insets ->
-            val types = android.view.WindowInsets.Type.systemBars() or
-                android.view.WindowInsets.Type.displayCutout()
-            val bottom = insets.getInsets(types).bottom
-            if (view.paddingBottom != bottom) {
-                view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, bottom)
-            }
+        setOnApplyWindowInsetsListener { _, insets ->
+            padBottom(insets)
             insets
         }
+    }
+
+    /** 창의 지금 여백으로 아래를 맞춘다. 키보드가 뜰 때마다 서비스가 부른다. 바뀐 게 없으면 아무 일도 안 한다. */
+    fun syncNavigationBarPadding() {
+        if (android.os.Build.VERSION.SDK_INT < 35) return
+        rootWindowInsets?.let { padBottom(it) }
         requestApplyInsets()
+        // 뜨는 도중에는 단추 줄 높이가 아직 안 정해졌을 수 있다. 한 박자 뒤에 한 번 더 본다.
+        post { rootWindowInsets?.let { padBottom(it) } }
+    }
+
+    private fun padBottom(insets: android.view.WindowInsets) {
+        val types = android.view.WindowInsets.Type.systemBars() or
+            android.view.WindowInsets.Type.displayCutout()
+        val bottom = insets.getInsets(types).bottom
+        if (paddingBottom != bottom) setPadding(paddingLeft, paddingTop, paddingRight, bottom)
     }
 
     /** '교정' 동그라미의 켜짐 표시. 켜져 있으면 강조색, 꺼져 있으면 흐리게. */
@@ -652,6 +668,12 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     fun currentMode(): KeyboardMode = mode
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        // 창에 붙기 전에 부른 requestApplyInsets 는 헛일이다(부모가 없다). 붙은 지금 맞춘다.
+        syncNavigationBarPadding()
+    }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
