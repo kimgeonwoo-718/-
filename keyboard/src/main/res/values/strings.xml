@@ -57,7 +57,7 @@
     <string name="section_correction">교정</string>
     <string name="setting_auto_correct">실시간 자동 교정</string>
     <string name="setting_auto_correct_sub">어절이 끝날 때마다 기기 안에서 바로 고칩니다. 복잡하거나 어려운 문장은 교정이 안 될 수도 있어요. 자판 위 \'교정\' 버튼으로도 끄고 켤 수 있어요.</string>
-    <string name="setting_ai_title">AI 전체 교정 · 정확도 100%</string>
+    <string name="setting_ai_title">AI 정밀 교정, 번역</string>
     <string name="setting_ai_sub">자판 위 ALL 버튼을 꾹 누르면 문장 전체를 AI 가 다듬어요. 프리미엄 기능이에요.</string>
     <string name="setting_quota_free">프리미엄 기능 · 실시간 교정은 늘 무제한</string>
     <string name="setting_quota_unlimited">프리미엄 · 이용 중</string>
@@ -130,10 +130,8 @@
     <string name="paywall_row_correct_all">글 전체 교정 (기기 안)</string>
     <string name="paywall_row_device_translate">기기 안 번역 (영어·일본어·중국어)</string>
     <string name="paywall_row_keyboard">천지인 · 배경 사진 · 다크 모드 · 클립보드</string>
-    <string name="paywall_row_ai">AI 전체 교정</string>
-    <string name="paywall_row_ai_sub">글 전체를 AI 가 다듬어요 · 정확도 100%</string>
-    <string name="paywall_row_ai_translate">AI 번역</string>
-    <string name="paywall_row_ai_translate_sub">현지인처럼 자연스러운 번역</string>
+    <!-- "정확도 100%" 는 뺐다 — 사실이 아니고 약관("AI 결과는 틀릴 수 있다")과 어긋난다(2026-09-29). -->
+    <string name="paywall_row_ai">AI 정밀 교정, 번역</string>
     <string name="paywall_row_sealion_theme">🦭 귀여운 바다사자 테마</string>
     <string name="paywall_row_sealion_theme_sub">바다 빛 자판에 바다사자 스페이스바</string>
     <string name="paywall_row_sealion_sound">🦭 귀여운 바다사자 사운드팩</string>
