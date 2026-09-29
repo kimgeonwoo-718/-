@@ -71,6 +71,17 @@ class ChatTextTest {
     }
 
     @Test
+    fun `한글 음절이 아닌 글자는 이어져도 줄이지 않는다`() {
+        // 예전에는 셋 이상 이어진 글자를 가리지 않고 줄여서, 번역 전에 뜻이 바뀌었다.
+        assertEquals("1000원이야", ChatText.normalize("1000원이야").core)
+        assertEquals("www 주소", ChatText.normalize("www 주소").core)
+        assertEquals("10000원 보냈어", ChatText.normalize("10000원 보냈어").core)
+        assertEquals("AAA 건전지", ChatText.normalize("AAA 건전지").core)
+        // 한글 음절은 그대로 줄인다.
+        assertEquals("1000원 좋아", ChatText.normalize("1000원 좋아아아").core)
+    }
+
+    @Test
     fun `빈 글은 빈 결과`() {
         val out = ChatText.normalize("   ")
         assertEquals("", out.core)

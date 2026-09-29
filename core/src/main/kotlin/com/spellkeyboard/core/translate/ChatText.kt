@@ -76,7 +76,9 @@ object ChatText {
     /**
      * 늘여 쓴 글자를 줄인다.
      *
-     * 같은 글자가 셋 이상 이어지면 하나로 줄인다 — '좋아아아아' → '좋아'.
+     * 같은 **한글 음절**이 셋 이상 이어지면 하나로 줄인다 — '좋아아아아' → '좋아'.
+     * 한글 음절만이다. 숫자·로마자·부호는 셋 이상 이어져도 뜻이 있다 — 예전에는 가리지 않아서
+     * 번역 전에 '1000원' 이 '10원', 'www' 가 'w' 가 됐다(2026-09-29).
      * 그 글자가 **앞 글자의 모음을 늘인 것**이면(초성 ㅇ, 받침 없음, 같은 모음) 통째로 버린다 —
      * '네에에에' 의 '에' 는 '네' 의 일부가 아니라 늘임소리다. '좋아아아' 의 '아' 는 '좋아' 의
      * 일부라서 하나는 남겨야 하는데, 그 경우 앞 글자 '좋' 의 모음(ㅗ)과 달라 구별된다.
@@ -89,12 +91,17 @@ object ChatText {
             while (index + run < token.length && token[index + run] == token[index]) run++
             val char = token[index]
             index += run
-            if (run >= REPEAT_LIMIT && out.isNotEmpty() && isStretchOf(out.last(), char)) continue
-            out.append(char)
-            if (run < REPEAT_LIMIT) repeat(run - 1) { out.append(char) }
+            if (run >= REPEAT_LIMIT && isSyllable(char)) {
+                if (out.isNotEmpty() && isStretchOf(out.last(), char)) continue
+                out.append(char)
+            } else {
+                repeat(run) { out.append(char) }
+            }
         }
         return out.toString()
     }
+
+    private fun isSyllable(c: Char): Boolean = c in '가'..'힣'
 
     /** [stretched] 가 [previous] 의 모음을 늘인 글자인가. '네' 뒤의 '에'. */
     private fun isStretchOf(previous: Char, stretched: Char): Boolean {
