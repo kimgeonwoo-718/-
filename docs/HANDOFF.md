@@ -2653,6 +2653,10 @@ LIVE 짚기는 뺐다(한 쪽에 작대기 둘은 어수선하고, LIVE 는 2쪽
   (옛 `spell-keyboard` 이름은 옛 계정이 쥐고 있어 CI 가 계정 ID 앞 6자리를 붙였다). `build-apk.yml` 기본값을
   새 주소로. 첫 배포 직후 health 는 TLS 핸드셰이크 실패 — 새 workers.dev 이름의 인증서가 몇 분 걸린다.
 - 옛 Cloudflare 계정(사장님 명의)의 서버는 옛 APK 가 아직 쓴다. 새 APK 확인 뒤 지운다.
+- **확인(2026-09-30):** 새 서버 재배포에서 health OK, 구독자 교정 200(모델까지 닿음). 새 APK(0.1.201)는 새
+  서버 주소·새 웹 로그인 ID 로 빌드됐다(빌드 기록). 사용자에게 구글 브랜딩 네 칸을 새 주소로 바꾸라고 알렸다:
+  방침·홈 `https://spell-keyboard.spell-keyboard-d5bc70.workers.dev/privacy`, 약관 `…/terms`, 승인된 도메인
+  `spell-keyboard-d5bc70.workers.dev`.
 
 ## 바다사자 테마·소리팩 (2026-09-26, 구독자 전용)
 
