@@ -2657,6 +2657,8 @@ LIVE 짚기는 뺐다(한 쪽에 작대기 둘은 어수선하고, LIVE 는 2쪽
   서버 주소·새 웹 로그인 ID 로 빌드됐다(빌드 기록). 사용자에게 구글 브랜딩 네 칸을 새 주소로 바꾸라고 알렸다:
   방침·홈 `https://spell-keyboard.spell-keyboard-d5bc70.workers.dev/privacy`, 약관 `…/terms`, 승인된 도메인
   `spell-keyboard-d5bc70.workers.dev`.
+- 사용자가 새 APK 로 폰 로그인 확인 → 옛 웹 ID 를 `GOOGLE_CLIENT_IDS` 에서 뺐다. 옛 데스크톱 ID 는 윈도우
+  확인 뒤 뺀다. 사용자 몫: 옛 Cloudflare 서버 삭제, 옛 제미나이 키 삭제·결제 해지, `OPENAI_API_KEY` 비밀값 삭제.
 
 ## 바다사자 테마·소리팩 (2026-09-26, 구독자 전용)
 
