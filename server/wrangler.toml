@@ -29,9 +29,13 @@ CONTACT_EMAIL = "tamtech828282@gmail.com"
 # 들어온다. 비어 있으면 로그인을 아예 안 받는다(503).
 #
 # 비밀값이 아니다. 앱 안에 그대로 들어가는 공개 식별자라 저장소에 적는다(서버 주소와 같다).
-# 첫째는 웹 클라이언트 — 안드로이드 Credential Manager 가 `aud` 에 넣는 것이 이것이다.
-# 둘째는 윈도우 프로그램의 데스크톱 클라이언트(2026-09-24). 아이폰이 생기면 쉼표로 덧붙인다.
-GOOGLE_CLIENT_IDS = "485298906669-s984h7he84fbs1ll21gboa17hojjur3n.apps.googleusercontent.com,485298906669-78bbds5qjeb1c4o53fois05eshldc1o1.apps.googleusercontent.com"
+# 웹 클라이언트 — 안드로이드 Credential Manager 가 `aud` 에 넣는 것이 이것이다.
+# 데스크톱 클라이언트 — 윈도우 프로그램. 아이폰이 생기면 쉼표로 덧붙인다.
+#
+# 2026-09-30 부모님 명의 프로젝트(964399781242)로 옮기는 중: 새 웹·데스크톱을 앞에 두고
+# 옛 프로젝트(485298906669) 것을 뒤에 **남겨 둔다** — 옛 APK·윈도우 판이 끊기지 않게.
+# 새 APK 로 폰 로그인, 새 ID 로 윈도우 로그인이 되는 것을 보면 옛 둘을 뺀다.
+GOOGLE_CLIENT_IDS = "964399781242-do4svjcjisviqqsi9q47d51rm3fa93rf.apps.googleusercontent.com,964399781242-5jlsebd97g8n2p4qjt2mvc741l0244tq.apps.googleusercontent.com,485298906669-s984h7he84fbs1ll21gboa17hojjur3n.apps.googleusercontent.com,485298906669-78bbds5qjeb1c4o53fois05eshldc1o1.apps.googleusercontent.com"
 # AI 는 구독자 전용이다. 무료 한도와 IP 한도는 없앴다 — 무료에게 열어 두면 쓰는 사람이
 # 늘수록 손해가 늘고(한 명이 한도를 꽉 채우면 월 468원, 받는 돈은 0원), 서버 주소는 APK
 # 안에 있어 누구나 두드릴 수 있다. 돈 낸 사람만 들이는 것이 유일하게 확실한 천장이다.
