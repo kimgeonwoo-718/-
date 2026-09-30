@@ -2647,6 +2647,12 @@ LIVE 짚기는 뺐다(한 쪽에 작대기 둘은 어수선하고, LIVE 는 2쪽
   뒤에 남김). `build-apk.yml` 의 기본 로그인 ID 를 새 웹으로. 빌드 기록에 쓰인 ID 가 찍힌다 — GitHub 변수
   `GOOGLE_CLIENT_ID` 가 따로 있으면 그게 이긴다.
 - 남은 것: 폰(새 APK)·윈도우(새 데스크톱 ID) 로그인 확인 → 옛 ID 둘 빼기. 윈도우 세션에 새 데스크톱 ID 전달.
+- 제미나이: 부모님 프로젝트에 선불 크레딧 충전, `GEMINI_API_KEY` 교체. (옛 키는 "prepayment credits are depleted"
+  402 였다 — 구글은 이제 선불 충전식이다. 크레딧이 0 이면 AI 가 전부 402.)
+- **Cloudflare 를 부모님 계정으로 옮겼다.** 새 서버 주소 `https://spell-keyboard.spell-keyboard-d5bc70.workers.dev`
+  (옛 `spell-keyboard` 이름은 옛 계정이 쥐고 있어 CI 가 계정 ID 앞 6자리를 붙였다). `build-apk.yml` 기본값을
+  새 주소로. 첫 배포 직후 health 는 TLS 핸드셰이크 실패 — 새 workers.dev 이름의 인증서가 몇 분 걸린다.
+- 옛 Cloudflare 계정(사장님 명의)의 서버는 옛 APK 가 아직 쓴다. 새 APK 확인 뒤 지운다.
 
 ## 바다사자 테마·소리팩 (2026-09-26, 구독자 전용)
 
