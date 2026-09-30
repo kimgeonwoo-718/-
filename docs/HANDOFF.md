@@ -2632,6 +2632,14 @@ LIVE 짚기는 뺐다(한 쪽에 작대기 둘은 어수선하고, LIVE 는 2쪽
    `GOOGLE_CLIENT_ID` 기본값을 새 웹 ID 로. 데스크톱 ID 는 윈도우 세션에도.
 4. 폰 로그인 확인 → 옛 ID 빼기 → 옛 프로젝트 키 삭제·결제 해지.
 
+**진행 (2026-09-30):** 부모님 계정에 OAuth 동의 화면을 만드는 중. 동의 화면은 **테스트 중** 그대로 두고
+테스트 사용자로 사장님·부모님 계정을 넣는다(예전에도 게시 안 하고 테스트 사용자로 썼다 — `docs/ACCOUNTS.md`).
+브랜딩의 앱 도메인 칸은 콘솔이 필수로 요구해서 **옛 서버 주소로 임시로** 넣었다:
+홈페이지·방침 `https://spell-keyboard.spell-keyboard.workers.dev/privacy`, 약관 `…/terms`, 승인된 도메인
+`spell-keyboard.workers.dev`.
+**⚠ Cloudflare 를 부모님 계정으로 옮기면(서버 주소가 바뀐다) Claude 가 먼저 사용자에게 말해서 이 네 칸을
+새 주소로 바꾸게 한다** — 사용자가 그렇게 해 달라고 했다.
+
 ## 바다사자 테마·소리팩 (2026-09-26, 구독자 전용)
 
 - **테마** `ThemeMode.SEA_LION`: 바다 팔레트(`sealion_*` 색), 바탕 그림 `drawable/sealion_background.xml`
