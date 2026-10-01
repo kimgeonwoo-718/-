@@ -140,20 +140,34 @@ function paper() {
   return items;
 }
 
+/**
+ * 숙고 끔을 거절한 모델들. gemini-3.5-flash-lite 는 `thinkingBudget: 0` 을 400 으로 거절한다
+ * (2026-09-25 실측) — 그러면 문항이 통째로 실패로 찍혔다. 앱(GeminiCorrector.thinkingRejected)처럼
+ * 한 번 거절되면 그 설정을 빼고 다시 보낸다. 거절된 요청은 값이 안 나간다.
+ */
+const thinkingRejected = new Set();
+
 async function askGemini(model, text) {
+  // **앱과 같은 설정이어야 한다.** 앱은 숙고를 끄고 보낸다(thinkingBudget 0).
+  // 여기서 안 끄면 두 가지가 한꺼번에 틀어진다 — 앱이 실제로 받는 품질이 아닌 것을
+  // 재게 되고, 숙고 토큰이 출력 요금으로 청구돼 값이 몇 배로 뛴다. 실제로 이것 때문에
+  // 크레딧이 바닥나 실기기의 AI 교정이 멈췄다.
+  const generationConfig = { temperature: 0, candidateCount: 1 };
+  if (!thinkingRejected.has(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
   const res = await fetch(`${GEMINI}/${model}:generateContent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
     body: JSON.stringify({
       system_instruction: { parts: [{ text: PROMPT }] },
       contents: [{ role: 'user', parts: [{ text }] }],
-      // **앱과 같은 설정이어야 한다.** 앱은 숙고를 끄고 보낸다(thinkingBudget 0).
-      // 여기서 안 끄면 두 가지가 한꺼번에 틀어진다 — 앱이 실제로 받는 품질이 아닌 것을
-      // 재게 되고, 숙고 토큰이 출력 요금으로 청구돼 값이 몇 배로 뛴다. 실제로 이것 때문에
-      // 크레딧이 바닥나 실기기의 AI 교정이 멈췄다.
-      generationConfig: { temperature: 0, candidateCount: 1, thinkingConfig: { thinkingBudget: 0 } },
+      generationConfig,
     }),
   });
+  if (res.status === 400 && !thinkingRejected.has(model)) {
+    thinkingRejected.add(model);
+    console.error(`(${model} 이 숙고 끔을 거절했다 — 앱처럼 빼고 다시 보낸다)`);
+    return askGemini(model, text);
+  }
   if (!res.ok) return { error: `HTTP ${res.status}` };
   const body = await res.json();
   const parts = body?.candidates?.[0]?.content?.parts ?? [];
