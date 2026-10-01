@@ -23,12 +23,13 @@
  *   GEMINI_API_KEY=... node bench/models.mjs gemini-3.5-flash-lite gemini-3.8-flash
  *   OPENAI_API_KEY=...  node bench/models.mjs gpt-5-nano gpt-5-mini
  *   ANTHROPIC_API_KEY=... node bench/models.mjs claude-haiku-4-5-20251001
+ *   UPSTAGE_API_KEY=... node bench/models.mjs solar-pro3@minimal solar-pro4@none
  *
  * `--prompt=파일` 로 지시문을 갈아 끼울 수 있다. 모델이 문제인지 지시문이 문제인지
  * 갈라 보려고 둔 자리다. `--prompt=server` 는 서버가 OpenAI 에 실제로 보내는 긴 지시문
  * (src/openai.js 의 KO_SYSTEM_PROMPT, 예시가 많다)이다.
  *
- * OpenAI 모델은 `이름@숙고` 로 숙고 세기를 모델마다 줄 수 있다 — 한 판에 같이 놓고 보려고.
+ * OpenAI·업스테이지 모델은 `이름@숙고` 로 숙고 세기를 모델마다 줄 수 있다 — 한 판에 같이 놓고 보려고.
  *
  *   OPENAI_API_KEY=... node bench/models.mjs gpt-5-nano@minimal gpt-5-nano@low --prompt=server
  */
@@ -39,6 +40,8 @@ import { KO_SYSTEM_PROMPT } from '../src/openai.js';
 const GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models';
 const OPENAI = 'https://api.openai.com/v1/chat/completions';
 const ANTHROPIC = 'https://api.anthropic.com/v1/messages';
+/** 업스테이지(Solar). OpenAI 와 같은 모양이다. */
+const UPSTAGE = 'https://api.upstage.ai/v1/chat/completions';
 
 /** 앱이 실제로 보내는 지시문. 여기를 바꾸면 앱도 같이 바꿔야 한다. */
 const APP_PROMPT = `당신은 한국어 맞춤법·띄어쓰기 교정기다.
@@ -193,6 +196,40 @@ async function askOpenAi(spec, text) {
   };
 }
 
+/**
+ * 업스테이지 Solar. 구글 18세 조항 때문에 갈아탈 곳을 찾으며 붙였다(2026-10-01).
+ *
+ * OpenAI 모양 그대로인데 **temperature 를 받는다** — 제미나이처럼 0 으로 고정한다.
+ * 숙고는 반드시 적어 보낸다. solar-pro4 는 **기본이 숙고 켬**이라 안 적으면 느리고 비싸진다.
+ * 끄는 값은 pro2·pro3 이 'minimal', pro4 는 'none' 이다.
+ */
+async function askUpstage(spec, text) {
+  const [model, effort] = spec.split('@');
+  const res = await fetch(UPSTAGE, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${process.env.UPSTAGE_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: PROMPT },
+        { role: 'user', content: text },
+      ],
+      temperature: 0,
+      reasoning_effort: effort || REASONING || (model.startsWith('solar-pro4') ? 'none' : 'minimal'),
+    }),
+  });
+  if (!res.ok) return { error: `HTTP ${res.status}` };
+  const body = await res.json();
+  const used = body?.usage ?? {};
+  return {
+    text: (body?.choices?.[0]?.message?.content ?? '').trim(),
+    tokens: { in: Number(used.prompt_tokens ?? 0), out: Number(used.completion_tokens ?? 0) },
+  };
+}
+
 /** 서버의 Claude 경로와 같은 설정: 지시문은 system, temperature 0. */
 async function askClaude(model, text) {
   const res = await fetch(ANTHROPIC, {
@@ -224,7 +261,9 @@ const send = (model, text) =>
     ? askOpenAi(model, text)
     : model.startsWith('claude')
       ? askClaude(model, text)
-      : askGemini(model, text);
+      : model.startsWith('solar')
+        ? askUpstage(model, text)
+        : askGemini(model, text);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -292,6 +331,11 @@ const PRICE = {
   // 2026-10-01 Anthropic 가격표. 한국어는 구글보다 토큰이 더 나올 수 있다 — 위 '예상 값' 은
   // 한 문항 340/40 토큰으로 잡으니 실제가 더 나올 수 있고, 그래서 --maxWon 상한이 있다.
   'claude-haiku-4-5-20251001': [1.0, 5.0],
+  // 2026-10-01 업스테이지 정가. pro4 는 출시 할인(90%)이 붙어 있다는데 언제 끝날지 몰라 정가로 센다 —
+  // 상한은 높게 잡혀야 안전하다.
+  'solar-pro2': [0.15, 0.60],
+  'solar-pro3': [0.15, 0.60],
+  'solar-pro4': [0.30, 1.20],
 };
 const KRW = 1350;
 

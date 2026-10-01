@@ -66,6 +66,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          UPSTAGE_API_KEY: ${{ secrets.UPSTAGE_API_KEY }}
         run: |
           set -euo pipefail
           # 확인 문구가 정확히 맞아야 한다. 값이 드는 일은 실수로 돌면 안 된다.
