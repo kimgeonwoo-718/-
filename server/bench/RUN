@@ -1,0 +1,1 @@
+gpt-5-nano@minimal gpt-5-nano@low gpt-5-mini@minimal --prompt=server --limit=20 --maxWon=250

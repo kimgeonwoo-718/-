@@ -25,10 +25,16 @@
  *   ANTHROPIC_API_KEY=... node bench/models.mjs claude-haiku-4-5-20251001
  *
  * `--prompt=파일` 로 지시문을 갈아 끼울 수 있다. 모델이 문제인지 지시문이 문제인지
- * 갈라 보려고 둔 자리다.
+ * 갈라 보려고 둔 자리다. `--prompt=server` 는 서버가 OpenAI 에 실제로 보내는 긴 지시문
+ * (src/openai.js 의 KO_SYSTEM_PROMPT, 예시가 많다)이다.
+ *
+ * OpenAI 모델은 `이름@숙고` 로 숙고 세기를 모델마다 줄 수 있다 — 한 판에 같이 놓고 보려고.
+ *
+ *   OPENAI_API_KEY=... node bench/models.mjs gpt-5-nano@minimal gpt-5-nano@low --prompt=server
  */
 import { readFileSync } from 'node:fs';
 import { KINDS, dropAllSpaces, seeded } from './inject.mjs';
+import { KO_SYSTEM_PROMPT } from '../src/openai.js';
 
 const GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models';
 const OPENAI = 'https://api.openai.com/v1/chat/completions';
@@ -53,7 +59,9 @@ const args = process.argv.slice(2);
 const promptArg = args.find((a) => a.startsWith('--prompt='));
 const limitArg = args.find((a) => a.startsWith('--limit='));
 const models = args.filter((a) => !a.startsWith('--'));
-const PROMPT = promptArg ? readFileSync(promptArg.slice('--prompt='.length), 'utf8') : APP_PROMPT;
+const promptName = promptArg ? promptArg.slice('--prompt='.length) : '';
+const PROMPT =
+  promptName === 'server' ? KO_SYSTEM_PROMPT : promptName ? readFileSync(promptName, 'utf8') : APP_PROMPT;
 const LIMIT = limitArg ? Number(limitArg.slice('--limit='.length)) : Infinity;
 /**
  * 폰 안 엔진이 붙여 쓴 글을 푼 결과. **있으면 그냥 쓴다.**
@@ -156,7 +164,8 @@ async function askGemini(model, text) {
   };
 }
 
-async function askOpenAi(model, text) {
+async function askOpenAi(spec, text) {
+  const [model, effort] = spec.split('@');
   const res = await fetch(OPENAI, {
     method: 'POST',
     headers: {
@@ -172,7 +181,7 @@ async function askOpenAi(model, text) {
       // **반드시 적어 보낸다.** 안 적으면 OpenAI 기본값으로 도는데, 그러면 무엇으로
       // 재고 있는지도 모르고 값도 예측이 안 된다. 실제로 그렇게 짜여 있었다.
       // 서버는 OPENAI_REASONING 으로 정하므로 여기서도 같은 값을 줄 수 있어야 한다.
-      ...(REASONING ? { reasoning_effort: REASONING } : { reasoning_effort: 'minimal' }),
+      reasoning_effort: effort || REASONING || 'minimal',
     }),
   });
   if (!res.ok) return { error: `HTTP ${res.status}` };
@@ -232,7 +241,7 @@ async function ask(model, text, tries = 4) {
     try {
       const got = await send(model, text);
       if (!got.error) {
-        const p = PRICE[model];
+        const p = PRICE[model.split('@')[0]];
         if (p && got.tokens) {
           spentWon += ((got.tokens.in * p[0] + got.tokens.out * p[1]) / 1e6) * KRW;
           if (spentWon > MAX_WON) {
@@ -278,7 +287,8 @@ const PRICE = {
   'gemini-3.5-flash-lite': [0.30, 2.50],
   'gemini-3.1-flash-lite': [0.25, 1.50],
   'gpt-5-nano': [0.05, 0.40],
-  'gpt-5-mini': [0.13, 1.00],
+  // 2026-10-01 고쳤다. 0.13/1.00 으로 적혀 있었는데 공식 값은 0.25/2.00 이다 — 낮게 적혀 있으면 상한이 늦게 걸린다.
+  'gpt-5-mini': [0.25, 2.00],
   // 2026-10-01 Anthropic 가격표. 한국어는 구글보다 토큰이 더 나올 수 있다 — 위 '예상 값' 은
   // 한 문항 340/40 토큰으로 잡으니 실제가 더 나올 수 있고, 그래서 --maxWon 상한이 있다.
   'claude-haiku-4-5-20251001': [1.0, 5.0],
@@ -295,7 +305,7 @@ console.log(`숙고: ${REASONING || 'minimal (끔)'}`);
 console.log(`상한: ${MAX_WON}원 — 넘으면 그 자리에서 멈춘다`);
 console.log('\n예상 값 (한 문항에 입력 ~340토큰, 출력 ~40토큰으로 잡고):');
 for (const m of models) {
-  const p = PRICE[m];
+  const p = PRICE[m.split('@')[0]];
   if (!p) { console.log(`   ${m.padEnd(24)} 값을 모르는 모델이다. 돌리기 전에 단가부터 확인해라.`); continue; }
   const won = ((340 * p[0] + 40 * p[1]) / 1e6) * KRW * items.length;
   console.log(`   ${m.padEnd(24)} 약 ${won.toFixed(0)}원`);
@@ -323,7 +333,7 @@ for (const model of models) {
     (acc, a) => ({ in: acc.in + (a.tokens?.in ?? 0), out: acc.out + (a.tokens?.out ?? 0) }),
     { in: 0, out: 0 }
   );
-  const p = PRICE[model];
+  const p = PRICE[model.split('@')[0]];
   const won = p ? ((spent.in * p[0] + spent.out * p[1]) / 1e6) * KRW : null;
   table.set(model, { score, secs, errors, spent, won });
   const reasons = [...why].map(([k, n]) => `${k}×${n}`).join(', ');
