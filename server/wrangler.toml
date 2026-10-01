@@ -32,9 +32,9 @@ CONTACT_EMAIL = "tamtech828282@gmail.com"
 # 웹 클라이언트 — 안드로이드 Credential Manager 가 `aud` 에 넣는 것이 이것이다.
 # 데스크톱 클라이언트 — 윈도우 프로그램. 아이폰이 생기면 쉼표로 덧붙인다.
 #
-# 2026-09-30 부모님 명의 프로젝트(964399781242)로 옮겼다. 폰(새 웹 ID)은 로그인 확인이 끝나 옛 웹 ID 를
-# 뺐다. 뒤의 옛 데스크톱 ID(485298906669-78bb…)는 윈도우가 새 데스크톱 ID 로 로그인되는 것을 보면 뺀다.
-GOOGLE_CLIENT_IDS = "964399781242-do4svjcjisviqqsi9q47d51rm3fa93rf.apps.googleusercontent.com,964399781242-5jlsebd97g8n2p4qjt2mvc741l0244tq.apps.googleusercontent.com,485298906669-78bbds5qjeb1c4o53fois05eshldc1o1.apps.googleusercontent.com"
+# 2026-09-30~10-01 부모님 명의 프로젝트(964399781242)로 옮겼다. 폰·윈도우 로그인을 확인하고 옛 프로젝트
+# (485298906669) ID 는 모두 뺐다.
+GOOGLE_CLIENT_IDS = "964399781242-do4svjcjisviqqsi9q47d51rm3fa93rf.apps.googleusercontent.com,964399781242-5jlsebd97g8n2p4qjt2mvc741l0244tq.apps.googleusercontent.com"
 # AI 는 구독자 전용이다. 무료 한도와 IP 한도는 없앴다 — 무료에게 열어 두면 쓰는 사람이
 # 늘수록 손해가 늘고(한 명이 한도를 꽉 채우면 월 468원, 받는 돈은 0원), 서버 주소는 APK
 # 안에 있어 누구나 두드릴 수 있다. 돈 낸 사람만 들이는 것이 유일하게 확실한 천장이다.
