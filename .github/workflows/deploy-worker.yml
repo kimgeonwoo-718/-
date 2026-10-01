@@ -41,6 +41,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
             echo "Cloudflare 비밀값이 없어 배포를 건너뛴다 (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID)"
@@ -55,7 +56,11 @@ jobs:
             echo "::error title=OPENAI_API_KEY 가 없다::AI_PROVIDER 가 openai 인데 키가 없다. 배포하면 서버가 503 을 낸다. 비밀값을 넣거나 AI_PROVIDER 를 gemini 로 되돌려라."
             exit 1
           fi
-          if [ "$want" != "openai" ] && [ -z "${GEMINI_API_KEY:-}" ]; then
+          if { [ "$want" = "anthropic" ] || [ "$want" = "claude" ]; } && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::error title=ANTHROPIC_API_KEY 가 없다::AI_PROVIDER 가 anthropic 인데 키가 없다. 배포하면 서버가 503 을 낸다. 비밀값을 넣거나 AI_PROVIDER 를 gemini 로 되돌려라."
+            exit 1
+          fi
+          if [ "$want" != "openai" ] && [ "$want" != "anthropic" ] && [ "$want" != "claude" ] && [ -z "${GEMINI_API_KEY:-}" ]; then
             echo "::error title=GEMINI_API_KEY 가 없다::AI_PROVIDER 가 gemini 인데 키가 없다. 배포하면 서버가 503 을 낸다."
             exit 1
           fi
@@ -115,6 +120,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           PLAY_SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT }}
           TEST_INSTALL_IDS: ${{ secrets.TEST_INSTALL_IDS }}
         run: |
@@ -135,6 +141,14 @@ jobs:
             echo "GEMINI_API_KEY: 넣음"
           else
             echo "GEMINI_API_KEY: 없음 — 서버가 503 을 돌려준다"
+          fi
+          # Claude(AI_PROVIDER = "anthropic" 일 때 쓴다). 키만 넣어 둬도 AI_PROVIDER 가 안
+          # 바뀌면 쓰이지 않는다 — 어느 쪽으로 보낼지는 wrangler.toml 한 줄이 정한다.
+          if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+            printf '%s' "$ANTHROPIC_API_KEY" | npx --yes wrangler@3 secret put ANTHROPIC_API_KEY
+            echo "ANTHROPIC_API_KEY: 넣음"
+          else
+            echo "ANTHROPIC_API_KEY: 비어 있음"
           fi
           if [ -n "${PLAY_SERVICE_ACCOUNT:-}" ]; then
             printf '%s' "$PLAY_SERVICE_ACCOUNT" | npx --yes wrangler@3 secret put PLAY_SERVICE_ACCOUNT

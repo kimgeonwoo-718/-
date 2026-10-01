@@ -22,6 +22,7 @@
  *
  *   GEMINI_API_KEY=... node bench/models.mjs gemini-3.5-flash-lite gemini-3.8-flash
  *   OPENAI_API_KEY=...  node bench/models.mjs gpt-5-nano gpt-5-mini
+ *   ANTHROPIC_API_KEY=... node bench/models.mjs claude-haiku-4-5-20251001
  *
  * `--prompt=파일` 로 지시문을 갈아 끼울 수 있다. 모델이 문제인지 지시문이 문제인지
  * 갈라 보려고 둔 자리다.
@@ -31,6 +32,7 @@ import { KINDS, dropAllSpaces, seeded } from './inject.mjs';
 
 const GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models';
 const OPENAI = 'https://api.openai.com/v1/chat/completions';
+const ANTHROPIC = 'https://api.anthropic.com/v1/messages';
 
 /** 앱이 실제로 보내는 지시문. 여기를 바꾸면 앱도 같이 바꿔야 한다. */
 const APP_PROMPT = `당신은 한국어 맞춤법·띄어쓰기 교정기다.
@@ -182,8 +184,38 @@ async function askOpenAi(model, text) {
   };
 }
 
+/** 서버의 Claude 경로와 같은 설정: 지시문은 system, temperature 0. */
+async function askClaude(model, text) {
+  const res = await fetch(ANTHROPIC, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 2048,
+      temperature: 0,
+      system: PROMPT,
+      messages: [{ role: 'user', content: text }],
+    }),
+  });
+  if (!res.ok) return { error: `HTTP ${res.status}` };
+  const body = await res.json();
+  const used = body?.usage ?? {};
+  return {
+    text: (body?.content ?? []).filter((b) => b?.type === 'text').map((b) => b.text ?? '').join('').trim(),
+    tokens: { in: Number(used.input_tokens ?? 0), out: Number(used.output_tokens ?? 0) },
+  };
+}
+
 const send = (model, text) =>
-  model.startsWith('gpt') ? askOpenAi(model, text) : askGemini(model, text);
+  model.startsWith('gpt')
+    ? askOpenAi(model, text)
+    : model.startsWith('claude')
+      ? askClaude(model, text)
+      : askGemini(model, text);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -247,6 +279,9 @@ const PRICE = {
   'gemini-3.1-flash-lite': [0.25, 1.50],
   'gpt-5-nano': [0.05, 0.40],
   'gpt-5-mini': [0.13, 1.00],
+  // 2026-10-01 Anthropic 가격표. 한국어는 구글보다 토큰이 더 나올 수 있다 — 위 '예상 값' 은
+  // 한 문항 340/40 토큰으로 잡으니 실제가 더 나올 수 있고, 그래서 --maxWon 상한이 있다.
+  'claude-haiku-4-5-20251001': [1.0, 5.0],
 };
 const KRW = 1350;
 

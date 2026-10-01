@@ -50,6 +50,13 @@ import {
   rejectsReasoning,
   TRANSLATE_TARGETS,
 } from './openai.js';
+import {
+  ANTHROPIC_URL,
+  ANTHROPIC_VERSION,
+  DEFAULT_CLAUDE_MODEL,
+  toClaudeRequest,
+  fromClaudeReply,
+} from './anthropic.js';
 
 /**
  * 바깥으로 나가는 요청을 보내는 자리.
@@ -136,7 +143,7 @@ export async function handle(request, env, deps = {}) {
   if (request.method === 'GET' && url.pathname === '/terms') return termsPage(env);
   // 지금 쓰기로 한 쪽의 키가 있어야 한다. 둘 중 아무거나 있으면 되는 게 아니다 —
   // 구글로 돌려 놓고 구글 키가 없으면 교정마다 401 을 받으면서 이유는 안 보인다.
-  if (!env[provider(env) === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY']) {
+  if (!env[providerKeyName(env)]) {
     return fail(503, 'server_not_configured');
   }
 
@@ -146,7 +153,9 @@ export async function handle(request, env, deps = {}) {
     const name =
       provider(env) === 'openai'
         ? openAiModel(env)
-        : await resolveGeminiModel(env, fetchImpl, now());
+        : provider(env) === 'anthropic'
+          ? claudeModel(env)
+          : await resolveGeminiModel(env, fetchImpl, now());
     return json(200, modelList(name));
   }
   // 날짜별 토큰 사용량. 개인 정보는 없고 합계뿐이라 열어 둔다 — 요금이 얼마나 나가는지
@@ -398,7 +407,9 @@ async function correct(request, env, url, fetchImpl, now) {
   const reply =
     provider(env) === 'openai'
       ? await askOpenAi(fetchImpl, env, openAiModel(env), body, translateTo)
-      : await askGemini(fetchImpl, env, await resolveGeminiModel(env, fetchImpl, nowMs), body, translateTo);
+      : provider(env) === 'anthropic'
+        ? await askClaude(fetchImpl, env, claudeModel(env), body, translateTo)
+        : await askGemini(fetchImpl, env, await resolveGeminiModel(env, fetchImpl, nowMs), body, translateTo);
   reply.tookMs = Date.now() - startedAt;
 
   if (reply.status === 200) {
@@ -426,7 +437,21 @@ function provider(env) {
   const asked = (env.AI_PROVIDER ?? '').trim().toLowerCase();
   if (asked === 'gemini' || asked === 'google') return 'gemini';
   if (asked === 'openai') return 'openai';
+  // Claude. 구글 약관의 18세 조항 때문에 생긴 길이다(anthropic.js 머리말).
+  if (asked === 'anthropic' || asked === 'claude') return 'anthropic';
   return env.OPENAI_API_KEY ? 'openai' : 'gemini';
+}
+
+/** 지금 쓰기로 한 쪽의 키 이름. 그 키가 없으면 서버는 AI 를 503 으로 막는다. */
+function providerKeyName(env) {
+  const p = provider(env);
+  if (p === 'openai') return 'OPENAI_API_KEY';
+  if (p === 'anthropic') return 'ANTHROPIC_API_KEY';
+  return 'GEMINI_API_KEY';
+}
+
+function claudeModel(env) {
+  return (env.CLAUDE_MODEL ?? '').trim() || DEFAULT_CLAUDE_MODEL;
 }
 
 function openAiModel(env) {
@@ -523,6 +548,21 @@ async function askOpenAi(fetchImpl, env, model, body, translateTo = null) {
   return toGeminiReply(raw.status, raw.text, userTextOf(body), { translateTo });
 }
 
+/**
+ * Claude 에 보내고 구글 모양으로 되돌려준다. 모델은 서버가 정한다(앱이 주소에 실은 이름은 안 쓴다).
+ * 지시문은 `CLAUDE_PROMPT` — 'server' 면 서버의 긴 지시문, 아니면 앱이 보낸 것(anthropic.js 참고).
+ */
+async function askClaude(fetchImpl, env, model, body, translateTo = null) {
+  let request;
+  try {
+    request = toClaudeRequest(body, model, { prompt: (env.CLAUDE_PROMPT ?? '').trim(), translateTo });
+  } catch {
+    return { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) };
+  }
+  const raw = await relayTo(fetchImpl, env, ANTHROPIC_URL, 'POST', request);
+  return fromClaudeReply(raw.status, raw.text, userTextOf(body), { translateTo });
+}
+
 /** 바깥에 보내고 상태와 본문 문자열만 받는다. 본문을 읽어야 토큰 수를 셀 수 있다. */
 async function relayTo(fetchImpl, env, target, method, body) {
   let res;
@@ -583,6 +623,9 @@ function upstreamHeaders(env, target) {
   // 들어가면 fetch 가 예외를 던져 500 이 된다.
   if (target.startsWith(OPENAI_URL)) {
     headers.authorization = `Bearer ${(env.OPENAI_API_KEY ?? '').trim()}`;
+  } else if (target.startsWith(ANTHROPIC_URL)) {
+    headers['x-api-key'] = (env.ANTHROPIC_API_KEY ?? '').trim();
+    headers['anthropic-version'] = ANTHROPIC_VERSION;
   } else {
     headers['x-goog-api-key'] = (env.GEMINI_API_KEY ?? '').trim();
   }
@@ -755,12 +798,18 @@ function privacyPage(env) {
   // 어느 회사로 보내는지는 방침의 핵심이라 실제 설정을 그대로 따라가게 둔다.
   // **실제로 보내는 곳(provider)** 을 봐야 한다. 예전에는 openAiModel(env) 를 봤는데, 그건
   // 기본 모델 이름이 늘 있어서 참이다 — 구글로 보내면서 방침에는 OpenAI 라고 적혀 있었다.
-  const openai = provider(env) === 'openai';
-  const providerApi = openai ? 'OpenAI API' : 'Google Gemini API';
-  const providerName = openai ? 'OpenAI' : 'Google';
+  const which = provider(env);
+  const openai = which === 'openai';
+  const claude = which === 'anthropic';
+  const providerApi = openai ? 'OpenAI API' : claude ? 'Anthropic Claude API' : 'Google Gemini API';
+  const providerName = openai ? 'OpenAI' : claude ? 'Anthropic' : 'Google';
   const aiAbroad = openai
     ? '<li><strong>OpenAI (미국)</strong> — AI 교정·번역 처리. 누를 때 그 입력란의 글. 처리 즉시 결과만 돌려받습니다.</li>'
-    : '';
+    : claude
+      ? '<li><strong>Anthropic (미국)</strong> — AI 교정·번역 처리. 누를 때 그 입력란의 글. 처리 즉시 결과만 돌려받습니다.</li>'
+      : '';
+  // Google 줄에서 "AI 교정·번역 처리" 를 빼는 것은 AI 가 구글이 아닐 때다.
+  const googleDoesAi = !openai && !claude;
   return docPage(env, '개인정보 처리방침', `
 <p>맞춤법 키보드는 타이핑하는 글을 기기 안에서 고쳐 주는 안드로이드 키보드입니다. 이 문서는 앱이 어떤 정보를 어디까지 다루는지 설명합니다.</p>
 
@@ -790,7 +839,7 @@ function privacyPage(env) {
 <p>서비스 제공을 위해 아래 업체의 해외 서버에서 정보가 처리됩니다. 보관 기간은 위 3번과 같습니다.</p>
 <ul>
 <li><strong>Cloudflare (미국 등)</strong> — 앱 서버 운영. 위 3번의 정보.</li>
-<li><strong>Google (미국)</strong> — ${openai ? '' : 'AI 교정·번역 처리(누를 때 그 입력란의 글), '}구독 확인(구매 토큰), 로그인 확인(구글이 발급한 로그인 증명).</li>
+<li><strong>Google (미국)</strong> — ${googleDoesAi ? 'AI 교정·번역 처리(누를 때 그 입력란의 글), ' : ''}구독 확인(구매 토큰), 로그인 확인(구글이 발급한 로그인 증명).</li>
 ${aiAbroad}
 </ul>
 

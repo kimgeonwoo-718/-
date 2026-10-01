@@ -2807,3 +2807,21 @@ Gemini API 추가 약관: "18세 이상이어야 API 를 쓸 수 있다. 또한 
 - Anthropic Claude: 미성년 대상은 안전장치 조건부 허용(원문 재확인 필요). 서버에 길이 없다 — 새로 만들고 `server/bench/` 로 재야 한다.
 - Vertex AI(구글 클라우드 경유 제미나이): 약관이 다르다는 말과 같다는 말이 섞여 있다. 원문 확인 전엔 기대지 않는다.
 - AI 기능만 18세 이상으로 막기: 약관은 "앱" 이 미성년에게 닿을 가능성을 본다. 기능만 막아서 되는지는 불확실.
+
+## Claude 경로를 만들었다 (2026-10-01, 아직 안 켬)
+
+구글 약관의 18세 조항(위 절) 때문에 AI 를 Anthropic(Claude)으로 옮긴다. **사용자가 "지금 바로 바꾸고 테스트"
+를 원했다.** 서버에 길을 만들어 두고, 켜는 것은 재 본 뒤다.
+
+- `server/src/anthropic.js` — 구글 모양 ↔ Claude Messages API. temperature 0, max_tokens 2048~8192, 잘린 답
+  (`stop_reason: max_tokens`)·교정 아닌 답(`tooDifferent`)은 502. 지시문은 `CLAUDE_PROMPT`("server" 면 긴 서버판,
+  비우면 앱이 보낸 판 = 제미나이 때와 같음).
+- `index.js` — `AI_PROVIDER = "anthropic"`(또는 "claude"), 키 `ANTHROPIC_API_KEY`, 헤더 `x-api-key` +
+  `anthropic-version: 2023-06-01`, 모델 `CLAUDE_MODEL`(기본 `claude-haiku-4-5-20251001`). 방침 페이지가
+  "Anthropic Claude API" / "Anthropic (미국)" 으로 바뀌고 Google 줄에서 AI 처리를 뺀다.
+- 배포 일감이 `ANTHROPIC_API_KEY` 를 넣고, anthropic 인데 키가 없으면 배포를 막는다.
+- 겨루기(`bench/models.mjs`)에 `claude-*` 를 더했다. 가격 $1/$5 (100만 토큰). 한국어는 Claude 토큰이 더
+  나올 수 있다 — 값은 재서 말한다.
+- **남은 것:** 사용자가 부모님 명의로 Anthropic 콘솔 가입·크레딧·키 → GitHub 비밀값 → 겨루기(값 먼저 말하고
+  허락) → 좋으면 `AI_PROVIDER = "anthropic"` → 실기기. 미성년 안전장치(AI 사용 고지는 이미 있다 — ai_notice·방침)
+  는 Anthropic 지침을 다시 읽고 빠진 것을 채운다.

@@ -63,7 +63,15 @@ SUB_DAILY_CHARS = "10000"
 # 제미나이가 맞다. 재 봤다(2026-09-15, `server/bench/`) — 1.1초, 되살림 92~95%,
 # 멀쩡한 글 건드림 2~4%. OpenAI 쪽은 숙고를 끄면 건드림이 20~33% 로 무너지고,
 # 켜면 느리면서 값 이득도 없다. 자세한 것은 아래 OPENAI_MODEL 주석에 적어 뒀다.
+# **"anthropic" 으로 옮길 예정이다(2026-10-01).** 구글은 18세 미만이 쓸 가능성이 높은 앱에 생성형 AI 를
+# 못 쓰게 한다(Gemini API 약관·구글 클라우드 생성형 AI 약관 둘 다). 학생이 쓸 키보드라 걸린다.
+# Anthropic 은 안전장치를 갖추면 허용한다. 품질·값을 `server/bench/` 로 재고 나서 이 줄을 바꾼다
+# (키: GitHub 비밀값 ANTHROPIC_API_KEY). 자세한 것은 src/anthropic.js 머리말과 HANDOFF.
 AI_PROVIDER = "gemini"
+# Claude 모델과 지시문. AI_PROVIDER = "anthropic" 일 때만 쓴다.
+# CLAUDE_PROMPT 가 "server" 면 서버의 긴 지시문(예시 많음), 비우면 앱이 보낸 지시문(제미나이 때와 같음).
+CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+CLAUDE_PROMPT = ""
 # 구글 모델.
 #
 # **gemini-3.5-flash-lite 에 묶어 둔다.** 이 모델로 "교정 완벽하다" 는 평가를 받았다.
@@ -106,5 +114,6 @@ crons = ["0 18 * * *"]
 # 비밀값은 여기 두지 않는다. CI 가 wrangler secret put 으로 넣는다:
 #   OPENAI_API_KEY         OpenAI 키 (있으면 이쪽으로 간다)
 #   GEMINI_API_KEY         구글 Gemini 키 (OpenAI 키가 없을 때)
+#   ANTHROPIC_API_KEY      Anthropic(Claude) 키 (AI_PROVIDER = "anthropic" 일 때)
 #   PLAY_SERVICE_ACCOUNT   Play Developer API 서비스 계정 JSON (없으면 전부 무료로 본다)
 #   TEST_INSTALL_IDS       결제 없이 구독자로 칠 설치 ID들 (쉼표로 구분, 출시 전 삭제)
