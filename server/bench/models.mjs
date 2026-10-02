@@ -153,7 +153,10 @@ async function askGemini(model, text) {
   // 재게 되고, 숙고 토큰이 출력 요금으로 청구돼 값이 몇 배로 뛴다. 실제로 이것 때문에
   // 크레딧이 바닥나 실기기의 AI 교정이 멈췄다.
   const generationConfig = { temperature: 0, candidateCount: 1 };
-  if (!thinkingRejected.has(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  // 이 요청이 숙고 끔을 실었는지를 따로 쥔다. 넷을 한꺼번에 보내면 첫 거절이 Set 을 채운 뒤에 나머지 셋의
+  // 400 이 돌아오는데, Set 만 보면 "이미 뺐다" 로 읽혀 실패로 찍혔다(2026-10-02, 3문항을 잃음).
+  const sentThinkingOff = !thinkingRejected.has(model);
+  if (sentThinkingOff) generationConfig.thinkingConfig = { thinkingBudget: 0 };
   const res = await fetch(`${GEMINI}/${model}:generateContent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
@@ -163,9 +166,9 @@ async function askGemini(model, text) {
       generationConfig,
     }),
   });
-  if (res.status === 400 && !thinkingRejected.has(model)) {
+  if (res.status === 400 && sentThinkingOff) {
+    if (!thinkingRejected.has(model)) console.error(`(${model} 이 숙고 끔을 거절했다 — 앱처럼 빼고 다시 보낸다)`);
     thinkingRejected.add(model);
-    console.error(`(${model} 이 숙고 끔을 거절했다 — 앱처럼 빼고 다시 보낸다)`);
     return askGemini(model, text);
   }
   if (!res.ok) return { error: `HTTP ${res.status}` };
