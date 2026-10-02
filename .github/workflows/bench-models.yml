@@ -88,6 +88,9 @@ jobs:
           # 'cost' 면 겨루기 대신 한 번 값을 잰다(bench/cost.mjs, 약 20원).
           if [ "$models" = "cost" ]; then
             node bench/cost.mjs | tee bench.txt
+          elif [ "$models" = "cases" ]; then
+            # 'cases 모델' 이면 사례 하나하나를 보여 준다(bench/cases.mjs, 약 80번, solar-pro4 로 약 9원).
+            node bench/cases.mjs $extra | tee bench.txt
           else
             node bench/models.mjs $models $limit | tee bench.txt
           fi
