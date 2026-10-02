@@ -26,6 +26,10 @@
       - 카드 사이 기본 간격은 12dp 로 두고, **남는 높이는 사이사이 Space(무게 1)와 프리미엄 칸(무게 2)이
         나눠 갖는다.** ScrollView 의 fillViewport 가 내용이 화면보다 짧을 때 이 LinearLayout 을 화면
         높이로 늘려 주고, 그때 무게가 나뉜다. 화면이 더 작으면 무게는 0 이 되고 그냥 스크롤된다.
+      - **프리미엄 칸 높이는 0dp 가 아니라 wrap_content 다.** 0dp 로 두면 LinearLayout 이 그 칸의 내용 높이를
+        아예 안 재고 "남는 높이의 2/6" 만 줘서 칸이 찌그러지고 글이 잘렸다(2026-10-02 실기기). wrap_content 면
+        내용만큼 먼저 주고 남는 것만 무게대로 더 얹는다.
+      - 바뀌면 `tools/screenshot/RUN` 을 고쳐 올려 에뮬레이터 캡처(screenshot.yml)로 먼저 본다.
       - 카드 안 여백은 위아래 16dp 로 같게(시작하기 칸 글자가 아래로 쏠려 보였다).
       - 결제 잔글씨 두 개(결제 안내·AI 전송 안내)는 결제 화면(activity_paywall)에 있다.
     -->
@@ -219,7 +223,7 @@
         -->
         <LinearLayout
             style="@style/Card"
-            android:layout_height="0dp"
+            android:layout_height="wrap_content"
             android:layout_weight="2"
             android:layout_marginTop="12dp"
             android:gravity="center_vertical"
