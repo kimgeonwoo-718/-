@@ -43,10 +43,10 @@ adb shell "run-as $PKG sh -c 'mkdir -p shared_prefs && cat > shared_prefs/spell_
 XML
 adb shell run-as $PKG cat shared_prefs/spell_keyboard.xml
 
-shot() { # 이름
+shot() { # 이름 [am start 에 더 붙일 것]
   adb shell am force-stop $PKG
   dismiss_dialogs
-  adb shell am start -W -n $PKG/.SetupActivity >/dev/null
+  adb shell am start -W -n $PKG/.SetupActivity "${@:2}" >/dev/null
   sleep 4
   dismiss_dialogs
   adb exec-out screencap -p > "shots/$1.png"
@@ -57,14 +57,14 @@ size() { adb shell wm size "$1"; adb shell wm density "$2"; sleep 3; }
 # 1) 키보드를 아직 안 켠 상태(처음 깐 사람)
 size 988x2000 384; shot home-user-fresh
 
-# 2) 키보드를 켜고 고른 상태(사용자 폰)
+# 2) 키보드를 켜고 고른 상태(사용자 폰).
+#    에뮬레이터(x86)에서는 키보드 엔진(arm 전용)이 못 떠서 시스템이 기본 입력기를 되돌린다 — 앱이 "고르지
+#    않음" 으로 본다. 그래서 디버그 빌드에만 있는 스위치(screenshot_setup_done)로 "마친 화면" 을 띄운다.
 adb shell ime enable $IME
-adb shell ime set $IME
-adb shell settings put secure default_input_method $IME
-echo "기본 입력기: $(adb shell settings get secure default_input_method)"
-size 988x2000 384; shot home-user
-size 720x1520 320; shot home-small
-size 1080x2400 420; shot home-tall
+DONE=(--ez screenshot_setup_done true)
+size 988x2000 384; shot home-user "${DONE[@]}"
+size 720x1520 320; shot home-small "${DONE[@]}"
+size 1080x2400 420; shot home-tall "${DONE[@]}"
 
 adb shell wm size reset
 adb shell wm density reset

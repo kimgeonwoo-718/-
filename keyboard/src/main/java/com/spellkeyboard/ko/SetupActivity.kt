@@ -126,12 +126,21 @@ class SetupActivity : AppCompatActivity() {
         markStep(findViewById(R.id.enable_button), enabled)
         markStep(findViewById(R.id.pick_button), selected)
         // 둘 다 끝났으면 행 둘을 접고 "키보드를 쓰고 있어요" 한 줄만 — 첫 화면을 한 페이지에 담으려고.
-        val done = enabled && selected
+        val done = (enabled && selected) || screenshotSetupDone()
         findViewById<View>(R.id.setup_all_done).isVisible = done
         findViewById<View>(R.id.setup_step_enable).isVisible = !done
         findViewById<View>(R.id.setup_divider).isVisible = !done
         findViewById<View>(R.id.setup_step_pick).isVisible = !done
     }
+
+    /**
+     * 화면 캡처(tools/screenshot/shoot.sh)에서 "설정을 마친 사람" 화면을 보려고 둔 스위치.
+     * 에뮬레이터(x86)에서는 키보드 엔진(arm 전용 네이티브)이 못 떠서 시스템이 기본 입력기를 되돌려 버린다.
+     * **디버그 빌드에서만** 듣는다 — Play 에 올라가는 릴리스에서는 없는 것과 같다. 모양만 바뀐다.
+     */
+    private fun screenshotSetupDone(): Boolean =
+        (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
+            intent?.getBooleanExtra(EXTRA_SCREENSHOT_SETUP_DONE, false) == true
 
     private fun markStep(pill: TextView, done: Boolean) {
         if (done) {
@@ -193,6 +202,7 @@ class SetupActivity : AppCompatActivity() {
         private const val FREE_PLAN = "free"
 
         private const val KEY_SCROLL = "scroll_y"
+        private const val EXTRA_SCREENSHOT_SETUP_DONE = "screenshot_setup_done"
         private const val KEY_MORE_OPEN = "more_open"
     }
 }
