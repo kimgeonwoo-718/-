@@ -91,10 +91,12 @@ test('Claude 응답: 잘린 답은 주지 않는다', () => {
   assert.equal(out.status, 502);
 });
 
-test('Claude 응답: 교정이 아닌 답(길이가 확 다름)은 버린다', () => {
+test('Claude 응답: 교정이 아닌 답(길이가 확 다름)은 원문으로 돌려준다', () => {
   const user = '오늘 회의는 세 시로 미뤄졌다고 방금 연락이 왔어요 그러니까 천천히 와도 돼';
   const out = fromClaudeReply(200, claudeReply('알겠습니다.'), user);
-  assert.equal(out.status, 502);
+  assert.equal(out.status, 200);
+  assert.equal(out.kept, true);
+  assert.equal(JSON.parse(out.text).candidates[0].content.parts[0].text, user);
 });
 
 test('Claude 응답: 저쪽 오류는 상태와 메시지를 그대로', () => {

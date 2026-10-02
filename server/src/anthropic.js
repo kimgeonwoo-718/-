@@ -15,7 +15,7 @@
  * 앱은 구글 모양(`system_instruction` + `contents`)으로 보내고 구글 모양 응답을 읽는다.
  * OpenAI 경로와 같이 **여기서 옮겨 주고 옮겨 받는다** — 이미 깔린 APK 는 손대지 않는다.
  */
-import { KO_SYSTEM_PROMPT, translatePrompt, userTextOf, tooDifferent } from './openai.js';
+import { KO_SYSTEM_PROMPT, translatePrompt, userTextOf, tooDifferent, keepOriginal } from './openai.js';
 
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 export const ANTHROPIC_VERSION = '2023-06-01';
@@ -83,25 +83,26 @@ export function fromClaudeReply(status, text, user = '', options = {}) {
   // 잘린 답은 주지 않는다 — 앱이 사용자 글을 잘린 교정문으로 덮어 버린다.
   if (parsed?.stop_reason === 'max_tokens') return errorReply(502, '글이 너무 길어 교정문이 잘렸다');
   if (!corrected) return errorReply(502, `응답이 비었다 (${parsed?.stop_reason ?? 'unknown'})`);
-  // 길이로 거르는 것은 교정일 때만이다. 번역문은 원문과 길이가 다른 게 당연하다.
+  const usage = parsed?.usage ?? {};
+  const usageMetadata = {
+    // 캐시로 읽은 입력도 입력이다. /stats 는 요금 짐작에 쓰므로 빠뜨리지 않는다.
+    promptTokenCount:
+      num(usage.input_tokens) + num(usage.cache_read_input_tokens) + num(usage.cache_creation_input_tokens),
+    candidatesTokenCount: num(usage.output_tokens),
+    thoughtsTokenCount: 0,
+  };
+  // 교정이 아닌 답은 원문으로(openai.js 의 keepOriginal). 교정일 때만 — 번역문은 길이가 다른 게 당연하다.
   if (user && !options.translateTo && tooDifferent(user, corrected)) {
-    return errorReply(502, '교정 결과가 원문과 너무 달라 버렸다');
+    return keepOriginal(user, usageMetadata);
   }
 
-  const usage = parsed?.usage ?? {};
   return {
     status: 200,
     text: JSON.stringify({
       candidates: [
         { content: { role: 'model', parts: [{ text: corrected }] }, finishReason: 'STOP' },
       ],
-      usageMetadata: {
-        // 캐시로 읽은 입력도 입력이다. /stats 는 요금 짐작에 쓰므로 빠뜨리지 않는다.
-        promptTokenCount:
-          num(usage.input_tokens) + num(usage.cache_read_input_tokens) + num(usage.cache_creation_input_tokens),
-        candidatesTokenCount: num(usage.output_tokens),
-        thoughtsTokenCount: 0,
-      },
+      usageMetadata,
     }),
   };
 }

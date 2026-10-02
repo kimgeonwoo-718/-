@@ -246,17 +246,19 @@ test('교정이 아닌 답은 길이로 걸러낸다', () => {
   }), user);
   assert.equal(ok.status, 200);
 
-  // 본문에 섞인 지시문을 따라가 버린 경우. 우리 글 대신 딴 글이 온다.
+  // 본문에 섞인 지시문을 따라가 버린 경우. 우리 글 대신 딴 글이 온다 — 원문을 돌려준다.
   const hijacked = toGeminiReply(200, JSON.stringify({
     choices: [{ message: { content: '네, 알겠습니다!' }, finish_reason: 'stop' }],
   }), user);
-  assert.equal(hijacked.status, 502);
+  assert.equal(hijacked.status, 200);
+  assert.equal(hijacked.kept, true);
+  assert.equal(JSON.parse(hijacked.text).candidates[0].content.parts[0].text, user);
 
   // 요약이 아니라 늘려 쓴 경우도 교정이 아니다.
   const padded = toGeminiReply(200, JSON.stringify({
     choices: [{ message: { content: user + user }, finish_reason: 'stop' }],
   }), user);
-  assert.equal(padded.status, 502);
+  assert.equal(padded.kept, true);
 });
 
 test('짧은 글은 길이로 재지 않는다', () => {
@@ -314,7 +316,7 @@ test('번역은 길이가 달라도 안 버린다', () => {
     usage: { prompt_tokens: 10, completion_tokens: 20 },
   });
   const asCorrection = toGeminiReply(200, raw, korean);
-  assert.equal(asCorrection.status, 502);
+  assert.equal(asCorrection.kept, true, '교정이면 원문으로 바꿔 준다');
 
   const asTranslation = toGeminiReply(200, raw, korean, { translateTo: 'en' });
   assert.equal(asTranslation.status, 200);

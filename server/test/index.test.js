@@ -45,8 +45,8 @@ function upstream({ status = 200, activeToken = null, echo = false } = {}) {
     if (url.includes(':generateContent')) {
       if (status !== 200) return new Response(JSON.stringify({ error: { message: 'boom' } }), { status });
       // echo: 원문을 그대로 돌려준다. 서버에 길이 검사가 있어서(교정문이 원문의 60~160%),
-      // 긴 글을 보내는 시험은 답도 그만큼 길어야 본론까지 간다. '고침' 두 글자로는 막힌다.
-      const text = echo ? JSON.parse(init.body).contents[0].parts[0].text : '고침';
+      // 긴 글을 보내는 시험은 답도 그만큼 길어야 본론까지 간다. '안녕하세요' 두 글자로는 막힌다.
+      const text = echo ? JSON.parse(init.body).contents[0].parts[0].text : '안녕하세요';
       return new Response(JSON.stringify({
         candidates: [{ content: { parts: [{ text }] } }],
         usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 30, thoughtsTokenCount: 7 },
@@ -89,7 +89,7 @@ test('요청을 구글로 넘기고 우리 키를 붙인다 — 클라이언트 
   const up = upstream();
   const res = await handle(generate({ 'x-purchase-token': 'secret' }), env(), { fetch: up.fetchImpl, now: () => NOON_KST });
   assert.equal(res.status, 200);
-  assert.equal((await res.json()).candidates[0].content.parts[0].text, '고침');
+  assert.equal((await res.json()).candidates[0].content.parts[0].text, '안녕하세요');
 
   const call = up.calls.find((c) => c.url.includes(':generateContent'));
   // 주소의 gemini-x 는 앱이 보낸 이름이다. 서버가 정한 이름으로 나가야 한다.
@@ -301,7 +301,7 @@ function upstreamWithModels(names) {
         { status: 200 }
       );
     }
-    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '고침' }] } }] }), { status: 200 });
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '안녕하세요' }] } }] }), { status: 200 });
   };
   return { calls, fetchImpl };
 }
@@ -350,7 +350,7 @@ test('목록을 못 받으면 아는 이름으로 가되, 그 실패를 하루 �
         { status: 200 }
       );
     }
-    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '고침' }] } }] }), { status: 200 });
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '안녕하세요' }] } }] }), { status: 200 });
   };
   const e = env({ GEMINI_MODEL: '' });
 
@@ -439,7 +439,7 @@ test('번역도 교정과 같은 통에서 깎인다 — 한도는 하나다', a
 });
 
 test('중계 객체가 있으면 구글 호출은 그 안에서 나간다 — 미국 서부 위치 힌트로', async () => {
-  const relay = fakeRelay(() => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '고침' }] } }] }), { status: 200 }));
+  const relay = fakeRelay(() => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '안녕하세요' }] } }] }), { status: 200 }));
   const direct = upstream();
   const res = await handle(generate(), env({ RELAY: relay }), { fetch: direct.fetchImpl, now: () => NOON_KST });
 
@@ -643,13 +643,15 @@ test('번역은 길이가 달라도 안 버린다 — 구글 경로도 마찬가
   assert.equal(res.status, 200, '길이 검사는 교정일 때만 건다');
 });
 
-test('구글 답이 원문과 너무 다르면 버린다 — 교정일 때', async () => {
+test('구글 답이 원문과 너무 다르면 원문을 돌려준다 — 교정일 때, 502 면 앱이 한 번 더 보낸다', async () => {
   const long = '가'.repeat(40);
   const fetchImpl = async () =>
     new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '요약함' }] } }] }), { status: 200 });
   const res = await handle(generate({}, JSON.stringify({ contents: [{ parts: [{ text: long }] }] })),
     env({ AI_PROVIDER: 'gemini' }), { fetch: fetchImpl, now: () => NOON_KST });
-  assert.equal(res.status, 502);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('x-correction-kept'), 'original');
+  assert.equal((await res.json()).candidates[0].content.parts[0].text, long);
 });
 
 test('구글 답이 잘렸으면 주지 않는다 — 덮어쓰면 글이 사라진다', async () => {

@@ -21,7 +21,7 @@
  * 번역만 우리 지시문을 쓴다. 앱은 번역용 지시문을 아예 안 보내기 때문이다
  * (`buildRequest(text, withPrompt = false)`).
  */
-import { translatePrompt, userTextOf, tooDifferent } from './openai.js';
+import { translatePrompt, userTextOf, tooDifferent, keepOriginal } from './openai.js';
 
 export const GEMINI_UPSTREAM = 'https://generativelanguage.googleapis.com';
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
@@ -67,9 +67,10 @@ export function fromGeminiReply(status, text, user = '', options = {}) {
     return errorReply(502, '글이 너무 길어 교정문이 잘렸다');
   }
   if (!corrected) return errorReply(502, `응답이 비었다 (${candidate?.finishReason ?? 'unknown'})`);
-  // 길이 검사는 교정일 때만. 번역문은 원문과 길이가 다른 게 당연하다.
+  // 교정이 아닌 답은 원문으로 바꿔 준다(openai.js 의 keepOriginal — 502 면 앱이 한 번 더 보낸다).
+  // 교정일 때만. 번역문은 원문과 길이가 다른 게 당연하다.
   if (user && !options.translateTo && tooDifferent(user, corrected)) {
-    return errorReply(502, '교정 결과가 원문과 너무 달라 버렸다');
+    return keepOriginal(user, parsed?.usageMetadata ?? {});
   }
 
   // 구글 모양 그대로라 다시 짤 것이 없다. 사용량은 저쪽이 실어 준 것을 그대로 쓴다.

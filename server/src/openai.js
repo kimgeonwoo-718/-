@@ -247,23 +247,110 @@ export function toOpenAiRequest(body, model, options = {}) {
  * @returns `{ status, text }` — 중계 결과와 같은 모양.
  */
 /**
- * 교정문이라 하기엔 너무 다른가.
+ * 교정문이 아닌가 — **모델이 고치지 않고 딴짓을 한 답인가.**
  *
  * 지시문으로 막아도 모델이 딴짓을 할 때가 있다 — 글을 요약하거나, 사용자가 쓴
- * "이거 어때?" 에 대답을 하거나, 본문에 섞인 지시문을 따라가 버리거나. 그런 답은
- * 길이부터 확 다르다. 맞춤법 교정은 원문과 길이가 비슷할 수밖에 없다.
+ * "이거 어때?" 에 대답을 하거나, 본문에 섞인 지시문을 따라가 버리거나. 실제로 Solar 가
+ * '너 누구야' 에 '저는 Upstage AI에서 만든 Solar입니다.' 로 답했고(2026-10-02), 그 답이
+ * 사용자 글을 덮었다. 지시문만으로는 "절대" 를 못 지킨다 — 그래서 서버가 마지막에 본다.
+ *
+ * 셋 중 하나라도 걸리면 교정이 아니다:
+ * 1. **길이.** 20자 이상은 0.6~1.6배를 벗어나면. 짧은 글은 두 배+4자 넘게 길어지면.
+ * 2. **자모가 얼마나 바뀌었나.** 맞춤법 교정은 자모 몇 개를 고치는 일이다(몇일 → 며칠은 6개 중 1개,
+ *    있다가 → 이따가는 6개 중 2개). 대답은 통째로 다른 글이다('대한민국 수도가 어디야' → '서울입니다').
+ *    띄어쓰기·문장부호는 빼고 자모로 풀어 편집 거리를 재서, 절반 넘게 바뀌었으면 교정이 아니다.
+ *    짧은 글에서 길이로 못 잡는 대답('뭐해' → '교정 중이에요', '1+1은?' → '2')을 여기서 잡는다.
+ * 3. **대답에만 나오는 말.** 원문에 없던 'Solar', '업스테이지', '인공지능', '도와드', '죄송',
+ *    '텍스트' 같은 말이 생기면 교정이 아니라 모델이 자기 말을 한 것이다.
  *
  * 넉넉하게 잡는다. 여기 걸리는 것은 "조금 틀린 교정" 이 아니라 "교정이 아닌 것" 이다.
  */
 export function tooDifferent(user, corrected) {
+  return lengthOff(user, corrected) || mostlyRewritten(user, corrected) || speaksForItself(user, corrected);
+}
+
+function lengthOff(user, corrected) {
   const before = user.replace(/\s/g, '').length;
   const after = corrected.replace(/\s/g, '').length;
-  // 짧은 글은 한두 글자 차이가 비율로 크게 잡히므로 비율로 재지 않는다. 대신 **확 길어진 답**만
-  // 거른다 — '너 누구야'(4자)에 '저는 Upstage AI에서 만든 Solar입니다.'(25자)로 대답한 일이 있었고
-  // (2026-10-02, Solar), 그 답이 사용자 글을 덮었다. 교정으로 두 배 넘게 길어지는 짧은 글은 없다
-  // ('ㅇㅋ → 오케이' 도 2 → 3). 줄어드는 쪽은 안 잰다 — '감사합ㄴ니다 → 감사합니다' 같은 게 정상이다.
+  // 짧은 글은 한두 글자 차이가 비율로 크게 잡히므로 비율로 재지 않는다. 대신 확 길어진 답만 거른다.
+  // 줄어드는 쪽은 안 잰다 — '감사합ㄴ니다 → 감사합니다' 같은 게 정상이다.
   if (before < 20) return after > before * 2 + 4;
   return after < before * 0.6 || after > before * 1.6;
+}
+
+/** 자모 편집 거리를 이 길이까지만 잰다. 넘으면 길이 검사에 맡긴다 — 긴 글은 길이로 충분히 잡힌다. */
+const MAX_JAMO_FOR_DISTANCE = 600;
+
+function mostlyRewritten(user, corrected) {
+  const a = jamo(user);
+  const b = jamo(corrected);
+  if (!a.length || !b.length) return false;
+  if (a.length > MAX_JAMO_FOR_DISTANCE || b.length > MAX_JAMO_FOR_DISTANCE) return false;
+  return editDistance(a, b) / Math.max(a.length, b.length) > 0.5;
+}
+
+/** 모델이 자기 얘기를 할 때 나오는 말. 원문에 없었는데 답에 생기면 교정이 아니다(공백 빼고 소문자로 비교). */
+const ANSWER_MARKS = [
+  'solar', '솔라', 'upstage', '업스테이지', '인공지능', '언어모델', '챗봇', 'assistant', 'chatgpt',
+  'gemini', '제미나이', '교정기', '교정할', '텍스트', '도와드', '입력해주', '죄송',
+];
+
+function speaksForItself(user, corrected) {
+  const before = user.replace(/\s/g, '').toLowerCase();
+  const after = corrected.replace(/\s/g, '').toLowerCase();
+  return ANSWER_MARKS.some((mark) => after.includes(mark) && !before.includes(mark));
+}
+
+const LEADS = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+const VOWELS = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+const TAILS = ['', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+
+/** 한글 음절을 자모로 푼다. 공백과 문장부호는 뺀다 — 띄어쓰기·부호 고침은 바뀐 것으로 치지 않는다. */
+function jamo(text) {
+  const out = [];
+  for (const ch of text.toLowerCase()) {
+    if (/[\s.,!?~'"“”‘’…·:;()\-]/.test(ch)) continue;
+    const code = ch.codePointAt(0);
+    if (code >= 0xac00 && code <= 0xd7a3) {
+      const i = code - 0xac00;
+      out.push(LEADS[Math.floor(i / 588)], VOWELS[Math.floor((i % 588) / 28)]);
+      if (i % 28) out.push(TAILS[i % 28]);
+    } else {
+      out.push(ch);
+    }
+  }
+  return out;
+}
+
+function editDistance(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = row;
+  }
+  return prev[b.length];
+}
+
+/**
+ * 교정이 아닌 답을 받았을 때 앱에 돌려줄 것 — **원문 그대로, 200 으로.**
+ *
+ * 예전에는 502 로 실패를 알렸다. 그런데 앱은 502 를 "잠깐 붐빈 것" 으로 보고 다른 모델로 옮겨 보거나
+ * 쉬었다 **한 번 더 보낸다**(GeminiCorrector.TRANSIENT_CODES). 같은 글이면 같은 대답이 또 오고,
+ * 값은 두 번 나가고, 사용자는 몇 초 기다린 끝에 오류를 본다. 원문을 돌려주면 입력란은 그대로고
+ * (고칠 게 없을 때와 같다) 다시 보내지도 않는다. 이미 쓴 토큰은 집계에 넣는다 — 값은 나갔다.
+ */
+export function keepOriginal(user, usageMetadata) {
+  return {
+    status: 200,
+    kept: true,
+    text: JSON.stringify({
+      candidates: [{ content: { role: 'model', parts: [{ text: user }] }, finishReason: 'STOP' }],
+      usageMetadata,
+    }),
+  };
 }
 
 export function toGeminiReply(status, text, user = '', options = {}) {
@@ -280,27 +367,28 @@ export function toGeminiReply(status, text, user = '', options = {}) {
   // 잘린 교정문을 주면 사용자가 쓴 글이 그만큼 사라진다. 차라리 실패로 알린다.
   if (choice?.finish_reason === 'length') return errorReply(502, '글이 너무 길어 교정문이 잘렸다');
   if (!corrected) return errorReply(502, `응답이 비었다 (${choice?.finish_reason ?? 'unknown'})`);
-  // 길이로 거르는 것은 **교정일 때만**이다. 번역문은 원문과 길이가 다른 게 당연해서
-  // (한국어 20자가 영어 40자가 되기도 한다) 여기 걸면 멀쩡한 번역이 전부 막힌다.
-  if (user && !options.translateTo && tooDifferent(user, corrected)) {
-    return errorReply(502, '교정 결과가 원문과 너무 달라 버렸다');
-  }
-
   const usage = parsed?.usage ?? {};
   const reasoning = num(usage.completion_tokens_details?.reasoning_tokens);
+  const usageMetadata = {
+    promptTokenCount: num(usage.prompt_tokens),
+    // OpenAI 의 completion_tokens 에는 숙고 토큰이 들어 있고, 구글의
+    // candidatesTokenCount 에는 없다. 빼서 넣어야 /stats 합계가 두 번 세지 않는다.
+    candidatesTokenCount: Math.max(0, num(usage.completion_tokens) - reasoning),
+    thoughtsTokenCount: reasoning,
+  };
+  // 교정이 아닌 답은 원문으로 바꿔 준다([keepOriginal]). 이 검사는 **교정일 때만**이다 — 번역문은
+  // 원문과 길이도 글자도 다른 게 당연해서(한국어 20자가 영어 40자가 되기도 한다) 걸면 번역이 전부 막힌다.
+  if (user && !options.translateTo && tooDifferent(user, corrected)) {
+    return keepOriginal(user, usageMetadata);
+  }
+
   return {
     status: 200,
     text: JSON.stringify({
       candidates: [
         { content: { role: 'model', parts: [{ text: corrected }] }, finishReason: 'STOP' },
       ],
-      usageMetadata: {
-        promptTokenCount: num(usage.prompt_tokens),
-        // OpenAI 의 completion_tokens 에는 숙고 토큰이 들어 있고, 구글의
-        // candidatesTokenCount 에는 없다. 빼서 넣어야 /stats 합계가 두 번 세지 않는다.
-        candidatesTokenCount: Math.max(0, num(usage.completion_tokens) - reasoning),
-        thoughtsTokenCount: reasoning,
-      },
+      usageMetadata,
     }),
   };
 }

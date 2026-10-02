@@ -617,6 +617,8 @@ function asResponse(reply) {
   // 느리다는 말만으로는 어디를 손볼지 알 수 없다. 이 숫자는 **모델이 쓴 시간**이라,
   // 앱이 재는 전체 시간에서 이걸 빼면 한국-미국 왕복이 얼마인지도 나온다.
   if (reply.tookMs != null) headers['x-upstream-ms'] = String(reply.tookMs);
+  // 모델이 교정이 아닌 답(대답·요약)을 해서 원문을 돌려준 경우. 앱은 안 보고, 진단할 때 본다.
+  if (reply.kept) headers['x-correction-kept'] = 'original';
   return new Response(reply.text, { status: reply.status, headers });
 }
 
