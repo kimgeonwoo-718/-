@@ -132,7 +132,8 @@
                 android:paddingVertical="6dp">
                 <LinearLayout style="@style/RowText">
                     <TextView style="@style/RowTitle" android:text="@string/setup_enable_title" />
-                    <TextView style="@style/RowSub" android:text="@string/setup_enable_sub" />
+                    <TextView style="@style/RowSub" android:text="@string/setup_enable_sub"
+                android:lineBreakWordStyle="phrase" />
                 </LinearLayout>
                 <TextView android:id="@+id/enable_button" style="@style/Pill" android:text="@string/setup_open" />
             </LinearLayout>
@@ -146,7 +147,8 @@
                 android:paddingVertical="6dp">
                 <LinearLayout style="@style/RowText">
                     <TextView style="@style/RowTitle" android:text="@string/setup_pick_title" />
-                    <TextView style="@style/RowSub" android:text="@string/setup_pick_sub" />
+                    <TextView style="@style/RowSub" android:text="@string/setup_pick_sub"
+                android:lineBreakWordStyle="phrase" />
                 </LinearLayout>
                 <TextView android:id="@+id/pick_button" style="@style/Pill" android:text="@string/setup_open" />
             </LinearLayout>
@@ -169,6 +171,7 @@
                 android:background="@drawable/bg_input"
                 android:gravity="top"
                 android:hint="@string/setup_test_hint"
+                android:lineBreakWordStyle="phrase"
                 android:importantForAutofill="no"
                 android:inputType="textMultiLine"
                 android:minLines="2"
@@ -203,6 +206,7 @@
                     android:layout_weight="1"
                     android:layout_marginStart="8dp"
                     android:text="@string/guide_intro"
+                android:lineBreakWordStyle="phrase"
                     android:textColor="@color/toss_text3"
                     android:textSize="13sp" />
             </LinearLayout>
@@ -257,6 +261,7 @@
                 android:gravity="center"
                 android:lineSpacingExtra="3dp"
                 android:text="@string/premium_pitch_body"
+                android:lineBreakWordStyle="phrase"
                 android:textColor="@color/toss_text"
                 android:textSize="14sp" />
 

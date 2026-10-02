@@ -7,6 +7,8 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
+import android.graphics.text.LineBreakConfig
+import android.os.Build
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
@@ -133,6 +135,14 @@ class ToolbarGuideView @JvmOverloads constructor(
             .setAlignment(Layout.Alignment.ALIGN_NORMAL)
             .setLineSpacing(dp(4f), 1f)
             .setIncludePad(false)
+            .apply {
+                // 한국어를 글자 아무 데서나 끊지 않고 어절 단위로 끊는다('인 / 터넷도' 가 안 나오게). 안드로이드 13+.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    setLineBreakConfig(
+                        LineBreakConfig.Builder().setLineBreakWordStyle(LineBreakConfig.LINE_BREAK_WORD_STYLE_PHRASE).build()
+                    )
+                }
+            }
             .build()
 
     override fun onDraw(canvas: Canvas) {
