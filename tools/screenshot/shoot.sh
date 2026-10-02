@@ -32,6 +32,10 @@ dismiss_dialogs() {
 }
 dismiss_dialogs
 
+# 앱 언어를 한국어로 — 에뮬레이터는 영어라 한국어 어절 줄바꿈(lineBreakWordStyle=phrase)이 안 먹는다.
+# 사용자 폰은 한국어다. (안드로이드 13+ 앱별 언어)
+adb shell cmd locale set-app-locales $PKG --locales ko-KR || true
+
 # 앱 설정: 안내는 이미 봤고, 서버가 마지막에 구독자라고 했다(사용자 폰과 같게 '프리미엄 · 이용 중').
 adb shell am start -W -n $PKG/.SetupActivity >/dev/null; sleep 2; adb shell am force-stop $PKG
 adb shell "run-as $PKG sh -c 'mkdir -p shared_prefs && cat > shared_prefs/spell_keyboard.xml'" <<'XML'
