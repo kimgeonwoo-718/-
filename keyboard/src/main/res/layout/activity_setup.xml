@@ -148,26 +148,55 @@
         <!--
           프리미엄. 무엇을 파는지와 사는 버튼만. 한도·데이터 안내 같은 잔글씨는 환경설정의
           정보 칸으로 옮겼다 — 여기서는 눈이 버튼에 가야 한다.
+
+          2026-10-02: AI 한 줄만 적혀 있어서 살 이유가 안 보였다(사용자). 가운데에 크게 "프리미엄 /
+          절대 후회 없는 기능들", 밑에 값(하루 99원)과 "버튼을 눌러 보라" 를 둔다. 기능 목록은 버튼 너머
+          결제 화면(PaywallActivity)의 비교표에 있다.
         -->
         <LinearLayout style="@style/Card">
-            <TextView style="@style/CardTitle" android:text="@string/paywall_title_plan" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="@string/premium_pitch_title"
+                android:textColor="@color/toss_text"
+                android:textSize="30sp"
+                android:textStyle="bold" />
 
-            <LinearLayout style="@style/Row">
-                <LinearLayout style="@style/RowText">
-                    <TextView style="@style/RowTitle" android:text="@string/setting_ai_title" />
-                    <TextView style="@style/RowSub" android:text="@string/setting_ai_sub" />
-                    <TextView
-                        android:id="@+id/quota_output"
-                        style="@style/RowSub"
-                        android:textColor="@color/toss_blue"
-                        android:textStyle="bold" />
-                </LinearLayout>
-            </LinearLayout>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:gravity="center"
+                android:text="@string/premium_pitch_tagline"
+                android:textColor="@color/toss_blue"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="center"
+                android:lineSpacingExtra="4dp"
+                android:text="@string/premium_pitch_body"
+                android:textColor="@color/toss_text"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/quota_output"
+                style="@style/RowSub"
+                android:layout_width="match_parent"
+                android:layout_marginTop="10dp"
+                android:gravity="center"
+                android:textColor="@color/toss_blue"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/subscribe_button"
                 style="@style/PrimaryButton"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="14dp"
                 android:text="@string/setting_plan_subscribe" />
 
             <TextView

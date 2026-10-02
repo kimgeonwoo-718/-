@@ -174,11 +174,11 @@ class SetupActivity : AppCompatActivity() {
             return
         }
         val quota = Prefs.lastQuota(this)
-        view.text = when {
-            // 무료는 AI 를 쓰지 않는다. 무엇이 프리미엄인지를 말한다.
-            quota?.plan == FREE_PLAN -> getString(R.string.setting_quota_free)
-            else -> getString(R.string.setting_quota_unlimited)
-        }
+        // 무료면 이 줄은 숨긴다 — 바로 위에 "프리미엄 / 절대 후회 없는 기능들" 이 이미 크게 있다.
+        // 구독자에게만 "이용 중" 을 보여 준다.
+        val free = quota == null || quota.plan == FREE_PLAN
+        view.visibility = if (free) View.GONE else View.VISIBLE
+        if (!free) view.text = getString(R.string.setting_quota_unlimited)
     }
 
     companion object {

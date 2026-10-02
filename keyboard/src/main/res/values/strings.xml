@@ -57,11 +57,12 @@
     <string name="section_correction">교정</string>
     <string name="setting_auto_correct">실시간 자동 교정</string>
     <string name="setting_auto_correct_sub">어절이 끝날 때마다 기기 안에서 바로 고칩니다. 복잡하거나 어려운 문장은 교정이 안 될 수도 있어요. 자판 위 \'교정\' 버튼으로도 끄고 켤 수 있어요.</string>
-    <string name="setting_ai_title">AI 정밀 교정, 번역</string>
-    <string name="setting_ai_sub">자판 위 ALL 버튼을 꾹 누르면 문장 전체를 AI 가 다듬어요. 프리미엄 기능이에요.</string>
-    <string name="setting_quota_free">프리미엄 기능 · 실시간 교정은 늘 무제한</string>
     <string name="setting_quota_unlimited">프리미엄 · 이용 중</string>
     <string name="setting_quota_no_server">이 빌드에는 AI 서버 주소가 없어요</string>
+    <!-- 첫 화면 프리미엄 칸. 문구는 사용자가 정했다(2026-10-02). 하루 99원 = 월 2,990원 ÷ 30일. -->
+    <string name="premium_pitch_title">프리미엄</string>
+    <string name="premium_pitch_tagline">절대 후회 없는 기능들</string>
+    <string name="premium_pitch_body"><b>하루 99원</b>밖에 안 하는데, 진짜 한번 써 보시면 알 겁니다.\n자세한 기능들이 궁금하시면 아래 버튼을 눌러 보세요!</string>
     <string name="setting_plan_subscribe">프리미엄 알아보기 · 월 2,990원</string>
     <!-- 더보기 서랍(첫 화면 ☰)과 키보드 맞춤설정. -->
     <string name="more_title">더보기</string>
