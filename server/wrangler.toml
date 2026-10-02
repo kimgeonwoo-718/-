@@ -76,8 +76,8 @@ UPSTAGE_MODEL = "solar-pro4"
 UPSTAGE_PROMPT = ""
 UPSTAGE_REASONING = ""
 # 앱 지시문 뒤에 서버가 덧붙이는 규칙(문장부호 안 붙이기, 줄임말·사투리 안 풀기, 대답 안 하기).
-# "off" 면 안 붙인다. 내용은 src/upstage.js 의 UPSTAGE_EXTRA_RULES. (사례 보기로 전·후를 재기 전까지 off)
-UPSTAGE_EXTRA_RULES = "off"
+# "off" 면 안 붙인다. 내용은 src/upstage.js 의 UPSTAGE_EXTRA_RULES. 2026-10-02 사례 보기로 재고 켰다(HANDOFF).
+UPSTAGE_EXTRA_RULES = ""
 # Claude 모델과 지시문. AI_PROVIDER = "anthropic" 일 때만 쓴다.
 # CLAUDE_PROMPT 가 "server" 면 서버의 긴 지시문(예시 많음), 비우면 앱이 보낸 지시문(제미나이 때와 같음).
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
