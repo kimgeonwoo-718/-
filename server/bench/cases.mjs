@@ -126,7 +126,7 @@ function answers(gold) {
   const list = Array.isArray(gold) ? gold : [gold];
   const out = new Set(list);
   for (const g of list) {
-    out.add(g.replace(/(\S)해 줘/g, '$1해줘').replace(/(\S)써 줘/g, '$1써줘'));
+    out.add(g.replace(/해 줘/g, '해줘').replace(/써 줘/g, '써줘'));
     out.add(g.replace(/해줘/g, '해 줘').replace(/써줘/g, '써 줘'));
   }
   return [...out];
