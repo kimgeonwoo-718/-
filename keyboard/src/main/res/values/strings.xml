@@ -178,8 +178,7 @@
          동그라미를 누르면 막대기가 그 자리를 가리키며 설명이 뜬다. 글로만 늘어놓으면
          어느 동그라미 이야기인지 짚어 가며 읽어야 한다. -->
     <string name="section_guide">사용법</string>
-    <!-- 제목 "사용법" 옆 한 줄에 들어가야 한다(작은 폰 360dp 에서도). 도구 줄이라는 건 그림이 말해 준다. -->
-    <string name="guide_intro">동그라미를 눌러 보세요</string>
+    <string name="guide_intro">자판 위 도구 줄이에요. 동그라미를 눌러 보세요.</string>
 
     <string name="guide_collapse_name">도구 줄 접기</string>
     <string name="guide_collapse_desc">누르면 이 줄이 접혀서 자판이 그만큼 올라와요. 화면을 덜 가리죠. 다시 누르면 펴져요.</string>

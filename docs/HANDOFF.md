@@ -3027,3 +3027,9 @@ Gemini API 추가 약관: "18세 이상이어야 API 를 쓸 수 있다. 또한 
   **프리미엄 칸은 wrap_content + 무게** — 0dp 로 두면 내용 높이를 안 재고 남는 높이의 2/6 만 받아 찌그러진다(실제로 그랬다).
   시작하기는 둘 다 마치면 한 줄로 접힌다. 결제 안내·AI 전송 안내는 결제 화면(activity_paywall) 비교표 밑으로 옮겼다.
 - 실측: 사용자 폰 크기에서 설정 마친 화면이 한 페이지에 들어온다(에뮬레이터 글꼴 기준). 작은 폰은 조금 스크롤된다.
+- **되돌렸다(같은 날).** 사용자가 첫 화면 한 페이지 작업을 전부 되돌리라고 했다. `keyboard/` 의 다섯 파일
+  (activity_setup.xml, activity_paywall.xml, SetupActivity.kt, ToolbarGuideView.kt, strings.xml)을 프리미엄 문구를
+  넣은 커밋(2614fb5) 그대로로 돌렸다 — 프리미엄 칸 문구("프리미엄 / 절대 후회 없는 기능들 / 하루 99원…")는 남고,
+  한 페이지로 줄인 것·결제 안내 옮긴 것·캡처 스위치는 없다. 위 레이아웃 설명은 지금 코드와 다르다.
+  캡처 장치(screenshot.yml, tools/screenshot/)는 앱과 상관없어 남겨 뒀다(단, screenshot_setup_done 스위치가 빠져
+  '설정 마친 화면' 은 못 찍는다).
