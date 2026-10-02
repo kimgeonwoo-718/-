@@ -57,6 +57,7 @@ import {
   toClaudeRequest,
   fromClaudeReply,
 } from './anthropic.js';
+import { UPSTAGE_URL, DEFAULT_UPSTAGE_MODEL, toUpstageRequest } from './upstage.js';
 
 /**
  * 바깥으로 나가는 요청을 보내는 자리.
@@ -155,7 +156,9 @@ export async function handle(request, env, deps = {}) {
         ? openAiModel(env)
         : provider(env) === 'anthropic'
           ? claudeModel(env)
-          : await resolveGeminiModel(env, fetchImpl, now());
+          : provider(env) === 'upstage'
+            ? upstageModel(env)
+            : await resolveGeminiModel(env, fetchImpl, now());
     return json(200, modelList(name));
   }
   // 날짜별 토큰 사용량. 개인 정보는 없고 합계뿐이라 열어 둔다 — 요금이 얼마나 나가는지
@@ -409,7 +412,9 @@ async function correct(request, env, url, fetchImpl, now) {
       ? await askOpenAi(fetchImpl, env, openAiModel(env), body, translateTo)
       : provider(env) === 'anthropic'
         ? await askClaude(fetchImpl, env, claudeModel(env), body, translateTo)
-        : await askGemini(fetchImpl, env, await resolveGeminiModel(env, fetchImpl, nowMs), body, translateTo);
+        : provider(env) === 'upstage'
+          ? await askUpstage(fetchImpl, env, upstageModel(env), body, translateTo)
+          : await askGemini(fetchImpl, env, await resolveGeminiModel(env, fetchImpl, nowMs), body, translateTo);
   reply.tookMs = Date.now() - startedAt;
 
   if (reply.status === 200) {
@@ -439,6 +444,8 @@ function provider(env) {
   if (asked === 'openai') return 'openai';
   // Claude. 구글 약관의 18세 조항 때문에 생긴 길이다(anthropic.js 머리말).
   if (asked === 'anthropic' || asked === 'claude') return 'anthropic';
+  // 업스테이지 Solar. 같은 이유로 생겼고, 겨루기에서 대체 후보 중 제일 나았다(upstage.js 머리말).
+  if (asked === 'upstage' || asked === 'solar') return 'upstage';
   return env.OPENAI_API_KEY ? 'openai' : 'gemini';
 }
 
@@ -447,7 +454,12 @@ function providerKeyName(env) {
   const p = provider(env);
   if (p === 'openai') return 'OPENAI_API_KEY';
   if (p === 'anthropic') return 'ANTHROPIC_API_KEY';
+  if (p === 'upstage') return 'UPSTAGE_API_KEY';
   return 'GEMINI_API_KEY';
+}
+
+function upstageModel(env) {
+  return (env.UPSTAGE_MODEL ?? '').trim() || DEFAULT_UPSTAGE_MODEL;
 }
 
 function claudeModel(env) {
@@ -563,10 +575,33 @@ async function askClaude(fetchImpl, env, model, body, translateTo = null) {
   return fromClaudeReply(raw.status, raw.text, userTextOf(body), { translateTo });
 }
 
+/**
+ * 업스테이지에 보내고 구글 모양으로 되돌려준다. 모델과 숙고는 서버가 정한다.
+ * 지시문은 `UPSTAGE_PROMPT` — 'server' 면 서버의 긴 지시문, 아니면 앱이 보낸 것(upstage.js 참고).
+ * 응답은 OpenAI 모양이라 [toGeminiReply] 를 같이 쓴다(잘린 답, 빈 답, 교정이 아닌 답을 거른다).
+ */
+async function askUpstage(fetchImpl, env, model, body, translateTo = null) {
+  let request;
+  try {
+    request = toUpstageRequest(body, model, {
+      prompt: (env.UPSTAGE_PROMPT ?? '').trim(),
+      reasoning: (env.UPSTAGE_REASONING ?? '').trim(),
+      translateTo,
+    });
+  } catch {
+    return { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) };
+  }
+  const raw = await relayTo(fetchImpl, env, UPSTAGE_URL, 'POST', request);
+  return toGeminiReply(raw.status, raw.text, userTextOf(body), { translateTo });
+}
+
 /** 바깥에 보내고 상태와 본문 문자열만 받는다. 본문을 읽어야 토큰 수를 셀 수 있다. */
 async function relayTo(fetchImpl, env, target, method, body) {
   let res;
-  if (env.RELAY) {
+  // 업스테이지는 **미국 중계를 거치지 않는다.** api.upstage.ai 는 서울(AWS ap-northeast-2)에 있다.
+  // 중계를 타면 폰 → 서울 엣지 → 미국 서부 → 서울 → 미국 서부 → 서울로 태평양을 네 번 건넌다.
+  // 중계가 생긴 이유(구글·OpenAI 가 홍콩 IP 를 거절)는 한국 회사인 업스테이지에는 해당하지 않는다.
+  if (env.RELAY && !target.startsWith(UPSTAGE_URL)) {
     const stub = env.RELAY.get(env.RELAY.idFromName(RELAY_NAME), { locationHint: RELAY_LOCATION });
     res = await stub.fetch(target, { method, body });
   } else {
@@ -626,6 +661,8 @@ function upstreamHeaders(env, target) {
   } else if (target.startsWith(ANTHROPIC_URL)) {
     headers['x-api-key'] = (env.ANTHROPIC_API_KEY ?? '').trim();
     headers['anthropic-version'] = ANTHROPIC_VERSION;
+  } else if (target.startsWith(UPSTAGE_URL)) {
+    headers.authorization = `Bearer ${(env.UPSTAGE_API_KEY ?? '').trim()}`;
   } else {
     headers['x-goog-api-key'] = (env.GEMINI_API_KEY ?? '').trim();
   }
@@ -801,15 +838,27 @@ function privacyPage(env) {
   const which = provider(env);
   const openai = which === 'openai';
   const claude = which === 'anthropic';
-  const providerApi = openai ? 'OpenAI API' : claude ? 'Anthropic Claude API' : 'Google Gemini API';
-  const providerName = openai ? 'OpenAI' : claude ? 'Anthropic' : 'Google';
+  const upstage = which === 'upstage';
+  const providerApi = openai
+    ? 'OpenAI API'
+    : claude
+      ? 'Anthropic Claude API'
+      : upstage
+        ? '업스테이지 Solar API'
+        : 'Google Gemini API';
+  const providerName = openai ? 'OpenAI' : claude ? 'Anthropic' : upstage ? '업스테이지' : 'Google';
   const aiAbroad = openai
     ? '<li><strong>OpenAI (미국)</strong> — AI 교정·번역 처리. 누를 때 그 입력란의 글. 처리 즉시 결과만 돌려받습니다.</li>'
     : claude
       ? '<li><strong>Anthropic (미국)</strong> — AI 교정·번역 처리. 누를 때 그 입력란의 글. 처리 즉시 결과만 돌려받습니다.</li>'
       : '';
+  // 업스테이지는 한국 회사지만 자기 처리방침에 미국 업체(추론 인프라 포함)로의 이전을 적어 둔다.
+  // 그래서 "국내라 이전 없음" 이라고 단정하지 않고 그대로 옮긴다.
+  const aiProcessor = upstage
+    ? '<li><strong>주식회사 업스테이지 (대한민국)</strong> — AI 교정·번역 처리. 누를 때 그 입력란의 글. 처리 즉시 결과만 돌려받습니다. 업스테이지는 처리를 위해 미국 등 해외 클라우드 업체를 이용할 수 있습니다.</li>'
+    : '';
   // Google 줄에서 "AI 교정·번역 처리" 를 빼는 것은 AI 가 구글이 아닐 때다.
-  const googleDoesAi = !openai && !claude;
+  const googleDoesAi = !openai && !claude && !upstage;
   return docPage(env, '개인정보 처리방침', `
 <p>맞춤법 키보드는 타이핑하는 글을 기기 안에서 고쳐 주는 안드로이드 키보드입니다. 이 문서는 앱이 어떤 정보를 어디까지 다루는지 설명합니다.</p>
 
@@ -840,7 +889,7 @@ function privacyPage(env) {
 <ul>
 <li><strong>Cloudflare (미국 등)</strong> — 앱 서버 운영. 위 3번의 정보.</li>
 <li><strong>Google (미국)</strong> — ${googleDoesAi ? 'AI 교정·번역 처리(누를 때 그 입력란의 글), ' : ''}구독 확인(구매 토큰), 로그인 확인(구글이 발급한 로그인 증명).</li>
-${aiAbroad}
+${aiAbroad}${aiProcessor}
 </ul>
 
 <h2 id="delete">6. 이용자의 권리와 행사 방법</h2>

@@ -169,7 +169,7 @@
     <string name="setting_key_transparency">키 투명도</string>
     <string name="setting_key_transparency_sub">배경 사진을 썼을 때 키를 얼마나 비치게 할지 정해요. 오른쪽으로 갈수록 사진이 잘 보여요.</string>
     <string name="setting_key_transparency_value">%1$d%%</string>
-    <string name="ai_notice">AI 교정·AI 번역을 누를 때만 그 입력란의 글이 서버를 거쳐 AI 로 가요(지금은 구글 제미나이). 타이핑 중 실시간 교정과 \'전체\' 교정은 기기 안에서만 처리돼요.</string>
+    <string name="ai_notice">AI 교정·AI 번역을 누를 때만 그 입력란의 글이 서버를 거쳐 AI 로 가요(지금은 업스테이지 Solar). 타이핑 중 실시간 교정과 \'전체\' 교정은 기기 안에서만 처리돼요.</string>
 
     <!-- 예전 문구는 "타이핑한 내용은 기기 밖으로 나가지 않아요" 였다. AI 를 누르면 나가니 틀린 말이었다. -->
     <string name="privacy_notice">실시간 교정과 \'전체\' 교정은 전부 기기 안에서 처리해요. 글이 기기 밖으로 나가는 건 AI 교정·AI 번역을 직접 누를 때뿐이에요. 비밀번호·이메일·URL 입력란에서는 교정도 AI 도 자동으로 꺼져요.</string>
