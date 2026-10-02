@@ -5,29 +5,63 @@
 #   user   988x2000, 384dpi(=412x833dp) — 사용자 폰 스크린숏과 같은 크기
 #   small  720x1520, 320dpi(=360x760dp) — 작은 폰
 #   tall   1080x2400, 420dpi(=411x914dp) — 긴 폰
-# 키보드를 켜고 고른 상태("키보드를 쓰고 있어요")와 아직 안 켠 상태를 다 찍는다.
+#
+# 사용자 폰과 같은 상태로 찍는다: 첫 실행 안내(코치)는 이미 봤고, 키보드는 켜고 골랐고, 구독자다.
+# 첫 판은 안내 화면과 "Pixel Launcher isn't responding" 창이 덮어서 아무것도 못 봤다(2026-10-02).
 set -uo pipefail
 PKG=com.spellkeyboard.ko
 IME=$PKG/.SpellKeyboardService
 mkdir -p shots
+
 adb install -r "$(find keyboard/build/outputs/apk/debug -name '*.apk' | head -n 1)"
+
+# 부팅 직후 런처가 한동안 버벅이며 "응답 없음" 창을 띄운다. 가라앉을 때까지 기다리고, 떠 있으면 닫는다.
+sleep 25
+dismiss_dialogs() {
+  for _ in 1 2 3; do
+    adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || return 0
+    xml=$(adb shell cat /sdcard/ui.xml 2>/dev/null)
+    # "Wait" 단추의 가운데를 누른다. 없으면 끝.
+    b=$(printf '%s' "$xml" | grep -o 'text="Wait"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -n 1)
+    [ -z "$b" ] && return 0
+    read -r x1 y1 x2 y2 <<<"$(echo "$b" | tr '[],' '   ')"
+    adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))
+    echo "응답 없음 창을 닫았다"
+    sleep 2
+  done
+}
+dismiss_dialogs
+
+# 앱 설정: 안내는 이미 봤고, 서버가 마지막에 구독자라고 했다(사용자 폰과 같게 '프리미엄 · 이용 중').
+adb shell am start -W -n $PKG/.SetupActivity >/dev/null; sleep 2; adb shell am force-stop $PKG
+adb shell "run-as $PKG sh -c 'mkdir -p shared_prefs && cat > shared_prefs/spell_keyboard.xml'" <<'XML'
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <boolean name="onboarding_seen" value="true" />
+    <string name="quota_plan">subscriber</string>
+</map>
+XML
+adb shell run-as $PKG cat shared_prefs/spell_keyboard.xml
 
 shot() { # 이름
   adb shell am force-stop $PKG
+  dismiss_dialogs
   adb shell am start -W -n $PKG/.SetupActivity >/dev/null
   sleep 4
+  dismiss_dialogs
   adb exec-out screencap -p > "shots/$1.png"
   echo "찍음: $1 ($(stat -c %s "shots/$1.png") bytes)"
 }
+size() { adb shell wm size "$1"; adb shell wm density "$2"; sleep 3; }
 
-size() { adb shell wm size "$1"; adb shell wm density "$2"; sleep 2; }
-
-# 1) 키보드를 아직 안 켠 상태
+# 1) 키보드를 아직 안 켠 상태(처음 깐 사람)
 size 988x2000 384; shot home-user-fresh
 
-# 2) 키보드를 켜고 고른 상태
+# 2) 키보드를 켜고 고른 상태(사용자 폰)
 adb shell ime enable $IME
 adb shell ime set $IME
+adb shell settings put secure default_input_method $IME
+echo "기본 입력기: $(adb shell settings get secure default_input_method)"
 size 988x2000 384; shot home-user
 size 720x1520 320; shot home-small
 size 1080x2400 420; shot home-tall
