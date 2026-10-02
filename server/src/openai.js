@@ -258,8 +258,11 @@ export function toOpenAiRequest(body, model, options = {}) {
 export function tooDifferent(user, corrected) {
   const before = user.replace(/\s/g, '').length;
   const after = corrected.replace(/\s/g, '').length;
-  // 짧은 글은 한두 글자 차이가 비율로 크게 잡힌다. 재지 않는다.
-  if (before < 20) return false;
+  // 짧은 글은 한두 글자 차이가 비율로 크게 잡히므로 비율로 재지 않는다. 대신 **확 길어진 답**만
+  // 거른다 — '너 누구야'(4자)에 '저는 Upstage AI에서 만든 Solar입니다.'(25자)로 대답한 일이 있었고
+  // (2026-10-02, Solar), 그 답이 사용자 글을 덮었다. 교정으로 두 배 넘게 길어지는 짧은 글은 없다
+  // ('ㅇㅋ → 오케이' 도 2 → 3). 줄어드는 쪽은 안 잰다 — '감사합ㄴ니다 → 감사합니다' 같은 게 정상이다.
+  if (before < 20) return after > before * 2 + 4;
   return after < before * 0.6 || after > before * 1.6;
 }
 

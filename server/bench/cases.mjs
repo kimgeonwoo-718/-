@@ -7,9 +7,15 @@
  *
  *   UPSTAGE_API_KEY=... node bench/cases.mjs solar-pro4
  *
- * 한 판에 약 80번 부른다. solar-pro4 정가로 약 9원.
+ * **고치기 전과 후를 나란히 잰다.** 사례마다 두 판을 번갈아 보낸다 — 시간대가 같아야 속도를 비교할 수 있다.
+ *   전: 앱 지시문만, 서버의 길이 검사는 20자 이상만(옛 규칙)
+ *   후: 앱 지시문 + 서버가 덧붙이는 규칙(UPSTAGE_EXTRA_RULES), 짧은 글도 길이 검사(지금 tooDifferent)
+ * 요청 본문은 서버와 **같은 함수**(toUpstageRequest)로 만든다 — 재는 것과 파는 것이 갈라지지 않게.
+ *
+ * 한 판에 약 160번 부른다. solar-pro4 정가로 약 16원.
  */
-const UPSTAGE = 'https://api.upstage.ai/v1/chat/completions';
+import { UPSTAGE_URL as UPSTAGE, toUpstageRequest } from '../src/upstage.js';
+import { tooDifferent } from '../src/openai.js';
 
 /** 앱이 실제로 보내는 지시문. `core/.../ai/GeminiCorrector.kt` 의 SYSTEM_PROMPT 와 같아야 한다. */
 const APP_PROMPT = `당신은 한국어 맞춤법·띄어쓰기 교정기다.
@@ -142,24 +148,30 @@ if (!key) {
   process.exit(2);
 }
 
-async function ask(text) {
+/** 앱이 보내는 모양 그대로. */
+const appBody = (text) =>
+  JSON.stringify({
+    system_instruction: { parts: [{ text: APP_PROMPT }] },
+    contents: [{ role: 'user', parts: [{ text }] }],
+    generationConfig: { temperature: 0, candidateCount: 1, maxOutputTokens: 4096 },
+  });
+
+async function ask(text, extraRules) {
+  const body = toUpstageRequest(appBody(text), model, { extraRules });
   for (let i = 0; i < 4; i++) {
+    const started = Date.now();
     const res = await fetch(UPSTAGE, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: APP_PROMPT },
-          { role: 'user', content: text },
-        ],
-        temperature: 0,
-        reasoning_effort: model.startsWith('solar-pro4') ? 'none' : 'minimal',
-      }),
+      body,
     });
     if (res.ok) {
-      const body = await res.json();
-      return { text: (body?.choices?.[0]?.message?.content ?? '').trim(), usage: body?.usage ?? {} };
+      const json = await res.json();
+      return {
+        text: (json?.choices?.[0]?.message?.content ?? '').trim(),
+        usage: json?.usage ?? {},
+        ms: Date.now() - started,
+      };
     }
     if (res.status !== 429 && res.status < 500) return { error: `HTTP ${res.status}` };
     await new Promise((r) => setTimeout(r, 500 * 2 ** i));
@@ -167,34 +179,52 @@ async function ask(text) {
   return { error: '여러 번 물어도 안 된다' };
 }
 
-const KRW = 1350;
-const PRICE = { 'solar-pro4': [0.3, 1.2], 'solar-pro3': [0.15, 0.6] }[model] ?? [0.3, 1.2];
-let tokIn = 0;
-let tokOut = 0;
-const tally = { 맞음: 0, '부호만 다름': 0, 못고침: 0, 잘못고침: 0, 실패: 0 };
-const rows = [];
+/** 옛 길이 검사: 20자 미만은 안 쟀다. */
+function oldTooDifferent(user, corrected) {
+  const before = user.replace(/\s/g, '').length;
+  const after = corrected.replace(/\s/g, '').length;
+  if (before < 20) return false;
+  return after < before * 0.6 || after > before * 1.6;
+}
 
-// 하나씩 보낸다 — 사례가 적고, 실제 사용자처럼 한 번에 하나다. 걸린 시간도 그대로 잰다.
-for (const [kind, input, gold] of CASES) {
-  const started = Date.now();
-  const got = await ask(input);
-  const ms = Date.now() - started;
-  if (got.error) {
-    tally.실패++;
-    rows.push({ kind, mark: '💥', input, out: got.error, gold, ms });
-    continue;
-  }
-  tokIn += Number(got.usage.prompt_tokens ?? 0);
-  tokOut += Number(got.usage.completion_tokens ?? 0);
+/** 사용자가 실제로 받는 글. 서버가 거르면(502) 앱은 원문을 그대로 둔다. */
+function judge(input, gold, got, guard) {
+  if (got.error) return { mark: '💥', out: got.error };
+  if (guard(input, got.text)) return { mark: '🛡️', out: `(서버가 걸러 원문 유지: "${got.text}")`, kept: true };
   const ok = answers(gold);
   const shouldStay = ok.includes(input);
-  let mark;
-  if (ok.includes(got.text)) mark = '✅';
-  else if (ok.some((g) => stripPunct(g) === stripPunct(got.text))) mark = '🔸'; // 부호만 다름
-  else if (got.text === input || stripPunct(got.text) === stripPunct(input)) mark = shouldStay ? '✅' : '❌';
-  else mark = '⚠️';
-  tally[{ '✅': '맞음', '🔸': '부호만 다름', '❌': '못고침', '⚠️': '잘못고침' }[mark]]++;
-  rows.push({ kind, mark, input, out: got.text, gold, ms });
+  if (ok.includes(got.text)) return { mark: '✅', out: got.text };
+  if (ok.some((g) => stripPunct(g) === stripPunct(got.text))) return { mark: '🔸', out: got.text };
+  if (got.text === input || stripPunct(got.text) === stripPunct(input)) return { mark: shouldStay ? '✅' : '❌', out: got.text };
+  return { mark: '⚠️', out: got.text };
+}
+
+const KRW = 1350;
+const PRICE = { 'solar-pro4': [0.3, 1.2], 'solar-pro3': [0.15, 0.6] }[model] ?? [0.3, 1.2];
+const side = () => ({ tokIn: 0, tokOut: 0, ms: [], tally: {}, n: 0 });
+const before = side();
+const after = side();
+const rows = [];
+
+function count(s, got, verdict) {
+  s.tally[verdict.mark] = (s.tally[verdict.mark] ?? 0) + 1;
+  if (got.error) return;
+  s.n++;
+  s.tokIn += Number(got.usage.prompt_tokens ?? 0);
+  s.tokOut += Number(got.usage.completion_tokens ?? 0);
+  s.ms.push(got.ms);
+}
+
+// 하나씩, 전·후를 번갈아 보낸다. 실제 사용자처럼 한 번에 하나고, 같은 순간의 붐빔을 같이 겪는다.
+for (const [i, [kind, input, gold]] of CASES.entries()) {
+  const order = i % 2 === 0 ? [false, true] : [true, false]; // 먼저 보내는 쪽이 유리하지 않게 번갈아
+  const got = {};
+  for (const extra of order) got[extra] = await ask(input, extra);
+  const vb = judge(input, gold, got[false], oldTooDifferent);
+  const va = judge(input, gold, got[true], tooDifferent);
+  count(before, got[false], vb);
+  count(after, got[true], va);
+  rows.push({ kind, input, gold, vb, va, msb: got[false].ms, msa: got[true].ms });
 }
 
 let current = '';
@@ -204,13 +234,29 @@ for (const r of rows) {
     console.log(`\n### ${current}`);
   }
   const want = Array.isArray(r.gold) ? r.gold.join(' / ') : r.gold;
-  if (r.mark === '✅') console.log(`${r.mark} ${r.input}  →  ${r.out}  (${r.ms}ms)`);
-  else console.log(`${r.mark} ${r.input}  →  ${r.out}   [맞는 답: ${want}]  (${r.ms}ms)`);
+  const same = r.vb.out === r.va.out;
+  const line = `${r.vb.mark}→${r.va.mark} ${r.input}  →  ${r.va.out}`;
+  const extra = [];
+  if (!same) extra.push(`고치기 전: ${r.vb.out}`);
+  if (r.va.mark !== '✅' && r.va.mark !== '🛡️') extra.push(`맞는 답: ${want}`);
+  console.log(extra.length ? `${line}   [${extra.join(' | ')}]` : line);
 }
 
-const times = rows.map((r) => r.ms).sort((a, b) => a - b);
-const won = ((tokIn * PRICE[0] + tokOut * PRICE[1]) / 1e6) * KRW;
-console.log('\n== 모아 보기');
-console.log(`   ✅ 맞음 ${tally.맞음}  🔸 부호만 다름 ${tally['부호만 다름']}  ❌ 못 고침 ${tally.못고침}  ⚠️ 잘못 고침 ${tally.잘못고침}  💥 실패 ${tally.실패}  (전체 ${CASES.length})`);
-console.log(`   걸린 시간: 가운데 ${times[Math.floor(times.length / 2)]}ms, 가장 느림 ${times.at(-1)}ms (미국 CI → 서울)`);
-console.log(`   토큰 입력 ${tokIn} 출력 ${tokOut}, 정가로 약 ${won.toFixed(1)}원`);
+function summary(name, s) {
+  const t = [...s.ms].sort((a, b) => a - b);
+  const pick = (q) => t[Math.min(t.length - 1, Math.floor(t.length * q))];
+  const avg = t.reduce((a, b) => a + b, 0) / Math.max(1, t.length);
+  const won = ((s.tokIn * PRICE[0] + s.tokOut * PRICE[1]) / 1e6) * KRW;
+  const marks = ['✅', '🔸', '❌', '⚠️', '🛡️', '💥'].map((m) => `${m}${s.tally[m] ?? 0}`).join(' ');
+  console.log(`   ${name}  ${marks}`);
+  console.log(`        시간: 평균 ${avg.toFixed(0)}ms, 가운데 ${pick(0.5)}ms, 느린 쪽 10% ${pick(0.9)}ms, 가장 느림 ${t.at(-1)}ms`);
+  console.log(
+    `        토큰: 한 번에 입력 ${(s.tokIn / Math.max(1, s.n)).toFixed(0)} 출력 ${(s.tokOut / Math.max(1, s.n)).toFixed(1)}` +
+      ` · 한 번에 정가 ${(won / Math.max(1, s.n)).toFixed(3)}원 · 이 판 ${won.toFixed(1)}원`
+  );
+}
+
+console.log('\n== 모아 보기  (✅ 맞음 🔸 부호만 다름 ❌ 못 고침 ⚠️ 잘못 고침 🛡️ 서버가 걸러 원문 유지 💥 실패)');
+summary('고치기 전', before);
+summary('고친 뒤  ', after);
+console.log('   (시간은 미국 CI → 서울 업스테이지. 폰은 서울 엣지에서 바로 가므로 이보다 짧다.)');

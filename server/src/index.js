@@ -586,6 +586,7 @@ async function askUpstage(fetchImpl, env, model, body, translateTo = null) {
     request = toUpstageRequest(body, model, {
       prompt: (env.UPSTAGE_PROMPT ?? '').trim(),
       reasoning: (env.UPSTAGE_REASONING ?? '').trim(),
+      extraRules: (env.UPSTAGE_EXTRA_RULES ?? '').trim().toLowerCase() !== 'off',
       translateTo,
     });
   } catch {
