@@ -9,13 +9,14 @@
  *
  * **고치기 전과 후를 나란히 잰다.** 사례마다 두 판을 번갈아 보낸다 — 시간대가 같아야 속도를 비교할 수 있다.
  *   전: 앱 지시문만, 서버 안전장치는 길이만(2026-10-02 오전에 배포된 것)
- *   후: 앱 지시문 + 서버가 덧붙이는 규칙(UPSTAGE_EXTRA_RULES), 안전장치는 지금 tooDifferent(길이·자모·대답 말)
+ *   후: 앱 지시문 + 서버가 덧붙이는 규칙(UPSTAGE_EXTRA_RULES), 원문에 없던 문장부호 떼기,
+ *       안전장치는 지금 tooDifferent(길이·자모·대답 말)
  * 요청 본문은 서버와 **같은 함수**(toUpstageRequest)로 만든다 — 재는 것과 파는 것이 갈라지지 않게.
  *
  * 한 판에 약 250번 부른다. solar-pro4 정가로 약 30원.
  */
 import { UPSTAGE_URL as UPSTAGE, toUpstageRequest } from '../src/upstage.js';
-import { tooDifferent } from '../src/openai.js';
+import { tooDifferent, dropAddedPunctuation } from '../src/openai.js';
 import { CASES, answers } from './cases-data.mjs';
 
 /** 앱이 실제로 보내는 지시문. `core/.../ai/GeminiCorrector.kt` 의 SYSTEM_PROMPT 와 같아야 한다. */
@@ -82,9 +83,13 @@ function lengthOnly(user, corrected) {
   return after < before * 0.6 || after > before * 1.6;
 }
 
-/** 사용자가 실제로 받는 글. 서버가 거르면(502) 앱은 원문을 그대로 둔다. */
-function judge(input, gold, got, guard) {
+/**
+ * 사용자가 실제로 받는 글. 서버가 거르면 원문이 그대로 간다.
+ * 고친 뒤(`fixPunct`)에는 서버처럼 원문에 없던 문장부호를 먼저 뗀다.
+ */
+function judge(input, gold, got, guard, fixPunct = false) {
   if (got.error) return { mark: '💥', out: got.error };
+  if (fixPunct) got = { ...got, text: dropAddedPunctuation(input, got.text) };
   if (guard(input, got.text)) return { mark: '🛡️', out: `(서버가 걸러 원문 유지: "${got.text}")`, kept: true };
   const ok = answers(gold);
   const shouldStay = ok.includes(input);
@@ -123,7 +128,7 @@ for (const [i, [kind, input, gold]] of CASES.entries()) {
   const got = {};
   for (const extra of order) got[extra] = await ask(input, extra);
   const vb = judge(input, gold, got[false], lengthOnly);
-  const va = judge(input, gold, got[true], tooDifferent);
+  const va = judge(input, gold, got[true], tooDifferent, true);
   count(before, got[false], vb, kind, input, gold);
   count(after, got[true], va, kind, input, gold);
   rows.push({ kind, input, gold, vb, va, msb: got[false].ms, msa: got[true].ms });

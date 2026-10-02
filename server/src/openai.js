@@ -289,10 +289,16 @@ function mostlyRewritten(user, corrected) {
   return editDistance(a, b) / Math.max(a.length, b.length) > 0.5;
 }
 
-/** 모델이 자기 얘기를 할 때 나오는 말. 원문에 없었는데 답에 생기면 교정이 아니다(공백 빼고 소문자로 비교). */
+/**
+ * 모델이 자기 얘기를 할 때 나오는 말. 원문에 없었는데 답에 생기면 교정이 아니다(공백 빼고 소문자로 비교).
+ *
+ * '니다' 는 말투다 — 대답은 '서울입니다', '네, 맞습니다' 처럼 합쇼체로 온다. 교정은 반말을 합쇼체로
+ * 바꾸지 않는다(지시문이 말투를 못 바꾸게 한다). '대한민국 수도가 어디야' → '대한민국의 수도는
+ * 서울입니다.' 는 앞부분이 같아 자모 거리로는 못 잡았다(2026-10-02 실측).
+ */
 const ANSWER_MARKS = [
   'solar', '솔라', 'upstage', '업스테이지', '인공지능', '언어모델', '챗봇', 'assistant', 'chatgpt',
-  'gemini', '제미나이', '교정기', '교정할', '텍스트', '도와드', '입력해주', '죄송',
+  'gemini', '제미나이', '교정기', '교정할', '텍스트', '도와드', '입력해주', '죄송', '니다',
 ];
 
 function speaksForItself(user, corrected) {
@@ -335,6 +341,25 @@ function editDistance(a, b) {
 }
 
 /**
+ * 원문에 **한 번도 안 쓴** 문장부호를 모델이 붙였으면 뗀다.
+ *
+ * Solar 는 긴 채팅 문장에 마침표·쉼표를 붙인다('엄마, 나 늦을 것 같아. 저녁 먼저 먹어.'). 말투가
+ * 딱딱해진다. 지시문으로 막으면 토큰이 늘고 그래도 절반은 샌다(사례 보기 2026-10-02) — 서버가 떼면
+ * 확실하고 공짜다. 사용자가 그 부호를 한 번이라도 썼으면 손대지 않는다(그 사람은 부호를 쓰는 사람이다).
+ * 고친 뒤 생긴 겹친 공백은 하나로.
+ */
+const ADDED_MARKS = ['.', ',', '?', '!'];
+
+export function dropAddedPunctuation(user, corrected) {
+  let out = corrected;
+  for (const mark of ADDED_MARKS) {
+    if (user.includes(mark) || !out.includes(mark)) continue;
+    out = out.split(mark).join('');
+  }
+  return out === corrected ? corrected : out.replace(/ {2,}/g, ' ').trim();
+}
+
+/**
  * 교정이 아닌 답을 받았을 때 앱에 돌려줄 것 — **원문 그대로, 200 으로.**
  *
  * 예전에는 502 로 실패를 알렸다. 그런데 앱은 502 를 "잠깐 붐빈 것" 으로 보고 다른 모델로 옮겨 보거나
@@ -361,7 +386,9 @@ export function toGeminiReply(status, text, user = '', options = {}) {
   }
 
   const choice = parsed?.choices?.[0];
-  const corrected = (choice?.message?.content ?? '').trim();
+  const raw = (choice?.message?.content ?? '').trim();
+  // 교정일 때만 뗀다. 번역문의 부호는 그 언어의 것이다.
+  const corrected = user && !options.translateTo ? dropAddedPunctuation(user, raw) : raw;
 
   // **잘린 답은 주면 안 된다.** 앱은 받은 글로 입력란을 통째로 덮으므로, 뒷부분이
   // 잘린 교정문을 주면 사용자가 쓴 글이 그만큼 사라진다. 차라리 실패로 알린다.

@@ -21,7 +21,7 @@
  * 번역만 우리 지시문을 쓴다. 앱은 번역용 지시문을 아예 안 보내기 때문이다
  * (`buildRequest(text, withPrompt = false)`).
  */
-import { translatePrompt, userTextOf, tooDifferent, keepOriginal } from './openai.js';
+import { translatePrompt, userTextOf, tooDifferent, keepOriginal, dropAddedPunctuation } from './openai.js';
 
 export const GEMINI_UPSTREAM = 'https://generativelanguage.googleapis.com';
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
@@ -73,6 +73,16 @@ export function fromGeminiReply(status, text, user = '', options = {}) {
     return keepOriginal(user, parsed?.usageMetadata ?? {});
   }
 
+  // 원문에 없던 문장부호는 뗀다(openai.js 의 dropAddedPunctuation). 교정일 때만.
+  if (user && !options.translateTo) {
+    const kept = dropAddedPunctuation(user, corrected);
+    if (kept !== corrected) {
+      return {
+        status: 200,
+        text: JSON.stringify({ ...parsed, candidates: [{ ...candidate, content: { role: 'model', parts: [{ text: kept }] } }] }),
+      };
+    }
+  }
   // 구글 모양 그대로라 다시 짤 것이 없다. 사용량은 저쪽이 실어 준 것을 그대로 쓴다.
   return { status: 200, text };
 }

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { handle } from '../src/index.js';
 import { toUpstageRequest, reasoningOff, UPSTAGE_URL, DEFAULT_UPSTAGE_MODEL, UPSTAGE_EXTRA_RULES } from '../src/upstage.js';
-import { KO_SYSTEM_PROMPT, tooDifferent } from '../src/openai.js';
+import { KO_SYSTEM_PROMPT, tooDifferent, dropAddedPunctuation } from '../src/openai.js';
 import { fakeDb } from './fakeDb.js';
 import { CASES, answers } from '../bench/cases-data.mjs';
 
@@ -67,7 +67,6 @@ test('Solar 본문: 앱 지시문 + 덧붙이는 규칙, temperature 0, 숙고 �
 });
 
 test('덧붙이는 규칙: 문장부호·줄임말·대답을 막는다, extraRules=false 면 앱 지시문만', () => {
-  assert.match(UPSTAGE_EXTRA_RULES, /문장부호/);
   assert.match(UPSTAGE_EXTRA_RULES, /왜케/);
   assert.match(UPSTAGE_EXTRA_RULES, /틀린 말/);
   assert.match(UPSTAGE_EXTRA_RULES, /대답하지 말고/);
@@ -119,6 +118,32 @@ test('대답은 짧아도 걸린다 — 자기소개, 인사 받기, 질문에 �
   ]) {
     assert.equal(tooDifferent(input, answer), true, `${input} → ${answer} 는 대답이다`);
   }
+});
+
+test('반말 질문에 합쇼체로 답하면 대답이다 — 앞부분이 같아도', () => {
+  assert.equal(tooDifferent('대한민국 수도가 어디야', '대한민국의 수도는 서울입니다.'), true);
+  assert.equal(tooDifferent('감사합ㄴ니다', '감사합니다'), false, '원문에 니다 가 있으면 교정이다');
+});
+
+test('원문에 없던 문장부호는 뗀다 — 원문에 한 번이라도 있으면 그대로', () => {
+  assert.equal(
+    dropAddedPunctuation('엄마 나 오늘 늦을꺼같아 저녁 먼저 먹어', '엄마, 나 오늘 늦을 것 같아. 저녁 먼저 먹어.'),
+    '엄마 나 오늘 늦을 것 같아 저녁 먼저 먹어'
+  );
+  assert.equal(dropAddedPunctuation('선생님 이 문제 답이 뭐예요', '선생님, 이 문제 답이 뭐예요?'), '선생님 이 문제 답이 뭐예요');
+  assert.equal(dropAddedPunctuation('오늘 갔어. 내일 가', '오늘 갔어. 내일 가.'), '오늘 갔어. 내일 가.', '마침표를 쓰는 사람');
+  assert.equal(dropAddedPunctuation('메일은 a@b.com 으로', '메일은 a@b.com으로'), '메일은 a@b.com으로');
+  assert.equal(dropAddedPunctuation('3,000원이야', '3,000원이야.'), '3,000원이야');
+});
+
+test('서버 경로에서도 뗀다 — 교정만, 번역은 그대로', async () => {
+  const body = JSON.stringify({
+    system_instruction: { parts: [{ text: '너는 교정기다' }] },
+    contents: [{ role: 'user', parts: [{ text: '혹시 내일 시간 되시면 연락 주세요 기다릴께요' }] }],
+  });
+  const { fetchImpl } = upstream(solarReply('혹시 내일 시간 되시면 연락 주세요. 기다릴게요.'));
+  const res = await handle(generate(body), env(), { fetch: fetchImpl });
+  assert.equal((await res.json()).candidates[0].content.parts[0].text, '혹시 내일 시간 되시면 연락 주세요 기다릴게요');
 });
 
 test('줄임말을 풀어 버린 답도 원문으로 — 왜케 → 왜 이렇게', () => {
