@@ -20,13 +20,18 @@
     android:importantForAutofill="noExcludeDescendants"
     android:scrollbars="none">
 
+    <!--
+      2026-10-02: 한 화면에 다 들어오게 줄였다(사용자). 카드 사이·안쪽 여백을 줄이고, 시작하기는
+      두 단계를 다 마치면 한 줄로 접히고, 써 보기는 두 줄, 사용법 소개 문장은 제목 옆으로, 결제 잔글씨
+      두 개(결제 안내·AI 전송 안내)는 실제로 결제하는 화면(activity_paywall)으로 옮겼다.
+    -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingHorizontal="20dp"
-        android:paddingTop="28dp"
-        android:paddingBottom="40dp">
+        android:paddingHorizontal="16dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="16dp">
 
         <!--
           위 막대. 앱 이름과 ☰ 하나. 로그인·키보드 맞춤설정·약관·고객센터는 전부 ☰ 뒤
@@ -39,14 +44,28 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <TextView
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="@string/app_name"
-                android:textColor="@color/toss_text"
-                android:textSize="26sp"
-                android:textStyle="bold" />
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/app_name"
+                    android:textColor="@color/toss_text"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="1dp"
+                    android:text="@string/home_subtitle"
+                    android:textColor="@color/toss_text2"
+                    android:textSize="13sp" />
+            </LinearLayout>
 
             <ImageView
                 android:id="@+id/menu_button"
@@ -61,134 +80,171 @@
                 android:src="@drawable/ic_menu" />
         </LinearLayout>
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="@string/home_subtitle"
-            android:textColor="@color/toss_text2"
-            android:textSize="15sp" />
-
-        <!-- 시작하기 -->
+        <!-- 시작하기. 두 단계를 다 마치면 행 둘을 숨기고 "키보드를 쓰고 있어요" 한 줄만 남긴다. -->
         <LinearLayout
             android:id="@+id/setup_card"
-            style="@style/Card">
+            style="@style/Card"
+            android:layout_marginTop="10dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="6dp">
 
-            <TextView style="@style/CardTitle" android:text="@string/section_setup" />
-
-            <TextView
-                android:id="@+id/setup_all_done"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="@string/setup_all_done"
-                android:textColor="@color/toss_green"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:visibility="gone" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <LinearLayout style="@style/Row">
-                <LinearLayout style="@style/RowText">
-                    <TextView style="@style/RowTitle" android:text="@string/setup_enable_title" />
-                    <TextView style="@style/RowSub" android:text="@string/setup_enable_sub" />
-                </LinearLayout>
-                <TextView android:id="@+id/enable_button" style="@style/Pill" android:text="@string/setup_open" />
+                <TextView
+                    style="@style/CardTitle"
+                    android:textSize="16sp"
+                    android:text="@string/section_setup" />
+
+                <TextView
+                    android:id="@+id/setup_all_done"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="10dp"
+                    android:gravity="end"
+                    android:paddingBottom="6dp"
+                    android:text="@string/setup_all_done"
+                    android:textColor="@color/toss_green"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
             </LinearLayout>
 
-            <View style="@style/Divider" />
-
-            <LinearLayout style="@style/Row">
+            <LinearLayout
+                android:id="@+id/setup_step_enable"
+                style="@style/Row"
+                android:minHeight="44dp"
+                android:paddingVertical="4dp">
                 <LinearLayout style="@style/RowText">
-                    <TextView style="@style/RowTitle" android:text="@string/setup_pick_title" />
-                    <TextView style="@style/RowSub" android:text="@string/setup_pick_sub" />
+                    <TextView style="@style/RowTitle" android:textSize="15sp" android:text="@string/setup_enable_title" />
+                    <TextView style="@style/RowSub" android:layout_marginTop="1dp" android:textSize="12sp" android:text="@string/setup_enable_sub" />
                 </LinearLayout>
-                <TextView android:id="@+id/pick_button" style="@style/Pill" android:text="@string/setup_open" />
+                <TextView android:id="@+id/enable_button" style="@style/Pill" android:layout_height="32dp" android:text="@string/setup_open" />
+            </LinearLayout>
+
+            <View android:id="@+id/setup_divider" style="@style/Divider" />
+
+            <LinearLayout
+                android:id="@+id/setup_step_pick"
+                style="@style/Row"
+                android:minHeight="44dp"
+                android:paddingVertical="4dp">
+                <LinearLayout style="@style/RowText">
+                    <TextView style="@style/RowTitle" android:textSize="15sp" android:text="@string/setup_pick_title" />
+                    <TextView style="@style/RowSub" android:layout_marginTop="1dp" android:textSize="12sp" android:text="@string/setup_pick_sub" />
+                </LinearLayout>
+                <TextView android:id="@+id/pick_button" style="@style/Pill" android:layout_height="32dp" android:text="@string/setup_open" />
             </LinearLayout>
         </LinearLayout>
 
         <!-- 써 보기 -->
-        <LinearLayout style="@style/Card">
-            <TextView style="@style/CardTitle" android:text="@string/section_try" />
+        <LinearLayout
+            style="@style/Card"
+            android:layout_marginTop="10dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="14dp">
+            <TextView style="@style/CardTitle" android:textSize="16sp" android:text="@string/section_try" />
             <EditText
                 android:id="@+id/test_field"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="8dp"
                 android:background="@drawable/bg_input"
                 android:gravity="top"
                 android:hint="@string/setup_test_hint"
                 android:importantForAutofill="no"
                 android:inputType="textMultiLine"
-                android:minLines="3"
-                android:padding="16dp"
+                android:minLines="2"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
                 android:textColor="@color/toss_text"
                 android:textColorHint="@color/toss_text3"
-                android:textSize="16sp" />
+                android:textSize="15sp" />
         </LinearLayout>
 
         <!--
           사용법. 방금 써 본 바로 밑에 둔다 — 쳐 보다가 "이건 뭐지" 싶을 때 눈이 가는
           자리가 거기다. 도구 줄을 그림으로 그려 놓고 누른 자리를 막대기로 가리킨다.
+          소개 문장("동그라미를 눌러 보세요")은 제목 옆에 붙여 한 줄을 아낀다.
         -->
-        <LinearLayout style="@style/Card">
-            <TextView style="@style/CardTitle" android:text="@string/section_guide" />
-            <TextView
-                style="@style/RowSub"
-                android:layout_marginTop="6dp"
-                android:text="@string/guide_intro" />
+        <LinearLayout
+            style="@style/Card"
+            android:layout_marginTop="10dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="10dp">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="bottom"
+                android:orientation="horizontal">
+                <TextView style="@style/CardTitle" android:textSize="16sp" android:text="@string/section_guide" />
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:paddingBottom="1dp"
+                    android:text="@string/guide_intro"
+                    android:textColor="@color/toss_text3"
+                    android:textSize="12sp" />
+            </LinearLayout>
 
             <com.spellkeyboard.ko.ToolbarGuideView
                 android:id="@+id/toolbar_guide"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp" />
+                android:layout_marginTop="4dp" />
 
         </LinearLayout>
 
         <!--
-          프리미엄. 무엇을 파는지와 사는 버튼만. 한도·데이터 안내 같은 잔글씨는 환경설정의
-          정보 칸으로 옮겼다 — 여기서는 눈이 버튼에 가야 한다.
-
-          2026-10-02: AI 한 줄만 적혀 있어서 살 이유가 안 보였다(사용자). 가운데에 크게 "프리미엄 /
-          절대 후회 없는 기능들", 밑에 값(하루 99원)과 "버튼을 눌러 보라" 를 둔다. 기능 목록은 버튼 너머
-          결제 화면(PaywallActivity)의 비교표에 있다.
+          프리미엄. 무엇을 파는지와 사는 버튼만 — 여기서는 눈이 버튼에 가야 한다.
+          가운데에 크게 "프리미엄 / 절대 후회 없는 기능들", 밑에 값(하루 99원)과 "버튼을 눌러 보라"
+          (문구는 사용자가 정했다, 2026-10-02). 기능 목록·결제 안내·AI 전송 안내는 버튼 너머
+          결제 화면(PaywallActivity)에 있다.
         -->
-        <LinearLayout style="@style/Card">
+        <LinearLayout
+            style="@style/Card"
+            android:layout_marginTop="10dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp">
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="@string/premium_pitch_title"
+                android:textColor="@color/toss_text"
+                android:textSize="26sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="@string/premium_pitch_tagline"
+                android:textColor="@color/toss_blue"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:gravity="center"
-                android:text="@string/premium_pitch_title"
-                android:textColor="@color/toss_text"
-                android:textSize="30sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:gravity="center"
-                android:text="@string/premium_pitch_tagline"
-                android:textColor="@color/toss_blue"
-                android:textSize="18sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:gravity="center"
-                android:lineSpacingExtra="4dp"
+                android:lineSpacingExtra="2dp"
                 android:text="@string/premium_pitch_body"
                 android:textColor="@color/toss_text"
-                android:textSize="15sp" />
+                android:textSize="14sp" />
 
             <TextView
                 android:id="@+id/quota_output"
                 style="@style/RowSub"
                 android:layout_width="match_parent"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="6dp"
                 android:gravity="center"
                 android:textColor="@color/toss_blue"
                 android:textStyle="bold" />
@@ -196,25 +252,16 @@
             <TextView
                 android:id="@+id/subscribe_button"
                 style="@style/PrimaryButton"
-                android:layout_marginTop="14dp"
+                android:layout_height="48dp"
+                android:layout_marginTop="10dp"
                 android:text="@string/setting_plan_subscribe" />
 
+            <!-- 결제 오류 같은 알림이 있을 때만 글이 생긴다. 평소에는 높이 0. -->
             <TextView
                 android:id="@+id/billing_status"
                 style="@style/Caption"
-                android:layout_marginTop="10dp" />
-
-            <TextView
-                style="@style/Caption"
-                android:layout_marginTop="6dp"
-                android:text="@string/setting_plan_note" />
-
-            <!-- AI 로 글이 나간다는 말은 AI 를 파는 자리에 있어야 한다. -->
-            <TextView
-                style="@style/Caption"
-                android:layout_marginTop="6dp"
-                android:layout_marginBottom="8dp"
-                android:text="@string/ai_notice" />
+                android:layout_marginTop="4dp"
+                android:gravity="center" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

@@ -80,7 +80,7 @@ class ToolbarGuideView @JvmOverloads constructor(
         typeface = Typeface.DEFAULT_BOLD
         textSize = sp(15f)
     }
-    private val descPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(14f) }
+    private val descPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = sp(13f) }
 
     /** 동그라미 가운데 x. 너비가 정해질 때 채운다. */
     private val centers = FloatArray(spots.size)
@@ -226,7 +226,7 @@ class ToolbarGuideView @JvmOverloads constructor(
         const val STRIP_TOP = 4f
         const val STRIP_H = 44f
         const val CIRCLE = 28f
-        const val STICK_H = 26f
+        const val STICK_H = 16f
         const val BOX_PAD = 2f
         /** 자판 도구 줄과 같은 비율 — 28dp 동그라미에 18dp 아이콘 판(KeyboardView.TOOLBAR_ICON_DP). */
         const val ICON_RATIO = 18f / 28f

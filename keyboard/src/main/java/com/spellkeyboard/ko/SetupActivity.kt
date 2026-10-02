@@ -125,7 +125,12 @@ class SetupActivity : AppCompatActivity() {
 
         markStep(findViewById(R.id.enable_button), enabled)
         markStep(findViewById(R.id.pick_button), selected)
-        findViewById<View>(R.id.setup_all_done).isVisible = enabled && selected
+        // 둘 다 끝났으면 행 둘을 접고 "키보드를 쓰고 있어요" 한 줄만 — 첫 화면을 한 페이지에 담으려고.
+        val done = enabled && selected
+        findViewById<View>(R.id.setup_all_done).isVisible = done
+        findViewById<View>(R.id.setup_step_enable).isVisible = !done
+        findViewById<View>(R.id.setup_divider).isVisible = !done
+        findViewById<View>(R.id.setup_step_pick).isVisible = !done
     }
 
     private fun markStep(pill: TextView, done: Boolean) {
