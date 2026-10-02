@@ -53,8 +53,20 @@ export function validInstallId(id) {
  *
  * 보통 사용자는 하루 5천 자쯤 쓰고(월 780원) 이 한도를 못 느낀다. 카톡 한 줄(100자)이면
  * 하루 100번, 긴 문자(500자)는 20번, A4 반 장(2,000자)은 5번이다.
+ *
+ * ## 1만 5천으로 (2026-10-02)
+ *
+ * 업스테이지 solar-pro4 로 옮겼다. 정가로 한 번 고정분 약 0.11원(앱 지시문 + 서버가 덧붙이는 두 줄) +
+ * 1,000자에 약 0.84원(사례 보기·겨루기 실측 토큰, 환율 1,400원). 1만 5천을 매일 꽉 채우면(월):
+ *
+ *     50자씩 300번 (가장 나쁜 경우)   약 1,370원
+ *     200자씩 75번                    약 630원
+ *     2,000자씩 8번                   약 400원
+ *
+ * 가장 나쁜 경우에도 실수령 2,691원 안에 든다. 실제 한도는 wrangler.toml 의 SUB_DAILY_CHARS 가 정하고,
+ * 이 값은 그게 없을 때의 기본값이다.
  */
-export const DEFAULT_SUB_DAILY_CHARS = 10_000;
+export const DEFAULT_SUB_DAILY_CHARS = 15_000;
 const MIN_CHARGE = 50;
 
 export function chargeFor(chars) {
