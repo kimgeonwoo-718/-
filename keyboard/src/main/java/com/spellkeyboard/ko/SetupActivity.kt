@@ -153,6 +153,7 @@ class SetupActivity : AppCompatActivity() {
         billing = BillingManager(this) { message ->
             runOnUiThread {
                 billingStatus.text = message
+                billingStatus.isVisible = message.isNotBlank()
                 showQuota()
             }
         }.also { it.start() }
@@ -176,6 +177,7 @@ class SetupActivity : AppCompatActivity() {
         val view = quotaOutput ?: return
         if (!Prefs.serverAvailable()) {
             view.setText(R.string.setting_quota_no_server)
+            view.visibility = View.VISIBLE
             return
         }
         val quota = Prefs.lastQuota(this)
