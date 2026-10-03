@@ -98,6 +98,20 @@ object SpacingRules {
      */
     private val JI_EXCEPTIONS = setOf("머지", "오래지", "적지", "멀지")
 
+    /**
+     * 서술격 조사 '이다' 의 꼴 가운데 **홀로 띄어 쓰는 일이 없는 것**만. '이야'·'이고'·'인데' 는 뺐다 —
+     * '이야 대박이다'(감탄사), '인데 왜'(구어 접속) 처럼 혼자 서는 말과 겹친다.
+     */
+    private val COPULAS = listOf(
+        "이었습니다", "이었어요", "이었는데", "이었다", "입니다", "입니까", "이에요", "이세요", "이시죠"
+    )
+
+    /** 받침 없는 말 뒤에서 줄어드는 꼴('친구이에요' -> '친구예요'). '입니다' 는 그대로 쓴다. */
+    private val COPULA_AFTER_VOWEL = mapOf(
+        "이에요" to "예요", "이었습니다" to "였습니다", "이었어요" to "였어요", "이었는데" to "였는데", "이었다" to "였다",
+        "이세요" to "세요", "이시죠" to "시죠"
+    )
+
     private val PARTICLES = listOf(
         "이라고", "라고", "에게서", "에게", "에서", "께서", "으로",
         "부터", "까지", "마다", "조차", "처럼",
@@ -274,6 +288,20 @@ object SpacingRules {
             "$1$2",
             R
         ),
+
+        // 서술격 조사 '이다' 가 홀로 떨어진 것도 앞말에 붙인다. ("김건우 입니다" -> "김건우입니다")
+        // 위 조사 규칙은 언어모델이 붙인 꼴을 아는 말('학생입니다')만 고쳐졌다 — 사람 이름처럼 모델이 모르는
+        // 앞말은 그대로 남았다(2026-10-03 사용자 제보). '입니다' 따위가 혼자 서는 띄어쓰기는 맞는 경우가 없어서
+        // 앞말을 몰라도 붙인다. 받침 없는 말 뒤의 '이에요·이었-' 은 줄어든 꼴로 ('김건우예요', '김건우였어요').
+        TextRule.computed(
+            """([가-힣])\s+(${COPULAS.joinToString("|")})(?![가-힣])""",
+            R
+        ) { match ->
+            val before = match.groupValues[1]
+            val copula = match.groupValues[2]
+            val open = !Hangul.hasJongseong(before[0])
+            before + if (open) COPULA_AFTER_VOWEL[copula] ?: copula else copula
+        },
 
         // 의존명사 '수': 앞은 관형형 어미 ㄹ, 뒤는 '있/없'일 때만 띄운다.
         TextRule.of("""([가-힣])\s*수\s*밖에""", "$1 수밖에", R) { match ->

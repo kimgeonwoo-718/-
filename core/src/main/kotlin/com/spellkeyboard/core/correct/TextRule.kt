@@ -67,6 +67,10 @@ class TextRule private constructor(
         }
 
         /** 정규식과 `$1` 형태의 치환 템플릿으로 만드는 규칙. */
+        /** 바꿀 글을 매치마다 계산하는 규칙. null 이면 원문을 그대로 둔다. */
+        fun computed(pattern: String, reason: String, transform: (MatchResult) -> String?): TextRule =
+            TextRule(Regex(pattern), reason, transform)
+
         fun of(
             pattern: String,
             template: String,
