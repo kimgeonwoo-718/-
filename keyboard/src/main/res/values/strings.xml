@@ -59,10 +59,11 @@
     <string name="setting_auto_correct_sub">어절이 끝날 때마다 기기 안에서 바로 고칩니다. 복잡하거나 어려운 문장은 교정이 안 될 수도 있습니다. 자판 위 \'교정\' 버튼으로도 끄고 켤 수 있습니다.</string>
     <string name="setting_quota_unlimited">프리미엄 · 이용 중</string>
     <string name="setting_quota_no_server">이 빌드에는 AI 서버 주소가 없습니다</string>
-    <!-- 첫 화면 프리미엄 칸. 문구는 사용자가 정했다(2026-10-02). 하루 99원 = 월 2,990원 ÷ 30일. -->
+    <!-- 첫 화면 프리미엄 칸. 문구는 사용자가 정했다(2026-10-02). 하루 99원 = 월 2,990원 ÷ 30일.
+         줄은 직접 나눈다 — 문장이 길어 글자 중간에서 끊겼다("알 겁니 / 다"). "일단 결제하십시오" 는 한 줄로 굵게·파랗게. -->
     <string name="premium_pitch_title">프리미엄</string>
     <string name="premium_pitch_tagline">절대 후회 없는 기능들</string>
-    <string name="premium_pitch_body"><b>하루 99원</b>밖에 안 하는데, 진짜 한번 써 보시면 알 겁니다. <b><font color="#3182F6"><big>일단 결제하십시오.</big></font></b>\n자세한 기능들이 궁금하시면 아래 버튼을 눌러 보십시오!</string>
+    <string name="premium_pitch_body"><b>하루 99원</b>밖에 안 하는데,\n진짜 한번 써 보시면 알 겁니다.\n<b><font color="#3182F6"><big>일단 결제하십시오.</big></font></b>\n자세한 기능들이 궁금하시면\n아래 버튼을 눌러 보십시오!</string>
     <string name="setting_plan_subscribe">프리미엄 알아보기 · 월 2,990원</string>
     <!-- 더보기 서랍(첫 화면 ☰)과 키보드 맞춤설정. -->
     <string name="more_title">더보기</string>
