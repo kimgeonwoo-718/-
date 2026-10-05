@@ -41,6 +41,15 @@ class CorrectionEngineTest {
         assertEquals("그렇게 돼요", fix("그렇게 되요"))
         assertEquals("늦어서 돼서", fix("늦어서 되서"))
         assertEquals("잘 되는 것", fix("잘 돼는 것"))
+        // 2026-10-03 제보로 더한 것.
+        assertEquals("그거 하면 안 돼", fix("그거 하면 안되"))
+        assertEquals("이게 되나요", fix("이게 돼나요"))
+        assertEquals("그럼 되잖아", fix("그럼 돼잖아"))
+        assertEquals("되니까 괜찮아", fix("돼니까 괜찮아"))
+        assertEquals("친구가 돼줄게", fix("친구가 되줄게"))
+        assertUntouched("돼지만 키워")
+        assertUntouched("쌀 한 되")
+        assertUntouched("하되 조심해")
     }
 
     @Test
