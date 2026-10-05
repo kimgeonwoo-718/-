@@ -16,10 +16,10 @@
     <!-- 자판 위 'ALL' 단추. 짧게 누르면 기기 안 전체교정, 길게 누르면 서버 AI. -->
     <string name="toolbar_correct_all">ALL</string>
     <string name="toolbar_correct_all_desc">글 전체 교정. 꾹 누르면 AI 가 봅니다</string>
-    <string name="correct_all_failed">교정하지 못했어요</string>
+    <string name="correct_all_failed">교정하지 못했습니다</string>
     <!-- 짧게 누른 기기 안 교정이 아무것도 못 찾았을 때. AI(길게 누르기)가 못 찾은 것과
          반드시 달라야 한다 — 같은 말이면 어느 쪽이 돌았는지 알 수 없다. -->
-    <string name="correct_all_unchanged">고칠 것을 못 찾았어요. 꾹 누르면 AI 가 봅니다</string>
+    <string name="correct_all_unchanged">고칠 것을 찾지 못했습니다. 꾹 누르면 AI 가 봅니다</string>
     <string name="toolbar_translate">번역</string>
     <!-- 도구 줄 접기/펴기. 접으면 자판이 그만큼 올라와 화면을 덜 가린다. -->
     <string name="toolbar_collapse">도구 줄 접기</string>
@@ -29,17 +29,17 @@
     <string name="lang_chinese">중국어</string>
     <string name="translate_hint">한국어를 쓰면 %1$s로 번역돼 들어갑니다</string>
     <string name="translate_downloading">%1$s 언어팩 내려받는 중… (처음 한 번, 약 30MB)</string>
-    <string name="translate_download_failed">%1$s 언어팩을 받지 못했습니다. 인터넷을 확인해 주세요</string>
+    <string name="translate_download_failed">%1$s 언어팩을 받지 못했습니다. 인터넷을 확인해 주십시오</string>
     <string name="translate_failed">번역하지 못했습니다</string>
-    <string name="translate_blocks_ai">번역 중에는 AI 교정을 쓸 수 없어요</string>
+    <string name="translate_blocks_ai">번역 중에는 AI 교정을 쓸 수 없습니다</string>
     <string name="translate_ai_failed">자연스러운 번역 실패: %1$s</string>
-    <string name="translate_premium_only">자연스러운 번역은 프리미엄 기능이에요. 번역 동그라미를 짧게 누르면 기기 번역을 쓸 수 있어요</string>
+    <string name="translate_premium_only">자연스러운 번역은 프리미엄 기능입니다. 번역 동그라미를 짧게 누르면 기기 번역을 쓸 수 있습니다</string>
     <string name="ai_busy">이미 교정하는 중입니다</string>
     <string name="ai_no_connection">입력란과 연결되지 않았습니다</string>
     <!-- 비밀번호·이메일 칸처럼 글을 밖으로 내보내면 안 되는 곳에서 서버 기능을 눌렀을 때. -->
     <string name="sensitive_field_blocked">이 입력란의 글은 밖으로 보내지 않습니다</string>
     <string name="ai_no_key">이 빌드에는 AI 서버 주소가 없어 AI 교정을 쓸 수 없습니다.</string>
-    <string name="ai_timeout">응답이 없어 그만뒀습니다. 네트워크를 확인해 주세요.</string>
+    <string name="ai_timeout">응답이 없어 그만뒀습니다. 네트워크를 확인해 주십시오.</string>
     <string name="ai_empty">교정할 글이 없습니다</string>
 
     <!-- 첫 화면 -->
@@ -51,18 +51,18 @@
     <string name="setup_pick_sub">키보드 선택창에서 맞춤법 키보드를 고릅니다</string>
     <string name="setup_open">열기</string>
     <string name="setup_done">완료</string>
-    <string name="setup_all_done">키보드를 쓰고 있어요</string>
+    <string name="setup_all_done">키보드를 쓰고 있습니다</string>
     <string name="section_try">써 보기</string>
-    <string name="setup_test_hint">여기에 아무 문장이나 쳐 보세요. 예: 아버지가방에들어가신다</string>
+    <string name="setup_test_hint">여기에 아무 문장이나 쳐 보십시오. 예: 아버지가방에들어가신다</string>
     <string name="section_correction">교정</string>
     <string name="setting_auto_correct">실시간 자동 교정</string>
-    <string name="setting_auto_correct_sub">어절이 끝날 때마다 기기 안에서 바로 고칩니다. 복잡하거나 어려운 문장은 교정이 안 될 수도 있어요. 자판 위 \'교정\' 버튼으로도 끄고 켤 수 있어요.</string>
+    <string name="setting_auto_correct_sub">어절이 끝날 때마다 기기 안에서 바로 고칩니다. 복잡하거나 어려운 문장은 교정이 안 될 수도 있습니다. 자판 위 \'교정\' 버튼으로도 끄고 켤 수 있습니다.</string>
     <string name="setting_quota_unlimited">프리미엄 · 이용 중</string>
-    <string name="setting_quota_no_server">이 빌드에는 AI 서버 주소가 없어요</string>
+    <string name="setting_quota_no_server">이 빌드에는 AI 서버 주소가 없습니다</string>
     <!-- 첫 화면 프리미엄 칸. 문구는 사용자가 정했다(2026-10-02). 하루 99원 = 월 2,990원 ÷ 30일. -->
     <string name="premium_pitch_title">프리미엄</string>
     <string name="premium_pitch_tagline">절대 후회 없는 기능들</string>
-    <string name="premium_pitch_body"><b>하루 99원</b>밖에 안 하는데, 진짜 한번 써 보시면 알 겁니다.\n자세한 기능들이 궁금하시면 아래 버튼을 눌러 보세요!</string>
+    <string name="premium_pitch_body"><b>하루 99원</b>밖에 안 하는데, 진짜 한번 써 보시면 알 겁니다.\n자세한 기능들이 궁금하시면 아래 버튼을 눌러 보십시오!</string>
     <string name="setting_plan_subscribe">프리미엄 알아보기 · 월 2,990원</string>
     <!-- 더보기 서랍(첫 화면 ☰)과 키보드 맞춤설정. -->
     <string name="more_title">더보기</string>
@@ -74,42 +74,42 @@
     <string name="menu_terms">서비스 이용약관</string>
     <string name="menu_support">고객센터</string>
     <string name="app_info">버전 %1$s</string>
-    <string name="open_failed">열 수 있는 앱이 없어요.</string>
+    <string name="open_failed">열 수 있는 앱이 없습니다.</string>
 
     <!--
       고객센터 메일 주소. 비어 있으면 고객센터를 눌렀을 때 "준비 중" 이라고 뜬다.
       서버 설정 CONTACT_EMAIL(개인정보 처리방침 페이지에 뜨는 주소)과 같은 값을 넣는다.
     -->
     <string name="support_email" translatable="false">tamtech828282@gmail.com</string>
-    <string name="support_not_ready">고객센터 이메일을 준비 중이에요.</string>
+    <string name="support_not_ready">고객센터 이메일을 준비 중입니다.</string>
     <string name="support_subject">[맞춤법 키보드] 문의</string>
-    <string name="support_body">\n\n\n---\n아래 정보는 문제를 찾는 데 쓰여요. 지우지 말아 주세요.\n앱 버전: %1$s\n기기: %2$s (Android %3$s)\n설치 ID: %4$s</string>
+    <string name="support_body">\n\n\n---\n아래 정보는 문제를 찾는 데 쓰입니다. 지우지 말아 주십시오.\n앱 버전: %1$s\n기기: %2$s (Android %3$s)\n설치 ID: %4$s</string>
 
     <!-- 로그인. 구독을 폰 밖(윈도우·아이폰)에서도 쓰게 하는 칸이다. -->
-    <string name="account_signin_sub">윈도우·아이폰에서도 같은 구독을 쓰려면 로그인하세요.</string>
+    <string name="account_signin_sub">윈도우·아이폰에서도 같은 구독을 쓰려면 로그인하십시오.</string>
     <string name="account_signin">구글로 로그인</string>
     <string name="setting_account_working">로그인 중…</string>
     <string name="account_photo">프로필 사진</string>
     <string name="account_name_unknown">구글 계정</string>
     <string name="account_signout">로그아웃</string>
     <string name="account_delete">회원 탈퇴</string>
-    <string name="account_delete_title">회원 탈퇴할까요?</string>
-    <string name="account_delete_message">서버에 있는 계정 정보가 바로 지워지고, 이 계정으로 로그인한 다른 기기(윈도우 등)에서는 더 이상 구독을 쓸 수 없어요.\n\n구독은 해지되지 않아요. 해지하려면 Play 스토어 → 결제 및 정기 결제 → 정기 결제에서 해 주세요.</string>
+    <string name="account_delete_title">회원 탈퇴하시겠습니까?</string>
+    <string name="account_delete_message">서버에 있는 계정 정보가 바로 지워지고, 이 계정으로 로그인한 다른 기기(윈도우 등)에서는 더 이상 구독을 쓸 수 없습니다.\n\n구독은 해지되지 않습니다. 해지하려면 Play 스토어 → 결제 및 정기 결제 → 정기 결제에서 해 주십시오.</string>
     <string name="account_delete_confirm">탈퇴하기</string>
     <string name="account_cancel">취소</string>
-    <string name="account_deleted">탈퇴했어요. 계정 정보를 지웠어요.</string>
-    <string name="setting_account_signed_in">로그인됨 · 다른 기기에서도 이 구독을 쓸 수 있어요</string>
-    <string name="setting_account_signed_in_free">로그인됨 · 아직 붙은 구독이 없어요. 구독하면 다른 기기에서도 열려요</string>
-    <string name="account_error_network">서버에 닿지 못했어요. 잠시 후 다시 시도해 주세요.</string>
-    <string name="account_error_server">로그인하지 못했어요 (%1$s)</string>
-    <string name="account_error_no_google">이 폰에 구글 계정이 없어요. 폰 설정에서 계정을 추가한 뒤 다시 눌러 주세요.</string>
-    <string name="account_error_no_token">구글이 로그인 정보를 주지 않았어요. 다시 시도해 주세요.</string>
-    <string name="account_error_bad_token">로그인 정보가 만료됐어요. 다시 시도해 주세요.</string>
-    <string name="account_error_google_down">구글 로그인이 지금 안 돼요. 잠시 후 다시 시도해 주세요.</string>
-    <string name="account_error_too_many_devices">기기가 너무 많아요. 안 쓰는 기기에서 로그아웃해 주세요.</string>
-    <string name="account_error_not_configured">이 빌드에는 로그인이 준비되지 않았어요.</string>
-    <string name="setting_plan_note">자동 교정은 요금제와 상관없이 언제나 무제한이에요. 결제는 Google Play 가 처리하고, Play 스토어에서 설치한 앱에서만 결제창이 떠요.</string>
-    <string name="billing_subscribed">프리미엄이 확인됐어요. 이제 AI 교정을 쓸 수 있어요.</string>
+    <string name="account_deleted">탈퇴했습니다. 계정 정보를 지웠습니다.</string>
+    <string name="setting_account_signed_in">로그인됨 · 다른 기기에서도 이 구독을 쓸 수 있습니다</string>
+    <string name="setting_account_signed_in_free">로그인됨 · 아직 붙은 구독이 없습니다. 구독하면 다른 기기에서도 열립니다</string>
+    <string name="account_error_network">서버에 닿지 못했습니다. 잠시 후 다시 시도해 주십시오.</string>
+    <string name="account_error_server">로그인하지 못했습니다 (%1$s)</string>
+    <string name="account_error_no_google">이 폰에 구글 계정이 없습니다. 폰 설정에서 계정을 추가한 뒤 다시 눌러 주십시오.</string>
+    <string name="account_error_no_token">구글이 로그인 정보를 주지 않았습니다. 다시 시도해 주십시오.</string>
+    <string name="account_error_bad_token">로그인 정보가 만료됐습니다. 다시 시도해 주십시오.</string>
+    <string name="account_error_google_down">구글 로그인이 지금 안 됩니다. 잠시 후 다시 시도해 주십시오.</string>
+    <string name="account_error_too_many_devices">기기가 너무 많습니다. 안 쓰는 기기에서 로그아웃해 주십시오.</string>
+    <string name="account_error_not_configured">이 빌드에는 로그인이 준비되지 않았습니다.</string>
+    <string name="setting_plan_note">자동 교정은 요금제와 상관없이 언제나 무제한입니다. 결제는 Google Play 가 처리하고, Play 스토어에서 설치한 앱에서만 결제창이 뜹니다.</string>
+    <string name="billing_subscribed">프리미엄이 확인됐습니다. 이제 AI 교정을 쓸 수 있습니다.</string>
 
     <!-- 결제 화면 (챗GPT Plus 업그레이드 화면 구조) -->
     <string name="paywall_back">←</string>
@@ -138,10 +138,10 @@
     <string name="paywall_row_sealion_sound">🦭 귀여운 바다사자 사운드팩</string>
     <string name="paywall_row_sealion_sound_sub">누를 때마다 \'아웅!\' · 스페이스·엔터는 \'아아악\'</string>
     <string name="paywall_restore">구독 복원</string>
-    <string name="paywall_cta_upgrade">₩2,990에 업그레이드하세요</string>
+    <string name="paywall_cta_upgrade">₩2,990에 업그레이드하기</string>
     <string name="paywall_footer">매월 자동 갱신됩니다. 언제든지 취소할 수 있습니다.</string>
-    <string name="billing_failed">결제를 시작하지 못했어요: %1$s</string>
-    <string name="billing_product_missing">Play 스토어에서 설치한 앱에서만 결제할 수 있어요.</string>
+    <string name="billing_failed">결제를 시작하지 못했습니다: %1$s</string>
+    <string name="billing_product_missing">Play 스토어에서 설치한 앱에서만 결제할 수 있습니다.</string>
     <string name="section_keyboard">키보드</string>
     <string name="setting_layout">자판</string>
     <string name="setting_layout_qwerty">쿼티</string>
@@ -152,48 +152,48 @@
     <string name="setting_theme_sealion">바다사자</string>
     <string name="section_sound">소리</string>
     <string name="setting_key_sound">키 소리</string>
-    <string name="setting_key_sound_sub">무음·진동 모드에서는 소리가 안 나요</string>
+    <string name="setting_key_sound_sub">무음·진동 모드에서는 소리가 나지 않습니다</string>
     <string name="setting_sound_none">끔</string>
     <string name="setting_sound_sealion">바다사자</string>
     <string name="setting_sound_volume">소리 크기</string>
     <string name="setting_sound_volume_value">%1$d%%</string>
-    <string name="premium_only_sealion">바다사자 테마·소리는 프리미엄 구독자 전용이에요</string>
+    <string name="premium_only_sealion">바다사자 테마·소리는 프리미엄 구독자 전용입니다</string>
     <string name="premium_lock_suffix">%1$s 🔒</string>
     <string name="key_space">스페이스</string>
     <string name="setting_background">배경 사진</string>
     <string name="setting_background_pick">고르기</string>
     <string name="setting_background_clear">지우기</string>
-    <string name="setting_background_none">기본 배경을 쓰고 있어요</string>
-    <string name="setting_background_set">사진을 쓰고 있어요</string>
+    <string name="setting_background_none">기본 배경을 쓰고 있습니다</string>
+    <string name="setting_background_set">사진을 쓰고 있습니다</string>
     <string name="setting_background_saving">사진을 준비하는 중…</string>
-    <string name="setting_background_failed">사진을 불러오지 못했어요. 다른 사진으로 해 보세요.</string>
+    <string name="setting_background_failed">사진을 불러오지 못했습니다. 다른 사진으로 해 보십시오.</string>
     <string name="setting_key_transparency">키 투명도</string>
-    <string name="setting_key_transparency_sub">배경 사진을 썼을 때 키를 얼마나 비치게 할지 정해요. 오른쪽으로 갈수록 사진이 잘 보여요.</string>
+    <string name="setting_key_transparency_sub">배경 사진을 썼을 때 키를 얼마나 비치게 할지 정합니다. 오른쪽으로 갈수록 사진이 잘 보입니다.</string>
     <string name="setting_key_transparency_value">%1$d%%</string>
-    <string name="ai_notice">AI 교정·AI 번역을 누를 때만 그 입력란의 글이 서버를 거쳐 AI 로 가요(지금은 업스테이지 Solar). 타이핑 중 실시간 교정과 \'전체\' 교정은 기기 안에서만 처리돼요.</string>
+    <string name="ai_notice">AI 교정·AI 번역을 누를 때만 그 입력란의 글이 서버를 거쳐 AI 로 갑니다(지금은 업스테이지 Solar). 타이핑 중 실시간 교정과 \'전체\' 교정은 기기 안에서만 처리됩니다.</string>
 
     <!-- 예전 문구는 "타이핑한 내용은 기기 밖으로 나가지 않아요" 였다. AI 를 누르면 나가니 틀린 말이었다. -->
-    <string name="privacy_notice">실시간 교정과 \'전체\' 교정은 전부 기기 안에서 처리해요. 글이 기기 밖으로 나가는 건 AI 교정·AI 번역을 직접 누를 때뿐이에요. 비밀번호·이메일·URL 입력란에서는 교정도 AI 도 자동으로 꺼져요.</string>
+    <string name="privacy_notice">실시간 교정과 \'전체\' 교정은 전부 기기 안에서 처리합니다. 글이 기기 밖으로 나가는 것은 AI 교정·AI 번역을 직접 누를 때뿐입니다. 비밀번호·이메일·URL 입력란에서는 교정도 AI 도 자동으로 꺼집니다.</string>
     <!-- 사용법. 첫 화면 '써 보기' 밑에 그림으로 들어간다. 도구 줄을 그대로 그려 놓고
          동그라미를 누르면 막대기가 그 자리를 가리키며 설명이 뜬다. 글로만 늘어놓으면
          어느 동그라미 이야기인지 짚어 가며 읽어야 한다. -->
     <string name="section_guide">사용법</string>
-    <string name="guide_intro">자판 위 도구 줄이에요. 동그라미를 눌러 보세요.</string>
+    <string name="guide_intro">자판 위 도구 줄입니다. 동그라미를 눌러 보십시오.</string>
 
     <string name="guide_collapse_name">도구 줄 접기</string>
-    <string name="guide_collapse_desc">누르면 이 줄이 접혀서 자판이 그만큼 올라와요. 화면을 덜 가리죠. 다시 누르면 펴져요.</string>
+    <string name="guide_collapse_desc">누르면 이 줄이 접혀서 자판이 그만큼 올라옵니다. 화면을 덜 가립니다. 다시 누르면 펴집니다.</string>
     <string name="guide_emoji_name">이모티콘</string>
-    <string name="guide_emoji_desc">묶음별로 골라 넣어요. 판을 닫지 않고도 ⌫ 로 방금 넣은 것을 지울 수 있어요.</string>
+    <string name="guide_emoji_desc">묶음별로 골라 넣습니다. 판을 닫지 않고도 ⌫ 로 방금 넣은 것을 지울 수 있습니다.</string>
     <string name="guide_all_name">전체 교정</string>
-    <string name="guide_all_desc">짧게 누르면 써 놓은 글을 기기 안에서 통째로 고쳐요. 공짜고 인터넷도 필요 없어요. 꾹 누르면 AI 가 문장 전체를 다듬어요(프리미엄).</string>
+    <string name="guide_all_desc">짧게 누르면 써 놓은 글을 기기 안에서 통째로 고칩니다. 공짜이고 인터넷도 필요 없습니다. 꾹 누르면 AI 가 문장 전체를 다듬습니다(프리미엄).</string>
     <string name="guide_clipboard_name">클립보드</string>
-    <string name="guide_clipboard_desc">복사한 글이 쌓여요. 카드를 누르면 들어가고 ✕ 로 지워요. 다른 앱에서 복사한 뒤 키보드를 한 번 열어야 담겨요.</string>
+    <string name="guide_clipboard_desc">복사한 글이 쌓입니다. 카드를 누르면 들어가고 ✕ 로 지웁니다. 다른 앱에서 복사한 뒤 키보드를 한 번 열어야 담깁니다.</string>
     <string name="guide_live_name">실시간 교정</string>
-    <string name="guide_live_desc">치는 동안 어절이 끝날 때마다 바로 고쳐요. 이렇게 파랗게 차 있으면 켜진 거예요. 비밀번호·이메일 칸에서는 알아서 꺼져요.</string>
+    <string name="guide_live_desc">치는 동안 어절이 끝날 때마다 바로 고칩니다. 이렇게 파랗게 차 있으면 켜진 것입니다. 비밀번호·이메일 칸에서는 알아서 꺼집니다.</string>
     <string name="guide_translate_name">번역</string>
-    <string name="guide_translate_desc">짧게 누르면 번역 입력줄이 열려요. 한국어로 치면 앱에는 번역돼 들어가요. 꾹 누르면 써 놓은 글 전체를 AI 가 옮겨요(프리미엄).</string>
+    <string name="guide_translate_desc">짧게 누르면 번역 입력줄이 열립니다. 한국어로 치면 앱에는 번역돼 들어갑니다. 꾹 누르면 써 놓은 글 전체를 AI 가 옮깁니다(프리미엄).</string>
     <string name="guide_settings_name">설정</string>
-    <string name="guide_settings_desc">키보드 맞춤설정을 열어요. 자판 종류(쿼티·천지인), 밝기, 배경 사진을 여기서 바꿔요.</string>
+    <string name="guide_settings_desc">키보드 맞춤설정을 엽니다. 자판 종류(쿼티·천지인), 밝기, 배경 사진을 여기서 바꿉니다.</string>
 
     <!--
       첫 실행 둘러보기(CoachTour). 진짜 첫 화면 위에서 한 단계에 버튼 하나만 밝게 남기고
@@ -206,21 +206,21 @@
     <string name="menu_guide">사용 안내 다시 보기</string>
 
     <string name="tour_enable_title">1. 키보드 켜기</string>
-    <string name="tour_enable_body">여기를 누르면 설정이 열려요. \'맞춤법 키보드\' 스위치를 켜 주세요.</string>
+    <string name="tour_enable_body">여기를 누르면 설정이 열립니다. \'맞춤법 키보드\' 스위치를 켜 주십시오.</string>
     <string name="tour_pick_title">2. 입력기로 고르기</string>
-    <string name="tour_pick_body">켠 다음 여기를 눌러 \'맞춤법 키보드\' 를 골라 주세요. 처음 한 번만 하면 돼요.</string>
+    <string name="tour_pick_body">켠 다음 여기를 눌러 \'맞춤법 키보드\' 를 골라 주십시오. 처음 한 번만 하면 됩니다.</string>
     <string name="tour_try_title">써 보기</string>
-    <string name="tour_try_body">여기서 직접 쳐 보세요. 띄어쓰기와 맞춤법을 치는 동안 폰 안에서 바로 고쳐요. 인터넷도 필요 없어요.</string>
+    <string name="tour_try_body">여기서 직접 쳐 보십시오. 띄어쓰기와 맞춤법을 치는 동안 폰 안에서 바로 고칩니다. 인터넷도 필요 없습니다.</string>
     <string name="tour_toolbar_title">자판 위 도구 줄</string>
-    <string name="tour_toolbar_body">키보드 위에 뜨는 버튼들이에요. 여기 동그라미를 하나씩 누르면 무슨 버튼인지 알려 줘요.</string>
+    <string name="tour_toolbar_body">키보드 위에 뜨는 버튼들입니다. 여기 동그라미를 하나씩 누르면 무슨 버튼인지 알려 줍니다.</string>
     <string name="tour_menu_title">더보기</string>
-    <string name="tour_menu_body">로그인, 키보드 맞춤설정, 약관, 고객센터는 여기 있어요.</string>
+    <string name="tour_menu_body">로그인, 키보드 맞춤설정, 약관, 고객센터는 여기 있습니다.</string>
     <string name="tour_account_title">로그인</string>
-    <string name="tour_account_body">로그인하면 PC · 아이폰에서도 같은 구독을 쓸 수 있어요.</string>
+    <string name="tour_account_body">로그인하면 PC · 아이폰에서도 같은 구독을 쓸 수 있습니다.</string>
     <string name="tour_keyboard_title">키보드 맞춤설정</string>
-    <string name="tour_keyboard_body">자판 종류(쿼티 · 천지인), 밝기, 배경 사진을 여기서 바꿔요.</string>
+    <string name="tour_keyboard_body">자판 종류(쿼티 · 천지인), 밝기, 배경 사진을 여기서 바꿉니다.</string>
 
     <plurals name="correct_all_done">
-        <item quantity="other">%d곳을 고쳤어요</item>
+        <item quantity="other">%d곳을 고쳤습니다</item>
     </plurals>
 </resources>

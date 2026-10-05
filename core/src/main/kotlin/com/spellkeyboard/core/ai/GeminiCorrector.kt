@@ -372,7 +372,7 @@ class GeminiCorrector(
 
         checks += when {
             viaProxy -> Check("경로", true, "중계 서버 경유 — 앱에 키 없음 ($baseUrl)")
-            apiKey.isBlank() -> Check("API 키", false, "비어 있음 — 설정에서 키를 넣고 저장하세요")
+            apiKey.isBlank() -> Check("API 키", false, "비어 있음 — 설정에서 키를 넣고 저장하십시오")
             else -> Check("API 키", true, "내 키 ${apiKey.length}자 (${apiKey.take(6)}…)")
         }
         if (!viaProxy && apiKey.isBlank()) return checks
@@ -490,32 +490,32 @@ class GeminiCorrector(
             val lower = message.lowercase()
             return when {
                 "high demand" in lower || "overloaded" in lower || "unavailable" in lower ->
-                    "구글 서버가 지금 붐빕니다. 잠시 후 다시 눌러 주세요."
+                    "구글 서버가 지금 붐빕니다. 잠시 후 다시 눌러 주십시오."
 
                 "api key not valid" in lower || "api_key_invalid" in lower ->
-                    "API 키가 올바르지 않습니다. 설정에서 다시 확인해 주세요."
+                    "API 키가 올바르지 않습니다. 설정에서 다시 확인해 주십시오."
 
                 "permission" in lower || "denied" in lower ->
-                    "이 키로는 쓸 수 없습니다. 키 권한을 확인해 주세요."
+                    "이 키로는 쓸 수 없습니다. 키 권한을 확인해 주십시오."
 
                 // 우리 중계 서버가 돌려주는 코드들. 구글 오류와 같은 자리에 실려 온다.
                 //
                 // AI 는 프리미엄 기능이다. 실시간 교정은 요금제와 상관없이 늘 되니
                 // "아무것도 안 된다" 로 들리지 않게 그 말을 같이 적는다.
                 "subscribers_only" in lower ->
-                    "AI 전체 교정은 프리미엄 기능이에요. 실시간 교정은 그대로 무제한으로 쓸 수 있어요."
+                    "AI 전체 교정은 프리미엄 기능입니다. 실시간 교정은 그대로 무제한으로 쓸 수 있습니다."
 
                 "sub_daily_limit" in lower ->
-                    "오늘 AI 한도를 다 썼습니다. 내일 다시 쓸 수 있어요."
+                    "오늘 AI 한도를 다 썼습니다. 내일 다시 쓸 수 있습니다."
 
                 "server_not_configured" in lower ->
                     "AI 서버가 아직 준비되지 않았습니다."
 
                 "invalid_install_id" in lower ->
-                    "앱을 다시 설치해 주세요 (설치 ID 오류)."
+                    "앱을 다시 설치해 주십시오 (설치 ID 오류)."
 
                 "quota" in lower || "resource_exhausted" in lower || "rate limit" in lower ->
-                    "구글 API 사용 한도를 넘었습니다. 잠시 후 다시 시도해 주세요."
+                    "구글 API 사용 한도를 넘었습니다. 잠시 후 다시 시도해 주십시오."
 
                 "is not found" in lower || "not supported" in lower ->
                     "모델을 찾을 수 없습니다. 설정에서 AI 연결 진단을 눌러 보세요."
