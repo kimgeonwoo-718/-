@@ -67,6 +67,9 @@ size 988x2000 384; shot home-user-fresh
 adb shell ime enable $IME
 DONE=(--ez screenshot_setup_done true)
 size 988x2000 384; shot home-user "${DONE[@]}"
+# 같은 화면을 맨 아래까지 내려서 한 장 더 — 프리미엄 칸이 첫 화면 밖에 있을 때 본다.
+adb shell input swipe 494 1700 494 300 300; sleep 1; adb shell input swipe 494 1700 494 300 300; sleep 2
+adb exec-out screencap -p > shots/home-user-bottom.png; echo "찍음: home-user-bottom"
 size 720x1520 320; shot home-small "${DONE[@]}"
 size 1080x2400 420; shot home-tall "${DONE[@]}"
 
