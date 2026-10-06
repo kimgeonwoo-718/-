@@ -1,5 +1,6 @@
 package com.spellkeyboard.ko
 
+import com.spellkeyboard.core.correct.ProtectedWords
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
@@ -255,7 +256,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             // 오타 교정기는 "말뭉치가 아는 낱말은 안 건드린다" 를 마지막 문지방으로 쓴다.
             // 언어모델을 못 열었으면 그 문지방이 없는 셈이라 **아무것도 안 고치는 쪽**으로 둔다 —
             // 문지방 없이 돌리면 멀쩡한 낱말을 다른 멀쩡한 낱말로 바꾸는 일이 두 배가 된다.
-            val known: (String) -> Boolean = if (lm == null) { { true } } else { { lm.lnCount(it) != null } }
+            // 학교 줄임말('서울체고')은 말뭉치에 없어도 아는 말로 친다 — Kiwi 가 '서울최고' 로 바꾸지 않게.
+            val known: (String) -> Boolean =
+                if (lm == null) { { true } } else { { lm.lnCount(it) != null || ProtectedWords.isProtected(it) } }
             val opened = runCatching { KiwiSpacer.open(this, known) }.getOrNull()
             if (opened != null) {
                 if (destroyed) {

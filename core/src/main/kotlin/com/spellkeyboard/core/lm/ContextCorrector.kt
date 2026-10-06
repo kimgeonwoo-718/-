@@ -1,5 +1,6 @@
 package com.spellkeyboard.core.lm
 
+import com.spellkeyboard.core.correct.ProtectedWords
 import com.spellkeyboard.core.hangul.Hangul
 import com.spellkeyboard.core.hangul.NO_JONG
 import com.spellkeyboard.core.spacing.Spacer
@@ -109,6 +110,8 @@ class ContextCorrector(
      */
     fun knowsWord(word: String): Boolean {
         if (lm.lnCount(word) != null) return true
+        // 학교 줄임말('서울체고')은 말뭉치에 없어도 아는 말이다(ProtectedWords).
+        if (ProtectedWords.isProtected(word)) return true
         // 말뭉치보다 새 줄임말('핵노잼이더라')도 아는 말로 친다 — 붙여 쓴 덩어리로 보고 쪼갰다.
         if (SLANG_STEMS.any { word.startsWith(it) }) return true
         for (particle in TRAILING_PARTICLES) {
@@ -201,7 +204,9 @@ class ContextCorrector(
             !whitespace && prefix.all { it in OPENERS || isDecoration(it) } && core.isNotEmpty() &&
                 core.length <= MAX_TOKEN_SYLLABLES &&
                 core.all { it in HANGUL } && suffix.all { it in PUNCTUATION || isDecoration(it) } &&
-                SLANG_STEMS.none { core.startsWith(it) }
+                SLANG_STEMS.none { core.startsWith(it) } &&
+                // 학교 줄임말은 손대지 않는다 — '서울체고' → '서울최고', '과고' → '광고' 가 났다(2026-10-06).
+                !ProtectedWords.isProtected(core)
     }
 
     private fun tokenize(window: String): List<Piece> =
