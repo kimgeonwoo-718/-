@@ -37,7 +37,10 @@ const APP_PROMPT = `당신은 한국어 맞춤법·띄어쓰기 교정기다.
 /** 문장부호는 따로 본다. 모델이 마침표·물음표를 붙이는 버릇이 있는지 보려고. */
 const stripPunct = (s) => s.replace(/[.,!?~]+/g, '').replace(/\s+/g, ' ').trim();
 
-const model = process.argv[2] || 'solar-pro4';
+const model = process.argv.slice(2).find((a) => !a.startsWith('--')) || 'solar-pro4';
+/** `--only=갈래` 면 그 갈래 사례만 보낸다(값을 아끼려고). */
+const onlyArg = process.argv.find((a) => a.startsWith('--only='));
+const ONLY = onlyArg ? onlyArg.slice('--only='.length) : '';
 const key = process.env.UPSTAGE_API_KEY;
 if (!key) {
   console.error('UPSTAGE_API_KEY 가 없다');
@@ -123,7 +126,7 @@ function count(s, got, verdict, kind, input, gold) {
 }
 
 // 하나씩, 전·후를 번갈아 보낸다. 실제 사용자처럼 한 번에 하나고, 같은 순간의 붐빔을 같이 겪는다.
-for (const [i, [kind, input, gold]] of CASES.entries()) {
+for (const [i, [kind, input, gold]] of CASES.filter(([k]) => !ONLY || k === ONLY).entries()) {
   const order = i % 2 === 0 ? [false, true] : [true, false]; // 먼저 보내는 쪽이 유리하지 않게 번갈아
   const got = {};
   for (const extra of order) got[extra] = await ask(input, extra);
