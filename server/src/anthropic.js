@@ -15,7 +15,7 @@
  * 앱은 구글 모양(`system_instruction` + `contents`)으로 보내고 구글 모양 응답을 읽는다.
  * OpenAI 경로와 같이 **여기서 옮겨 주고 옮겨 받는다** — 이미 깔린 APK 는 손대지 않는다.
  */
-import { KO_SYSTEM_PROMPT, translatePrompt, userTextOf, tooDifferent, keepOriginal, dropAddedPunctuation } from './openai.js';
+import { KO_SYSTEM_PROMPT, translatePrompt, userTextOf, tooDifferent, keepOriginal, dropAddedPunctuation, capPrompt, upstreamErrorMessage } from './openai.js';
 
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 export const ANTHROPIC_VERSION = '2023-06-01';
@@ -48,7 +48,7 @@ export function toClaudeRequest(body, model, options = {}) {
     ? translatePrompt(options.translateTo)
     : options.prompt === 'server'
       ? KO_SYSTEM_PROMPT
-      : partsText(parsed.system_instruction ?? parsed.systemInstruction) || KO_SYSTEM_PROMPT;
+      : capPrompt(partsText(parsed.system_instruction ?? parsed.systemInstruction)) || KO_SYSTEM_PROMPT;
 
   const asked = Number(parsed.generationConfig?.maxOutputTokens ?? 0);
   const request = {
@@ -71,7 +71,7 @@ export function fromClaudeReply(status, text, user = '', options = {}) {
   const parsed = safeParse(text);
 
   if (status !== 200) {
-    return errorReply(status, parsed?.error?.message ?? `HTTP ${status}`);
+    return errorReply(status, upstreamErrorMessage(status));
   }
 
   const raw = (parsed?.content ?? [])

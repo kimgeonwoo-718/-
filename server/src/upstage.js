@@ -18,7 +18,7 @@
  * - **pro4 는 기본이 숙고 켬이다.** 안 끄면 한 번에 출력 ~840토큰, 15~20초, 값 약 60배였다
  *   (겨루기 실측). 그래서 숙고 세기를 반드시 적어 보낸다.
  */
-import { KO_SYSTEM_PROMPT, translatePrompt, userTextOf } from './openai.js';
+import { KO_SYSTEM_PROMPT, translatePrompt, userTextOf, capPrompt } from './openai.js';
 
 export const UPSTAGE_URL = 'https://api.upstage.ai/v1/chat/completions';
 /** 기본 모델. `UPSTAGE_MODEL` 이 이긴다. */
@@ -75,7 +75,7 @@ export function toUpstageRequest(body, model, options = {}) {
   const user = userTextOf(body);
   if (!user) throw new Error('empty_request');
 
-  const appPrompt = partsText(parsed.system_instruction ?? parsed.systemInstruction);
+  const appPrompt = capPrompt(partsText(parsed.system_instruction ?? parsed.systemInstruction));
   const system = options.translateTo
     ? translatePrompt(options.translateTo)
     : options.prompt === 'server'

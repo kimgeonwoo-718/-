@@ -21,28 +21,58 @@
  * 번역만 우리 지시문을 쓴다. 앱은 번역용 지시문을 아예 안 보내기 때문이다
  * (`buildRequest(text, withPrompt = false)`).
  */
-import { translatePrompt, userTextOf, tooDifferent, keepOriginal, dropAddedPunctuation } from './openai.js';
+import {
+  translatePrompt,
+  userTextOf,
+  tooDifferent,
+  keepOriginal,
+  dropAddedPunctuation,
+  capPrompt,
+  upstreamErrorMessage,
+  KO_SYSTEM_PROMPT,
+} from './openai.js';
 
 export const GEMINI_UPSTREAM = 'https://generativelanguage.googleapis.com';
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
+
+/** 교정 출력 한도. 앱은 4096 을 부른다. 잘린 답은 사용자 글을 덮어 버리므로 넉넉히, 실제 요금은 쓴 만큼만. */
+const MIN_OUTPUT_TOKENS = 2048;
+const MAX_OUTPUT_TOKENS = 8192;
 
 export function geminiUrl(model) {
   return `${GEMINI_UPSTREAM}/v1beta/models/${model}:generateContent`;
 }
 
 /**
- * 보낼 본문. 교정이면 앱 것 그대로, 번역이면 우리 지시문으로 새로 짠다.
+ * 보낼 본문. **앱 본문을 그대로 넘기지 않는다** — 지시문·사용자 글만 꺼내 서버가 정한 설정으로 새로 짠다.
  * 고칠 글이 없으면 던진다 — OpenAI 쪽과 같은 규약이다.
+ *
+ * 왜 새로 짜나: 앱 본문을 그대로 구글에 넘기면, 고친 앱이 거기에 `candidateCount`(답 여러 벌),
+ * `thinkingConfig`(숙고 토큰 — 출력 요금), `tools: google_search`(검색·데이터 유출) 를 실어 값을 부풀릴 수
+ * 있다. 멀쩡한 앱이 보내는 값(temperature 0, candidateCount 1, 숙고 끔)은 그대로지만, 그 값을 **서버가**
+ * 못박아야 고친 앱도 똑같이 묶인다. 되돌리려는 "제미나이 시절" 교정은 앱 지시문으로 돌았으므로 그 지시문은 쓴다.
  */
 export function toGeminiRequest(body, options = {}) {
+  const parsed = JSON.parse(body);
   const user = userTextOf(body);
   if (!user) throw new Error('empty_request');
-  if (!options.translateTo) return body;
 
+  const system = options.translateTo
+    ? translatePrompt(options.translateTo)
+    : capPrompt(partsText(parsed.system_instruction ?? parsed.systemInstruction)) || KO_SYSTEM_PROMPT;
+
+  const asked = Number(parsed.generationConfig?.maxOutputTokens ?? 0);
   return JSON.stringify({
-    system_instruction: { parts: [{ text: translatePrompt(options.translateTo) }] },
+    system_instruction: { parts: [{ text: system }] },
     contents: [{ role: 'user', parts: [{ text: user }] }],
-    generationConfig: { temperature: 0, candidateCount: 1 },
+    // 숙고는 끈다(thinkingBudget 0). 맞춤법에 숙고는 필요 없고, 켜면 시간도 출력 요금도 먹는다.
+    // 핀으로 박은 gemini-3.5-flash-lite 가 이 값을 받는다(앱도 지금 이대로 보낸다).
+    generationConfig: {
+      temperature: 0,
+      candidateCount: 1,
+      maxOutputTokens: clamp(asked, MIN_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS),
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   });
 }
 
@@ -56,7 +86,7 @@ export function toGeminiRequest(body, options = {}) {
 export function fromGeminiReply(status, text, user = '', options = {}) {
   const parsed = safeParse(text);
   if (status !== 200) {
-    return errorReply(status, parsed?.error?.message ?? `HTTP ${status}`);
+    return errorReply(status, upstreamErrorMessage(status));
   }
 
   const candidate = parsed?.candidates?.[0];
@@ -104,6 +134,11 @@ function safeParse(text) {
   } catch {
     return null;
   }
+}
+
+function clamp(value, min, max) {
+  if (!Number.isFinite(value) || value < min) return min;
+  return Math.min(value, max);
 }
 
 /**

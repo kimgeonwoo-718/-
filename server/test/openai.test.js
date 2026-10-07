@@ -125,16 +125,18 @@ test('잘린 교정문은 주지 않는다 — 사용자 글이 잘린 채로 �
   assert.match(JSON.parse(reply.text).error.message, /잘렸다/);
 });
 
-test('빈 응답과 오류는 구글 오류 모양으로 옮긴다', () => {
+test('빈 응답과 오류는 구글 오류 모양으로 옮기되 저쪽 문구는 가린다', () => {
   assert.equal(toGeminiReply(200, JSON.stringify({ choices: [{ message: { content: '' } }] })).status, 502);
 
-  const failed = toGeminiReply(429, JSON.stringify({ error: { message: 'rate limited' } }));
+  // 상태 코드는 앱이 쓰므로 그대로. 저쪽 문구(키 조각이 섞일 수 있다)는 넘기지 않고 짧은 표시로 바꾼다.
+  const failed = toGeminiReply(429, JSON.stringify({ error: { message: 'sk-secret-leak' } }));
   assert.equal(failed.status, 429);
-  assert.equal(JSON.parse(failed.text).error.message, 'rate limited');
+  assert.doesNotMatch(failed.text, /sk-secret-leak/);
+  assert.equal(JSON.parse(failed.text).error.message, 'rate_limited');
 
   const broken = toGeminiReply(500, '<html>bad gateway</html>');
   assert.equal(broken.status, 500);
-  assert.equal(JSON.parse(broken.text).error.message, 'HTTP 500');
+  assert.equal(JSON.parse(broken.text).error.message, 'upstream_unavailable');
 });
 
 test('모델 목록은 지금 쓰는 이름 하나만 알려 준다', () => {
@@ -226,16 +228,19 @@ test('숙고 항목을 거절하면 빼고 한 번 더 보낸다', async () => {
   assert.equal('reasoning_effort' in calls[1], false);
 });
 
-test('숙고와 무관한 400 은 두 번 보내도 그대로 전한다', async () => {
+test('숙고와 무관한 401 은 한 번만 보내고 상태를 전한다 (키 문구는 가린다)', async () => {
   let sent = 0;
   const fetchImpl = async () => {
     sent += 1;
-    return new Response(JSON.stringify({ error: { message: 'invalid_api_key' } }), { status: 401 });
+    // 저쪽이 키 조각을 오류에 실어 보내도 앱까지 가면 안 된다.
+    return new Response(JSON.stringify({ error: { message: 'Incorrect API key: sk-live-ABCD1234' } }), { status: 401 });
   };
   const res = await handle(generate(), env(), { fetch: fetchImpl });
   assert.equal(res.status, 401);
   assert.equal(sent, 1);
-  assert.equal((await res.json()).error.message, 'invalid_api_key');
+  const msg = (await res.json()).error.message;
+  assert.doesNotMatch(msg, /sk-live-ABCD1234/);
+  assert.equal(msg, 'upstream_rejected');
 });
 
 test('교정이 아닌 답은 길이로 걸러낸다', () => {

@@ -14,7 +14,7 @@
  * 백여 개가 그걸 지키고 있어서, 여기서 다시 만들면 두 벌이 어긋난다. 서버는 얇게 둔다.
  * 경로도 구글과 똑같이 둬서 앱은 호스트만 바꾸면 된다.
  */
-import { kstDay, validInstallId, chargeFor, decideChars, DEFAULT_SUB_DAILY_CHARS } from './quota.js';
+import { kstDay, validInstallId, chargeFor, DEFAULT_SUB_DAILY_CHARS } from './quota.js';
 import {
   accountForGoogle,
   attachPurchase,
@@ -36,6 +36,7 @@ import {
   fromGeminiReply,
   DEFAULT_GEMINI_MODEL,
   GEMINI_MODELS_URL,
+  GEMINI_UPSTREAM,
   parseGeminiModels,
   pickGeminiModel,
 } from './gemini.js';
@@ -353,7 +354,9 @@ async function correct(request, env, url, fetchImpl, now) {
     return fail(413, 'too_long');
   }
   const body = await request.text();
-  if (body.length > MAX_BODY_BYTES) return fail(413, 'too_long');
+  // 바이트로 잰다 — `body.length` 는 글자 수라, 한글은 글자당 3바이트라서 그걸로 재면 상한의 세 배까지
+  // 새어 든다(실측: 글자 수로 6만이 바이트로 18만이었다). content-length 는 없거나 거짓일 수 있어 믿지 않는다.
+  if (new TextEncoder().encode(body).length > MAX_BODY_BYTES) return fail(413, 'too_long');
 
   // ?translate=en 이면 교정이 아니라 번역이다. 한도는 교정과 같은 통을 쓴다 —
   // 값이 글자당 똑같이 매겨지므로 따로 셀 이유가 없다.
@@ -403,8 +406,17 @@ async function correct(request, env, url, fetchImpl, now) {
   // 시험용 설치 ID([isTestSubscriber])는 구매 토큰이 없다. 그때는 설치 ID 로 센다.
   const charsKey = 'chars:' + (purchaseToken ? await sha256Hex(purchaseToken) : installId);
   const charge = chargeFor(safeUserLength(body));
-  let usage = decideChars(await used(env.DB, charsKey, day), charge, limit);
-  if (!usage.allowed) return withQuota(fail(402, 'sub_daily_limit'), usage, limit, plan, unit);
+
+  // 한도를 **미리 원자적으로 예약한다.** 읽고 나서 더하면(옛 방식) 동시에 들어온 요청이 전부
+  // 같은 "남았다" 를 보고 다 통과한다 — 1만 5천 자 한도에 1만 4천 자짜리를 병렬로 50번 보냈더니
+  // 50번이 다 나가 하루에 70만 자가 청구됐다(실측). 더하기는 D1 이 한 문장으로 직렬화하므로,
+  // 더한 뒤의 값을 돌려받아 한도를 넘었으면 돌려주고 막는다. 이러면 몇 번이 동시에 와도 한도가 천장이다.
+  const reserved = await reserve(env.DB, charsKey, day, charge);
+  if (reserved > limit) {
+    await refund(env.DB, charsKey, day, charge);
+    const usage = { remaining: Math.max(0, limit - (reserved - charge)) };
+    return withQuota(fail(402, 'sub_daily_limit'), usage, limit, plan, unit);
+  }
 
   const startedAt = Date.now();
   const reply =
@@ -418,14 +430,15 @@ async function correct(request, env, url, fetchImpl, now) {
   reply.tookMs = Date.now() - startedAt;
 
   if (reply.status === 200) {
-    // 응답이 알려 준 토큰 수를 날짜별로 쌓는다. 실패한 요청은 안 세고 돈도 안 나간다.
+    // 응답이 알려 준 토큰 수를 날짜별로 쌓는다. 성공했을 때만. (keepOriginal 도 200 이라 센다 — 값이 나갔다.)
     await recordTokens(env.DB, day, usageOf(reply.text));
-    // 성공했을 때만 깎는다. 구글이 거절한 요청까지 세면 사용자는 아무것도 못 받고
-    // 하루치만 잃는다 — 앱이 예전에 지키던 규칙과 같다.
-    await bumpBy(env.DB, charsKey, day, charge);
-    usage = { remaining: Math.max(0, usage.remaining - charge) };
+  } else {
+    // 실패한 요청은 돈이 안 나간다. 예약을 돌려줘야 거절당한 사람이 하루치만 잃지 않는다
+    // — 앱이 예전에 지키던 규칙과 같다.
+    await refund(env.DB, charsKey, day, charge);
   }
-  return withQuota(asResponse(reply), usage, limit, plan, unit);
+  const remaining = Math.max(0, limit - (reply.status === 200 ? reserved : reserved - charge));
+  return withQuota(asResponse(reply), { remaining }, limit, plan, unit);
 }
 
 /**
@@ -666,9 +679,12 @@ function upstreamHeaders(env, target) {
     headers['anthropic-version'] = ANTHROPIC_VERSION;
   } else if (target.startsWith(UPSTAGE_URL)) {
     headers.authorization = `Bearer ${(env.UPSTAGE_API_KEY ?? '').trim()}`;
-  } else {
+  } else if (target.startsWith(GEMINI_UPSTREAM)) {
     headers['x-goog-api-key'] = (env.GEMINI_API_KEY ?? '').trim();
   }
+  // 아는 곳이 아니면 **키를 붙이지 않는다.** 지금 target 은 전부 서버가 정한 상수라 여기 올 일이
+  // 없지만, 혹시 주소가 잘못 설정돼도 키가 엉뚱한 곳으로 가지 않게 막는다(예전엔 모르는 곳에도
+  // 구글 키를 붙였다).
   return headers;
 }
 
@@ -759,18 +775,29 @@ async function playAccessToken(env, fetchImpl, nowMs) {
 
 // --- 사용량 ---------------------------------------------------------------------
 
-async function used(db, id, day) {
-  const row = await db.prepare('SELECT used FROM usage WHERE id = ? AND day = ?').bind(id, day).first();
-  return row?.used ?? 0;
-}
-
-async function bumpBy(db, id, day, amount) {
-  await db
+/**
+ * 하루치에서 [amount] 를 **원자적으로 예약하고 예약 뒤의 총량을 돌려준다.**
+ *
+ * 더하기(`used = used + excluded.used`)는 한 문장이라 D1 이 직렬화한다 — 동시에 와도 하나씩 더해지고,
+ * `RETURNING` 으로 저마다 자기가 더한 뒤의 값을 받는다. 호출한 쪽은 그 값이 한도를 넘었는지만 보면 된다.
+ * 읽고-판단하고-쓰기로 나누면 그 사이에 끼어든 요청이 같은 값을 읽어 한도가 뚫린다(correct 참고).
+ */
+async function reserve(db, id, day, amount) {
+  const row = await db
     .prepare(
       'INSERT INTO usage (id, day, used) VALUES (?, ?, ?) ' +
-        'ON CONFLICT(id, day) DO UPDATE SET used = used + excluded.used'
+        'ON CONFLICT(id, day) DO UPDATE SET used = used + excluded.used RETURNING used'
     )
     .bind(id, day, amount)
+    .first();
+  return Number(row?.used ?? amount);
+}
+
+/** 예약을 돌려준다 — 한도를 넘어 막혔거나, 바깥이 거절해 돈이 안 나갔을 때. 0 밑으로는 안 내려간다. */
+async function refund(db, id, day, amount) {
+  await db
+    .prepare('UPDATE usage SET used = MAX(0, used - ?) WHERE id = ? AND day = ?')
+    .bind(amount, id, day)
     .run();
 }
 

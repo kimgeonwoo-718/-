@@ -99,11 +99,13 @@ test('Claude 응답: 교정이 아닌 답(길이가 확 다름)은 원문으로 
   assert.equal(JSON.parse(out.text).candidates[0].content.parts[0].text, user);
 });
 
-test('Claude 응답: 저쪽 오류는 상태와 메시지를 그대로', () => {
-  const err = JSON.stringify({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } });
+test('Claude 응답: 저쪽 오류는 상태만 전하고 문구는 가린다', () => {
+  // 저쪽 오류 문구(키 조각·내부 주소가 섞일 수 있다)는 앱에 넘기지 않는다. 앱이 쓰는 상태 코드만 전한다.
+  const err = JSON.stringify({ type: 'error', error: { type: 'overloaded_error', message: 'secret-internal-detail' } });
   const out = fromClaudeReply(529, err, '글');
   assert.equal(out.status, 529);
-  assert.match(out.text, /Overloaded/);
+  assert.doesNotMatch(out.text, /secret-internal-detail/);
+  assert.match(out.text, /upstream_unavailable/);
 });
 
 test('AI_PROVIDER=anthropic 이면 Claude 로 보내고 키·버전 헤더를 붙인다', async () => {

@@ -21,6 +21,13 @@ export function fakeDb() {
       // D1 은 bind 없이도 first/all/run 을 부를 수 있다 (인자 없는 문장).
       const bound = (args) => ({
             async first() {
+              // reserve(): 원자적으로 더하고 더한 뒤의 값을 돌려준다(RETURNING used).
+              if (sql.startsWith('INSERT INTO usage')) {
+                const k = key(args[0], args[1]);
+                const next = (usage.get(k) ?? 0) + (args[2] ?? 1);
+                usage.set(k, next);
+                return { used: next };
+              }
               if (sql.startsWith('SELECT used')) {
                 const value = usage.get(key(args[0], args[1]));
                 return value == null ? null : { used: value };
@@ -87,6 +94,12 @@ export function fakeDb() {
               }
               if (sql.startsWith('INSERT OR REPLACE INTO cache')) {
                 cache.set(args[0], { value: args[1], expires_at: args[2] });
+                return;
+              }
+              if (sql.startsWith('UPDATE usage SET used')) {
+                // refund(): MAX(0, used - amount). args = [amount, id, day]
+                const k = key(args[1], args[2]);
+                usage.set(k, Math.max(0, (usage.get(k) ?? 0) - args[0]));
                 return;
               }
               if (sql.startsWith('DELETE FROM usage')) {

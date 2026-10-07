@@ -42,6 +42,36 @@ export function rejectsReasoning(status, text) {
 }
 
 /**
+ * 앱이 보낸 지시문의 최대 길이.
+ *
+ * 교정 지시문은 몇 백 자면 된다. 그런데 Solar·Claude 경로는 **앱이 보낸 지시문을 그대로**
+ * 모델에 넘기고, 한도는 사용자 글자 수만 센다. 그래서 고친 앱(또는 새어 나간 시험용 설치 ID)이
+ * 지시문 칸에 6만 자를 실으면, 한도는 50자만 깎이는데 입력 토큰 값은 수천 배로 뛴다.
+ * 여기서 잘라 그 부풀리기를 막는다 — 멀쩡한 지시문은 이 길이 근처에도 안 온다.
+ */
+export const MAX_SYSTEM_PROMPT_CHARS = 4000;
+
+export function capPrompt(text) {
+  if (typeof text !== 'string') return '';
+  return text.length > MAX_SYSTEM_PROMPT_CHARS ? text.slice(0, MAX_SYSTEM_PROMPT_CHARS) : text;
+}
+
+/**
+ * 바깥 모델이 준 오류를 **그대로 앱에 넘기지 않는다.**
+ *
+ * 저쪽 오류 문구에는 키 조각(대개 가려져 오지만)·내부 주소·계정 사정이 섞여 올 수 있다. 앱이
+ * 쓰는 것은 상태 코드(429·5xx 면 잠깐 쉬었다 다시 보냄)뿐이라, 코드는 그대로 두고 문구만
+ * 짧은 표시로 바꾼다. 어디서 막혔는지는 서버 /stats 와 배포 로그로 본다.
+ */
+export function upstreamErrorMessage(status) {
+  if (status === 429) return 'rate_limited';
+  if (status >= 500) return 'upstream_unavailable';
+  if (status === 401 || status === 403) return 'upstream_rejected';
+  if (status === 413) return 'too_long';
+  return `upstream_error_${status}`;
+}
+
+/**
  * 교정 지시문.
  *
  * **앱이 보낸 지시문 대신 이것을 쓴다.** 프롬프트는 모델을 바꿀 때마다 손봐야 하는데,
@@ -221,7 +251,7 @@ export function toOpenAiRequest(body, model, options = {}) {
   const system = options.translateTo
     ? translatePrompt(options.translateTo)
     : options.prompt === 'app'
-      ? partsText(parsed.system_instruction ?? parsed.systemInstruction)
+      ? capPrompt(partsText(parsed.system_instruction ?? parsed.systemInstruction))
       : KO_SYSTEM_PROMPT;
 
   const asked = Number(parsed.generationConfig?.maxOutputTokens ?? 0);
@@ -382,7 +412,7 @@ export function toGeminiReply(status, text, user = '', options = {}) {
   const parsed = safeParse(text);
 
   if (status !== 200) {
-    return errorReply(status, parsed?.error?.message ?? `HTTP ${status}`);
+    return errorReply(status, upstreamErrorMessage(status));
   }
 
   const choice = parsed?.choices?.[0];

@@ -110,12 +110,28 @@ test('무료는 AI 를 아예 쓸 수 없다 — 구글까지 가지 않는다',
   assert.equal(up.calls.length, 0, '돈이 나가는 곳까지 가지 않는다');
 });
 
-test('구글이 거절한 요청은 세지 않는다', async () => {
+test('구글이 거절한 요청은 세지 않는다 (예약을 돌려준다)', async () => {
   const e = env();
   const res = await handle(generate(), e, { fetch: upstream({ status: 503 }).fetchImpl, now: () => NOON_KST });
   assert.equal(res.status, 503, '상태를 그대로 전한다');
   assert.equal(res.headers.get('x-quota-remaining'), String(DEFAULT_SUB_DAILY_CHARS), '깎이지 않았다');
-  assert.equal(e.DB.usage.size, 0);
+  // 미리 예약했다가 실패하면 돌려주므로, 쌓인 사용량은 0 이다.
+  assert.equal([...e.DB.usage.values()].reduce((a, b) => a + b, 0), 0);
+});
+
+test('동시에 여러 번 와도 한도가 천장이다 (예약을 원자적으로 센다)', async () => {
+  // 읽고-판단-쓰기로 나누면 동시에 온 요청이 같은 "남았다" 를 보고 다 통과한다. 1000자 한도에
+  // 600자짜리를 한꺼번에 다섯 번 보내면 하나만 통과해야 한다.
+  const e = env({ SUB_DAILY_CHARS: '1000' });
+  const up = upstream({ echo: true });
+  const body = JSON.stringify({ contents: [{ parts: [{ text: '가'.repeat(600) }] }] });
+  const deps = { fetch: up.fetchImpl, now: () => NOON_KST };
+  const results = await Promise.all(Array.from({ length: 5 }, () => handle(generate({}, body), e, deps)));
+  const ok = results.filter((r) => r.status === 200).length;
+  const blocked = results.filter((r) => r.status === 402).length;
+  assert.equal(ok, 1, '600자 한 번이면 1000자 안, 두 번이면 넘는다');
+  assert.equal(blocked, 4);
+  assert.ok([...e.DB.usage.values()].reduce((a, b) => a + b, 0) <= 1000, '한도를 넘겨 청구되지 않는다');
 });
 
 test('자정을 넘기면 되살아난다', async () => {
@@ -448,7 +464,14 @@ test('중계 객체가 있으면 구글 호출은 그 안에서 나간다 — �
   assert.equal(relay.calls.length, 1);
   assert.equal(relay.calls[0].url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
   assert.equal(relay.calls[0].init.method, 'POST');
-  assert.equal(relay.calls[0].init.body, BODY, '교정은 앱 본문을 그대로 넘긴다');
+  // 교정 본문은 앱 것을 그대로 넘기지 않는다 — 사용자 글만 꺼내 서버가 정한 설정으로 새로 짠다.
+  // 고친 앱이 candidateCount·thinkingBudget·tools 로 값을 부풀리지 못하게 한다.
+  const sent = JSON.parse(relay.calls[0].init.body);
+  assert.equal(sent.contents[0].parts[0].text, '안녕하새요', '사용자 글은 그대로');
+  assert.equal(sent.generationConfig.candidateCount, 1);
+  assert.equal(sent.generationConfig.temperature, 0);
+  assert.deepEqual(sent.generationConfig.thinkingConfig, { thinkingBudget: 0 });
+  assert.ok(!('tools' in sent), '검색 같은 도구는 넘기지 않는다');
   // 한국에서 가까운 미국이라야 한다. 홍콩은 구글·OpenAI 가 거절하므로 미국은 유지한다.
   assert.equal(relay.calls[0].options.locationHint, 'wnam');
   // 위치 힌트는 **객체를 처음 만들 때만** 먹는다. 이름이 그대로면 미국 동부에 이미
