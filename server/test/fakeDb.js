@@ -28,6 +28,14 @@ export function fakeDb() {
                 usage.set(k, next);
                 return { used: next };
               }
+              // adjust(): 잡아 둔 것을 정산값으로 맞추고 맞춘 뒤의 값을 돌려준다(MAX(0, used + delta)). args = [delta, id, day]
+              if (sql.startsWith('UPDATE usage SET used = MAX(0, used + ?)')) {
+                const k = key(args[1], args[2]);
+                if (!usage.has(k)) return null;
+                const next = Math.max(0, usage.get(k) + args[0]);
+                usage.set(k, next);
+                return { used: next };
+              }
               if (sql.startsWith('SELECT used')) {
                 const value = usage.get(key(args[0], args[1]));
                 return value == null ? null : { used: value };

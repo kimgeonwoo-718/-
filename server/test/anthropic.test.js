@@ -59,7 +59,8 @@ test('Claude 본문: 앱 지시문, temperature 0, 출력 한도, 사용자 글'
   assert.equal(sent.model, 'claude-haiku-4-5-20251001');
   assert.equal(sent.system, '너는 교정기다');
   assert.equal(sent.temperature, 0);
-  assert.equal(sent.max_tokens, 4096);
+  // 앱이 부른 4096 이 아니라 서버가 글 길이로 정한다: '안녕하세요 반갑읍니다' 31바이트 → 256 + 2×31.
+  assert.equal(sent.max_tokens, 318);
   assert.deepEqual(sent.messages, [{ role: 'user', content: '안녕하세요 반갑읍니다' }]);
 });
 

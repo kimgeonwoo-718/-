@@ -89,12 +89,16 @@ test('숙고 세기를 환경변수로 바꾼다', () => {
   assert.equal(sent.reasoning_effort, 'medium');
 });
 
-test('숙고 토큰도 출력 한도에서 깎이므로 앱이 부른 값보다 넉넉히 준다', () => {
+test('출력 한도는 서버가 글 길이로 정하고, 숙고가 켜져 있으면 숙고 몫을 얹는다', () => {
+  // OpenAI 는 숙고 토큰도 이 한도에서 깎는다. 기본 숙고(low)라 2048 을 얹는다: 31바이트 → 256 + 2048 + 2×31.
   const sent = JSON.parse(toOpenAiRequest(APP_BODY, 'gpt-5-nano'));
-  assert.equal(sent.max_completion_tokens, 8192);
+  assert.equal(sent.max_completion_tokens, 2366);
 
-  const small = JSON.stringify({ contents: [{ parts: [{ text: '가' }] }], generationConfig: { maxOutputTokens: 16 } });
-  assert.equal(JSON.parse(toOpenAiRequest(small, 'gpt-5-nano')).max_completion_tokens, 2048);
+  // 앱이 부른 값(16 이든 99999 든)은 안 쓴다.
+  const small = (max) => JSON.stringify({ contents: [{ parts: [{ text: '가' }] }], generationConfig: { maxOutputTokens: max } });
+  assert.equal(JSON.parse(toOpenAiRequest(small(16), 'gpt-5-nano')).max_completion_tokens, 2310);
+  assert.equal(JSON.parse(toOpenAiRequest(small(99999), 'gpt-5-nano')).max_completion_tokens, 2310);
+  assert.equal(JSON.parse(toOpenAiRequest(small(99999), 'gpt-5-nano', { reasoning: 'none' })).max_completion_tokens, 262);
 });
 
 test('고칠 글이 없으면 보내지 않는다', () => {
@@ -174,12 +178,13 @@ test('모델 목록은 물어보지 않고 바로 답한다', async () => {
   assert.equal(up.calls.length, 0);
 });
 
-test('토큰과 구독자 한도는 그대로 센다', async () => {
+test('토큰을 쌓고, 한도는 글자 수와 실제 토큰 중 큰 쪽으로 정산한다', async () => {
   const shared = env();
   const up = openAi();
   const res = await handle(generate(), shared, { fetch: up.fetchImpl });
-  // '안녕하세요 반갑읍니다' 는 11 자라 최소 과금 50 자로 친다.
-  assert.equal(res.headers.get('x-quota-remaining'), String(DEFAULT_SUB_DAILY_CHARS - 50));
+  // '안녕하세요 반갑읍니다' 는 11 자라 글자로는 최소 50 자다. 그런데 이 흉내는 입력 200·출력 80·숙고 10 을
+  // 돌려준다 — ⌈(200 + 4×(80+10)) / 10⌉ = 56 이 더 크므로 56 을 깎는다(윈도우 점검: 실제 값으로 정산).
+  assert.equal(res.headers.get('x-quota-remaining'), String(DEFAULT_SUB_DAILY_CHARS - 56));
 
   const days = await shared.DB.prepare('SELECT day, requests, prompt, output, thoughts FROM tokens ORDER BY day DESC LIMIT 31').all();
   assert.equal(days.results[0].prompt, 200);

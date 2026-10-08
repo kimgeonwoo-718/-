@@ -18,19 +18,11 @@
  * - **pro4 는 기본이 숙고 켬이다.** 안 끄면 한 번에 출력 ~840토큰, 15~20초, 값 약 60배였다
  *   (겨루기 실측). 그래서 숙고 세기를 반드시 적어 보낸다.
  */
-import { KO_SYSTEM_PROMPT, translatePrompt, userTextOf, capPrompt } from './openai.js';
+import { KO_SYSTEM_PROMPT, translatePrompt, userTextOf, capPrompt, outputCap, utf8Bytes } from './openai.js';
 
 export const UPSTAGE_URL = 'https://api.upstage.ai/v1/chat/completions';
 /** 기본 모델. `UPSTAGE_MODEL` 이 이긴다. */
 export const DEFAULT_UPSTAGE_MODEL = 'solar-pro4';
-
-/**
- * 출력 한도. 잘린 답은 사용자 글을 잘린 채로 덮어 버리므로(앱은 받은 글로 통째로 갈아 끼운다)
- * 넉넉히 잡고, 잘리면 실패로 돌린다([toGeminiReply] 가 finish_reason 'length' 를 502 로).
- * 요금은 실제로 쓴 만큼만 나간다.
- */
-const MIN_OUTPUT_TOKENS = 2048;
-const MAX_OUTPUT_TOKENS = 8192;
 
 /**
  * 앱 지시문 뒤에 **서버가 덧붙이는 규칙.** 업스테이지로 보낼 때만 붙는다.
@@ -84,25 +76,23 @@ export function toUpstageRequest(body, model, options = {}) {
         ? `${appPrompt}\n\n${UPSTAGE_EXTRA_RULES}`
         : appPrompt || KO_SYSTEM_PROMPT;
 
-  const asked = Number(parsed.generationConfig?.maxOutputTokens ?? 0);
+  const reasoning = options.reasoning || reasoningOff(model);
   return JSON.stringify({
     model,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
-    max_tokens: clamp(asked, MIN_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS),
+    // **출력 상한은 서버가 정한다**([outputCap]). 앱이 보낸 maxOutputTokens 는 안 쓴다 — 고친 앱이 크게
+    // 부르고 지시문에 "길게 써라" 를 실으면 50자 값으로 수천 토큰을 받아 갔다. 잘리면 [toGeminiReply] 가
+    // 502 로 돌리고(사용자 글을 잘린 채로 덮지 않게), 그래도 쓴 토큰은 한도에서 정산한다.
+    max_tokens: outputCap(utf8Bytes(user), { translate: !!options.translateTo, reasoning: reasoning !== 'none' }),
     // 같은 글을 두 번 고치면 같은 답이 나와야 한다. 구글 경로가 받던 값과 같다.
     temperature: 0,
-    reasoning_effort: options.reasoning || reasoningOff(model),
+    reasoning_effort: reasoning,
   });
 }
 
 function partsText(node) {
   return (node?.parts ?? []).map((part) => part?.text ?? '').join('');
-}
-
-function clamp(value, min, max) {
-  if (!Number.isFinite(value) || value < min) return min;
-  return Math.min(value, max);
 }

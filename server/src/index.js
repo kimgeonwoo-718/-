@@ -14,7 +14,7 @@
  * 백여 개가 그걸 지키고 있어서, 여기서 다시 만들면 두 벌이 어긋난다. 서버는 얇게 둔다.
  * 경로도 구글과 똑같이 둬서 앱은 호스트만 바꾸면 된다.
  */
-import { kstDay, validInstallId, chargeFor, DEFAULT_SUB_DAILY_CHARS } from './quota.js';
+import { kstDay, validInstallId, chargeFor, settleChars, holdChars, DEFAULT_SUB_DAILY_CHARS } from './quota.js';
 import {
   accountForGoogle,
   attachPurchase,
@@ -55,6 +55,7 @@ import {
   userTextOf,
   withoutReasoning,
   rejectsReasoning,
+  utf8Bytes,
   TRANSLATE_TARGETS,
 } from './openai.js';
 import {
@@ -495,49 +496,56 @@ async function correct(request, env, url, fetchImpl, now) {
   const charsKey = 'chars:' + subId;
   const charge = chargeFor(safeUserLength(body));
 
-  // 한도를 **미리 원자적으로 예약한다.** 읽고 나서 더하면(옛 방식) 동시에 들어온 요청이 전부
-  // 같은 "남았다" 를 보고 다 통과한다 — 1만 5천 자 한도에 1만 4천 자짜리를 병렬로 50번 보냈더니
-  // 50번이 다 나가 하루에 70만 자가 청구됐다(실측). 더하기는 D1 이 한 문장으로 직렬화하므로,
-  // 더한 뒤의 값을 돌려받아 한도를 넘었으면 돌려주고 막는다. 이러면 몇 번이 동시에 와도 한도가 천장이다.
-  const reserved = await reserve(env.DB, charsKey, day, charge);
-  if (reserved > limit) {
-    await refund(env.DB, charsKey, day, charge);
-    const usage = { remaining: Math.max(0, limit - (reserved - charge)) };
-    return withQuota(fail(402, 'sub_daily_limit'), usage, limit, plan, unit);
+  // 보낼 요청을 먼저 짓는다 — 한도를 미리 잡으려면 보낼 바이트와 출력 상한을 알아야 한다.
+  const call = await buildAiCall(env, fetchImpl, body, translateTo, nowMs);
+  if (call.reply) {
+    // 지을 수 없는 요청(고칠 글이 없음 등). 값이 안 나가므로 한도는 건드리지 않고 남은 양만 알려 준다.
+    const current = await reserve(env.DB, charsKey, day, 0);
+    return withQuota(asResponse(call.reply), { remaining: Math.max(0, limit - current) }, limit, plan, unit);
+  }
+
+  // 한도는 **미리 원자적으로**, 그리고 **그 요청이 쓸 수 있는 최악값을 통째로** 잡는다.
+  //
+  // 원자적이어야 하는 이유: 읽고 나서 더하면 동시에 온 요청이 전부 같은 "남았다" 를 보고 통과한다 — 1만 5천 자
+  // 한도에 1만 4천 자짜리를 병렬로 50번 보내 하루 70만 자가 나갔다(실측). D1 이 더하기 한 문장을 직렬화하므로
+  // 더한 뒤의 값으로 판단한다.
+  //
+  // 최악값이어야 하는 이유: 값은 실제 토큰으로 정산하는데(아래) 정산은 답이 온 뒤다. 글자 수만 잡고 들여보내면
+  // "길게 써라" 를 실은 요청 여럿을 동시에 보내거나 남은 자리 끝에 끼워 넣어 정산 전에 한도를 뚫는다.
+  // 그래서 [holdChars] 만큼 통째로 잡고, **들여보낼지는 지금과 똑같이 글자 수로 판단**한다(before + charge).
+  const hold = holdChars(charge, call.bytes, call.maxTokens);
+  const reserved = await reserve(env.DB, charsKey, day, hold);
+  const before = reserved - hold;
+  if (before + charge > limit) {
+    await refund(env.DB, charsKey, day, hold);
+    return withQuota(fail(402, 'sub_daily_limit'), { remaining: Math.max(0, limit - before) }, limit, plan, unit);
   }
 
   const startedAt = Date.now();
   let reply;
   try {
-    reply =
-      provider(env) === 'openai'
-        ? await askOpenAi(fetchImpl, env, openAiModel(env), body, translateTo)
-        : provider(env) === 'anthropic'
-          ? await askClaude(fetchImpl, env, claudeModel(env), body, translateTo)
-          : provider(env) === 'upstage'
-            ? await askUpstage(fetchImpl, env, upstageModel(env), body, translateTo)
-            : await askGemini(fetchImpl, env, await resolveGeminiModel(env, fetchImpl, nowMs), body, translateTo);
+    reply = await call.send();
   } catch (err) {
-    // 바깥에 닿지도 못했으면(통신 끊김 등) 청구가 없다. 예약을 돌려주고 올린다 —
-    // 안 그러면 보내지도 못한 요청에 하루치가 깎인 채로 남는다.
-    await refund(env.DB, charsKey, day, charge);
+    // 바깥에 닿지도 못했으면(통신 끊김 등) 청구가 없다. 잡아 둔 것을 전부 돌려주고 올린다.
+    await refund(env.DB, charsKey, day, hold);
     throw err;
   }
   reply.tookMs = Date.now() - startedAt;
 
-  if (reply.status === 200) {
-    // 응답이 알려 준 토큰 수를 날짜별로 쌓는다. 성공했을 때만. (keepOriginal 도 200 이라 센다 — 값이 나갔다.)
-    await recordTokens(env.DB, day, usageOf(reply.text));
-  } else if (!reply.billed) {
-    // **바깥이 청구하지 않았을 때만** 예약을 돌려준다. 바깥(업스테이지 등)이 200 을 줬으면
-    // 값은 이미 나갔다 — 우리가 그 답을 잘렸다·비었다로 502 로 바꿔 돌려주더라도 한도는
-    // 깎인 채로 둬야 한다. 안 그러면 시험 ID·구독자 하나가 한도를 0 만 깎으면서 max_tokens
-    // 짜리를 끝없이 부를 수 있다(윈도우 세션 지적 ①). 거절(비청구)일 때만 돌려준다.
-    await refund(env.DB, charsKey, day, charge);
+  let remaining;
+  if (reply.status === 200 || reply.billed === true) {
+    // **값이 나갔다**(성공, 교정이 아니라 원문을 돌려준 것, 잘렸다·비었다로 502 를 준 것 모두). 실제 토큰으로
+    // 정산한다 — 보통은 글자 수가 이겨 지금과 똑같이 깎이고, 길게 쓰게 시킨 요청만 토큰만큼 더 깎인다.
+    // 잡아 둔 것과의 차이만큼만 맞춘다. 남은 양은 정산 뒤의 값이다.
+    const tokens = usageOf(reply);
+    await recordTokens(env.DB, day, tokens);
+    const after = await adjust(env.DB, charsKey, day, settleChars(charge, tokens) - hold);
+    remaining = Math.max(0, limit - after);
+  } else {
+    // 바깥이 거절했다(429·5xx 등) — 청구가 없으니 잡아 둔 것을 전부 돌려준다.
+    await refund(env.DB, charsKey, day, hold);
+    remaining = Math.max(0, limit - before);
   }
-  // 청구됐으면(성공이든, 바깥 200 인데 우리가 버린 경우든) 한도는 깎인 채로 남는다.
-  const charged = reply.status === 200 || reply.billed === true;
-  const remaining = Math.max(0, limit - (charged ? reserved : reserved - charge));
   return withQuota(asResponse(reply), { remaining }, limit, plan, unit);
 }
 
@@ -631,91 +639,81 @@ async function resolveGeminiModel(env, fetchImpl, nowMs) {
 }
 
 /**
- * 구글에 보낸다. 교정은 앱 본문 그대로, 번역은 우리 지시문으로 (gemini.js 참고).
- * 어느 모델로 갈지는 **서버가 정한다** — 앱이 주소에 실어 보낸 이름은 쓰지 않는다.
- * 이미 깔린 APK 들이 저마다 다른 이름을 들고 있기 때문이다.
+ * 보낼 AI 요청을 **먼저 짓는다.** 한도를 미리 잡으려면 보낼 바이트와 출력 상한을 알아야 해서, 짓기와 보내기를
+ * 가른다. 돌려주는 것은 `{ bytes, maxTokens, send }` — `send()` 가 실제로 보내고 구글 모양 답을 준다.
+ * 지을 수 없는 요청(고칠 글이 없음 등)이면 `{ reply }` 로 400 — 그때는 한도를 잡지 않는다.
+ *
+ * 어느 모델로 갈지는 **서버가 정한다** — 앱이 주소에 실은 이름은 쓰지 않는다(이미 깔린 APK 들이 저마다 다르다).
+ * 지시문과 숙고 세기는 환경변수로 바꿀 수 있다(코드를 고쳐 배포하는 대신 값만 바꿔 재 보려고 열어 둔 자리).
+ * - 업스테이지: `UPSTAGE_PROMPT`·`UPSTAGE_REASONING`·`UPSTAGE_EXTRA_RULES` (upstage.js). 응답은 OpenAI 모양이라
+ *   [toGeminiReply] 를 같이 쓴다(잘린 답, 빈 답, 교정이 아닌 답을 거른다).
+ * - Claude: `CLAUDE_PROMPT` (anthropic.js). OpenAI: `OPENAI_PROMPT`·`OPENAI_REASONING` — 숙고 항목을 안 받는
+ *   모델이면 빼고 한 번 더 보낸다. 구글: 교정은 앱 지시문, 번역은 우리 지시문(gemini.js).
  */
-async function askGemini(fetchImpl, env, model, body, translateTo = null) {
+async function buildAiCall(env, fetchImpl, body, translateTo, nowMs) {
+  const which = provider(env);
+  // 구글 모델 고르기는 짓기 실패와 섞이면 안 된다(저장소 오류를 "잘못된 요청" 으로 바꿔 버린다). 밖에서 한다.
+  const geminiModelName = which === 'gemini' ? await resolveGeminiModel(env, fetchImpl, nowMs) : null;
+  let target;
   let request;
-  let user;
+  let maxTokens;
+  let finish;
   try {
-    user = userTextOf(body);
-    request = toGeminiRequest(body, { translateTo });
+    const user = userTextOf(body);
+    if (which === 'upstage') {
+      target = UPSTAGE_URL;
+      request = toUpstageRequest(body, upstageModel(env), {
+        prompt: (env.UPSTAGE_PROMPT ?? '').trim(),
+        reasoning: (env.UPSTAGE_REASONING ?? '').trim(),
+        extraRules: (env.UPSTAGE_EXTRA_RULES ?? '').trim().toLowerCase() !== 'off',
+        translateTo,
+      });
+      maxTokens = JSON.parse(request).max_tokens;
+      finish = (raw) => toGeminiReply(raw.status, raw.text, user, { translateTo });
+    } else if (which === 'anthropic') {
+      target = ANTHROPIC_URL;
+      request = toClaudeRequest(body, claudeModel(env), { prompt: (env.CLAUDE_PROMPT ?? '').trim(), translateTo });
+      maxTokens = JSON.parse(request).max_tokens;
+      finish = (raw) => fromClaudeReply(raw.status, raw.text, user, { translateTo });
+    } else if (which === 'openai') {
+      target = OPENAI_URL;
+      request = toOpenAiRequest(body, openAiModel(env), {
+        reasoning: (env.OPENAI_REASONING ?? '').trim(),
+        prompt: (env.OPENAI_PROMPT ?? '').trim(),
+        translateTo,
+      });
+      maxTokens = JSON.parse(request).max_completion_tokens;
+      finish = (raw) => toGeminiReply(raw.status, raw.text, user, { translateTo });
+    } else {
+      target = geminiUrl(geminiModelName);
+      request = toGeminiRequest(body, { translateTo });
+      maxTokens = JSON.parse(request).generationConfig.maxOutputTokens;
+      finish = (raw) => fromGeminiReply(raw.status, raw.text, user, { translateTo });
+    }
   } catch {
-    return { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) };
+    return { reply: { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) } };
   }
-  const raw = await relayTo(fetchImpl, env, geminiUrl(model), 'POST', request);
-  return billedBy(fromGeminiReply(raw.status, raw.text, user, { translateTo }), raw.status);
+  return {
+    bytes: utf8Bytes(request),
+    maxTokens,
+    async send() {
+      let raw = await relayTo(fetchImpl, env, target, 'POST', request);
+      // OpenAI 만: 숙고 항목을 안 받는 모델이면 빼고 한 번 더(첫 번은 거절이라 값이 안 나갔다).
+      if (which === 'openai' && rejectsReasoning(raw.status, raw.text)) {
+        raw = await relayTo(fetchImpl, env, target, 'POST', withoutReasoning(request));
+      }
+      return billedBy(finish(raw), raw.status);
+    },
+  };
 }
 
 /**
  * 바깥이 200 을 줬으면(=값이 나갔으면) 그 표시를 답에 붙인다. 우리가 그 답을 잘렸다·비었다로
- * 502 로 바꾸더라도 한도는 깎인 채로 둬야 하기 때문이다([correct] 의 환불 판단 참고).
+ * 502 로 바꾸더라도 한도는 정산해야 하기 때문이다([correct] 참고).
  */
 function billedBy(reply, rawStatus) {
   reply.billed = rawStatus === 200;
   return reply;
-}
-
-/**
- * OpenAI 에 보내고 구글 모양으로 되돌려준다. **앱이 보낸 모델 이름은 쓰지 않는다** —
- * 이미 깔린 APK 들은 구글 이름을 보내오고, 무엇으로 고칠지는 서버가 정한다.
- */
-async function askOpenAi(fetchImpl, env, model, body, translateTo = null) {
-  let request;
-  try {
-    // 지시문과 숙고 세기는 환경변수로 바꿀 수 있다. 교정 품질을 손볼 때 코드를 고치고
-    // 배포하는 대신 값만 바꿔 돌려 보려고 열어 둔 자리다.
-    request = toOpenAiRequest(body, model, {
-      reasoning: (env.OPENAI_REASONING ?? '').trim(),
-      prompt: (env.OPENAI_PROMPT ?? '').trim(),
-      translateTo,
-    });
-  } catch {
-    return { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) };
-  }
-  let raw = await relayTo(fetchImpl, env, OPENAI_URL, 'POST', request);
-  if (rejectsReasoning(raw.status, raw.text)) {
-    raw = await relayTo(fetchImpl, env, OPENAI_URL, 'POST', withoutReasoning(request));
-  }
-  // 원문을 같이 넘긴다. 교정이 아닌 답(요약, 대답, 지시문 따라가기)을 길이로 걸러낸다.
-  return billedBy(toGeminiReply(raw.status, raw.text, userTextOf(body), { translateTo }), raw.status);
-}
-
-/**
- * Claude 에 보내고 구글 모양으로 되돌려준다. 모델은 서버가 정한다(앱이 주소에 실은 이름은 안 쓴다).
- * 지시문은 `CLAUDE_PROMPT` — 'server' 면 서버의 긴 지시문, 아니면 앱이 보낸 것(anthropic.js 참고).
- */
-async function askClaude(fetchImpl, env, model, body, translateTo = null) {
-  let request;
-  try {
-    request = toClaudeRequest(body, model, { prompt: (env.CLAUDE_PROMPT ?? '').trim(), translateTo });
-  } catch {
-    return { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) };
-  }
-  const raw = await relayTo(fetchImpl, env, ANTHROPIC_URL, 'POST', request);
-  return billedBy(fromClaudeReply(raw.status, raw.text, userTextOf(body), { translateTo }), raw.status);
-}
-
-/**
- * 업스테이지에 보내고 구글 모양으로 되돌려준다. 모델과 숙고는 서버가 정한다.
- * 지시문은 `UPSTAGE_PROMPT` — 'server' 면 서버의 긴 지시문, 아니면 앱이 보낸 것(upstage.js 참고).
- * 응답은 OpenAI 모양이라 [toGeminiReply] 를 같이 쓴다(잘린 답, 빈 답, 교정이 아닌 답을 거른다).
- */
-async function askUpstage(fetchImpl, env, model, body, translateTo = null) {
-  let request;
-  try {
-    request = toUpstageRequest(body, model, {
-      prompt: (env.UPSTAGE_PROMPT ?? '').trim(),
-      reasoning: (env.UPSTAGE_REASONING ?? '').trim(),
-      extraRules: (env.UPSTAGE_EXTRA_RULES ?? '').trim().toLowerCase() !== 'off',
-      translateTo,
-    });
-  } catch {
-    return { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) };
-  }
-  const raw = await relayTo(fetchImpl, env, UPSTAGE_URL, 'POST', request);
-  return billedBy(toGeminiReply(raw.status, raw.text, userTextOf(body), { translateTo }), raw.status);
 }
 
 /** 바깥에 보내고 상태와 본문 문자열만 받는다. 본문을 읽어야 토큰 수를 셀 수 있다. */
@@ -744,18 +742,24 @@ function asResponse(reply) {
   return new Response(reply.text, { status: reply.status, headers });
 }
 
-/** 응답의 usageMetadata. 없거나 깨졌으면 0 으로. */
-function usageOf(text) {
-  try {
-    const meta = JSON.parse(text)?.usageMetadata ?? {};
-    return {
-      prompt: Number(meta.promptTokenCount ?? 0),
-      output: Number(meta.candidatesTokenCount ?? 0),
-      thoughts: Number(meta.thoughtsTokenCount ?? 0),
-    };
-  } catch {
-    return { prompt: 0, output: 0, thoughts: 0 };
+/**
+ * 답이 알려 준 토큰 수. 성공한 답은 본문의 usageMetadata 에, 잘렸다·비었다로 502 를 준 답은 `reply.usage` 에
+ * 실려 온다(openai.js 의 billedError). 없거나 깨졌으면 0 — 그러면 정산은 글자 수로만 된다.
+ */
+function usageOf(reply) {
+  let meta = reply?.usage;
+  if (!meta) {
+    try {
+      meta = JSON.parse(reply?.text)?.usageMetadata;
+    } catch {
+      meta = null;
+    }
   }
+  const n = (value) => {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  };
+  return { prompt: n(meta?.promptTokenCount), output: n(meta?.candidatesTokenCount), thoughts: n(meta?.thoughtsTokenCount) };
 }
 
 async function recordTokens(db, day, usage) {
@@ -971,6 +975,18 @@ async function reserve(db, id, day, amount) {
     .bind(id, day, amount)
     .first();
   return Number(row?.used ?? amount);
+}
+
+/**
+ * 잡아 둔 것을 실제 정산값으로 맞춘다 — [delta] 만큼 더하거나(양수) 돌려주고(음수) 맞춘 뒤의 총량을 돌려준다.
+ * 한 문장이라 동시에 와도 섞이지 않는다. 0 밑으로는 안 내려간다.
+ */
+async function adjust(db, id, day, delta) {
+  const row = await db
+    .prepare('UPDATE usage SET used = MAX(0, used + ?) WHERE id = ? AND day = ? RETURNING used')
+    .bind(delta, id, day)
+    .first();
+  return Number(row?.used ?? 0);
 }
 
 /** 예약을 돌려준다 — 한도를 넘어 막혔거나, 바깥이 거절해 돈이 안 나갔을 때. 0 밑으로는 안 내려간다. */

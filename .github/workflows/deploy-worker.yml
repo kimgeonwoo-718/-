@@ -260,13 +260,8 @@ jobs:
           grep -i '^x-upstream-ms' gen.head || true
           head -c 1200 gen.json; echo
 
-          # ----- 실제로 쓴 토큰 -----
-          # 값이 드는 일이 아니다(D1 읽기뿐). 추정으로 요금을 말하지 않으려고 찍는다 —
-          # thoughts 가 0 이 아니면 숙고가 켜져 있다는 뜻이고, 그건 시간도 요금도 먹는다.
-          echo "----- 날짜별 실제 사용량 (최근 5일) -----"
-          curl -sS --max-time 20 -o stats.json "$url/stats" || true
-          jq -r '.days[:5][]? | "  \(.day)  요청 \(.requests)회  입력 \(.prompt)  출력 \(.output)  숙고 \(.thoughts)"' \
-            stats.json 2>/dev/null || echo "  (아직 쌓인 것이 없다)"
+          # 날짜별 사용량(/stats)은 여기서 찍지 않는다. 2026-10-08 부터 STATS_TOKEN 없이는 숨겨 두었고,
+          # 이 로그는 공개 저장소라 누구나 본다 — 찍으면 숨긴 것이 도로 드러난다.
 
           # ----- 구독자 한 명으로 진짜 끝까지 -----
           # 위 402 는 "막는 것" 만 증명한다. 모델이 실제로 답하는지는 구독자여야 보인다.
@@ -293,6 +288,14 @@ jobs:
               exit 1
             fi
             echo "구독자 경로 OK — 모델까지 실제로 닿는다."
+            # **토큰 수가 오는지** 본다. 한도는 실제 토큰으로 정산하는데(src/quota.js 의 settleChars),
+            # 바깥이 토큰 수를 안 주면 조용히 글자 수로만 깎여 "길게 써라" 막기가 꺼진다. 합계는 안 찍는다.
+            prompt_tokens=$(jq -r '.usageMetadata.promptTokenCount // 0' sub.json 2>/dev/null || echo 0)
+            if [ "${prompt_tokens:-0}" -gt 0 ] 2>/dev/null; then
+              echo "토큰 수가 온다 — 한도를 실제 값으로 정산한다."
+            else
+              echo "::warning title=토큰 수가 안 온다::답에 usageMetadata 가 없다. 한도가 글자 수로만 깎여 '길게 써라' 막기가 안 걸린다. 바깥 응답 모양이 바뀌었는지 봐라."
+            fi
           else
             echo "TEST_INSTALL_IDS 가 없어 구독자 경로는 확인하지 못했다 (출시 때는 이게 맞다)."
           fi

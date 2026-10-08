@@ -15,20 +15,24 @@
  * 앱은 구글 모양(`system_instruction` + `contents`)으로 보내고 구글 모양 응답을 읽는다.
  * OpenAI 경로와 같이 **여기서 옮겨 주고 옮겨 받는다** — 이미 깔린 APK 는 손대지 않는다.
  */
-import { KO_SYSTEM_PROMPT, translatePrompt, userTextOf, tooDifferent, keepOriginal, dropAddedPunctuation, capPrompt, upstreamErrorMessage } from './openai.js';
+import {
+  KO_SYSTEM_PROMPT,
+  translatePrompt,
+  userTextOf,
+  tooDifferent,
+  keepOriginal,
+  dropAddedPunctuation,
+  capPrompt,
+  upstreamErrorMessage,
+  outputCap,
+  utf8Bytes,
+  billedError,
+} from './openai.js';
 
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 export const ANTHROPIC_VERSION = '2023-06-01';
 /** 기본 모델. 맞춤법은 판단이 아니라 패턴이라 가장 작은 급으로 시작한다. `CLAUDE_MODEL` 이 이긴다. */
 export const DEFAULT_CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
-
-/**
- * 출력 한도. Claude 는 이 값이 **필수**다. 앱이 보내는 4096 을 기준으로 넉넉히 잡는다 —
- * 잘린 답은 사용자 글을 잘린 채로 덮어 버리므로(앱은 받은 글로 통째로 갈아 끼운다) 아예
- * 실패로 돌린다. 요금은 실제로 쓴 만큼만 나간다.
- */
-const MIN_OUTPUT_TOKENS = 2048;
-const MAX_OUTPUT_TOKENS = 8192;
 
 /**
  * 앱이 보낸 구글 모양 본문을 Claude 본문으로. 고칠 글이 없으면 던진다(다른 경로와 같은 규약).
@@ -50,10 +54,10 @@ export function toClaudeRequest(body, model, options = {}) {
       ? KO_SYSTEM_PROMPT
       : capPrompt(partsText(parsed.system_instruction ?? parsed.systemInstruction)) || KO_SYSTEM_PROMPT;
 
-  const asked = Number(parsed.generationConfig?.maxOutputTokens ?? 0);
   const request = {
     model,
-    max_tokens: clamp(asked, MIN_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS),
+    // Claude 는 이 값이 필수다. 앱이 부른 값은 안 쓰고 서버가 글 길이로 정한다(openai.js 의 outputCap).
+    max_tokens: outputCap(utf8Bytes(user), { translate: !!options.translateTo }),
     // 같은 글을 두 번 고치면 같은 답이 나와야 한다. 구글 경로가 받던 값과 같다.
     temperature: 0,
     messages: [{ role: 'user', content: user }],
@@ -82,9 +86,6 @@ export function fromClaudeReply(status, text, user = '', options = {}) {
   // 원문에 없던 문장부호는 뗀다(openai.js 의 dropAddedPunctuation). 교정일 때만.
   const corrected = user && !options.translateTo ? dropAddedPunctuation(user, raw) : raw;
 
-  // 잘린 답은 주지 않는다 — 앱이 사용자 글을 잘린 교정문으로 덮어 버린다.
-  if (parsed?.stop_reason === 'max_tokens') return errorReply(502, '글이 너무 길어 교정문이 잘렸다');
-  if (!corrected) return errorReply(502, `응답이 비었다 (${parsed?.stop_reason ?? 'unknown'})`);
   const usage = parsed?.usage ?? {};
   const usageMetadata = {
     // 캐시로 읽은 입력도 입력이다. /stats 는 요금 짐작에 쓰므로 빠뜨리지 않는다.
@@ -93,6 +94,10 @@ export function fromClaudeReply(status, text, user = '', options = {}) {
     candidatesTokenCount: num(usage.output_tokens),
     thoughtsTokenCount: 0,
   };
+
+  // 잘린 답은 주지 않는다 — 앱이 사용자 글을 잘린 교정문으로 덮어 버린다. 값은 나갔으니 사용량은 싣는다.
+  if (parsed?.stop_reason === 'max_tokens') return billedError(502, '글이 너무 길어 교정문이 잘렸다', usageMetadata);
+  if (!corrected) return billedError(502, `응답이 비었다 (${parsed?.stop_reason ?? 'unknown'})`, usageMetadata);
   // 교정이 아닌 답은 원문으로(openai.js 의 keepOriginal). 교정일 때만 — 번역문은 길이가 다른 게 당연하다.
   if (user && !options.translateTo && tooDifferent(user, corrected)) {
     return keepOriginal(user, usageMetadata);
@@ -131,9 +136,4 @@ function safeParse(text) {
 function num(value) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function clamp(value, min, max) {
-  if (!Number.isFinite(value) || value < min) return min;
-  return Math.min(value, max);
 }

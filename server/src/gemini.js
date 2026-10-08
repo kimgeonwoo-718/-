@@ -30,14 +30,13 @@ import {
   capPrompt,
   upstreamErrorMessage,
   KO_SYSTEM_PROMPT,
+  outputCap,
+  utf8Bytes,
+  billedError,
 } from './openai.js';
 
 export const GEMINI_UPSTREAM = 'https://generativelanguage.googleapis.com';
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
-
-/** 교정 출력 한도. 앱은 4096 을 부른다. 잘린 답은 사용자 글을 덮어 버리므로 넉넉히, 실제 요금은 쓴 만큼만. */
-const MIN_OUTPUT_TOKENS = 2048;
-const MAX_OUTPUT_TOKENS = 8192;
 
 export function geminiUrl(model) {
   return `${GEMINI_UPSTREAM}/v1beta/models/${model}:generateContent`;
@@ -61,7 +60,6 @@ export function toGeminiRequest(body, options = {}) {
     ? translatePrompt(options.translateTo)
     : capPrompt(partsText(parsed.system_instruction ?? parsed.systemInstruction)) || KO_SYSTEM_PROMPT;
 
-  const asked = Number(parsed.generationConfig?.maxOutputTokens ?? 0);
   return JSON.stringify({
     system_instruction: { parts: [{ text: system }] },
     contents: [{ role: 'user', parts: [{ text: user }] }],
@@ -70,7 +68,8 @@ export function toGeminiRequest(body, options = {}) {
     generationConfig: {
       temperature: 0,
       candidateCount: 1,
-      maxOutputTokens: clamp(asked, MIN_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS),
+      // 앱이 부른 값은 안 쓰고 서버가 글 길이로 정한다(openai.js 의 outputCap). 숙고는 0 이라 숙고 몫은 없다.
+      maxOutputTokens: outputCap(utf8Bytes(user), { translate: !!options.translateTo }),
       thinkingConfig: { thinkingBudget: 0 },
     },
   });
@@ -92,11 +91,12 @@ export function fromGeminiReply(status, text, user = '', options = {}) {
   const candidate = parsed?.candidates?.[0];
   const corrected = partsText(candidate?.content).trim();
 
-  // 잘린 답은 주지 않는다. 뒷부분이 잘린 교정문으로 덮으면 그만큼이 사라진다.
+  // 잘린 답은 주지 않는다. 뒷부분이 잘린 교정문으로 덮으면 그만큼이 사라진다. 값은 나갔으니 사용량은 싣는다.
+  const usageMetadata = parsed?.usageMetadata ?? {};
   if (candidate?.finishReason === 'MAX_TOKENS') {
-    return errorReply(502, '글이 너무 길어 교정문이 잘렸다');
+    return billedError(502, '글이 너무 길어 교정문이 잘렸다', usageMetadata);
   }
-  if (!corrected) return errorReply(502, `응답이 비었다 (${candidate?.finishReason ?? 'unknown'})`);
+  if (!corrected) return billedError(502, `응답이 비었다 (${candidate?.finishReason ?? 'unknown'})`, usageMetadata);
   // 교정이 아닌 답은 원문으로 바꿔 준다(openai.js 의 keepOriginal — 502 면 앱이 한 번 더 보낸다).
   // 교정일 때만. 번역문은 원문과 길이가 다른 게 당연하다.
   if (user && !options.translateTo && tooDifferent(user, corrected)) {
@@ -134,11 +134,6 @@ function safeParse(text) {
   } catch {
     return null;
   }
-}
-
-function clamp(value, min, max) {
-  if (!Number.isFinite(value) || value < min) return min;
-  return Math.min(value, max);
 }
 
 /**

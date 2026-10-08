@@ -147,25 +147,31 @@ test('구글이 거절한 요청은 세지 않는다 (예약을 돌려준다)', 
   assert.equal(charsUsed(e.DB), 0);
 });
 
-test('바깥이 200 인데 잘린 답이면 502 를 주되 한도는 깎인 채로 둔다', async () => {
+test('바깥이 200 인데 잘린 답이면 502 를 주되, 쓴 토큰으로 정산하고 /stats 에 적는다', async () => {
   // 바깥(구글·업스테이지)이 200 을 주면 값은 이미 나갔다. 그 답이 잘렸다·비었다고 우리가 502 로
   // 바꾸더라도 한도를 돌려주면, 시험 ID 하나로 한도를 0 만 깎으면서 큰 요청을 끝없이 부를 수 있다.
-  const truncated = async (url) => {
+  // 잘린 답은 출력 상한을 꽉 채운 것이라 글자 수보다 토큰 정산이 크다 — 그만큼 깎는다.
+  let sentMax = 0;
+  const truncated = async (url, init) => {
     if (url.endsWith('/v1beta/models?pageSize=200')) {
       return new Response(JSON.stringify({ models: [{ name: 'models/gemini-3.5-flash-lite' }] }), { status: 200 });
     }
-    // 200 인데 MAX_TOKENS 로 잘린 답 — 서버는 이걸 502 로 바꾼다.
+    sentMax = JSON.parse(init.body).generationConfig.maxOutputTokens;
+    // 200 인데 MAX_TOKENS 로 잘린 답 — 출력 상한을 다 썼다. 서버는 이걸 502 로 바꾼다.
     return new Response(JSON.stringify({
       candidates: [{ content: { parts: [{ text: '안녕' }] }, finishReason: 'MAX_TOKENS' }],
-      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 8000, thoughtsTokenCount: 0 },
+      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: sentMax, thoughtsTokenCount: 0 },
     }), { status: 200 });
   };
   const e = env({ SUB_DAILY_CHARS: '1000' });
   const body = JSON.stringify({ contents: [{ parts: [{ text: '가'.repeat(300) }] }] });
   const res = await handle(generate({}, body), e, { fetch: truncated, now: () => NOON_KST });
   assert.equal(res.status, 502, '잘린 답은 502 로 알린다');
-  assert.equal(charsUsed(e.DB), 300, '한도는 깎인 채로 둔다 (값이 나갔으므로)');
-  assert.equal(res.headers.get('x-quota-remaining'), '700');
+  assert.equal(sentMax, 256 + 2 * 900, '출력 상한은 서버가 정했다(300자 = 900바이트)');
+  const settled = Math.ceil((100 + 4 * sentMax) / 10);
+  assert.equal(charsUsed(e.DB), settled, '쓴 토큰만큼 깎인다 (값이 나갔으므로)');
+  assert.equal(res.headers.get('x-quota-remaining'), String(1000 - settled));
+  assert.deepEqual(e.DB.tokens.get('2026-01-01'), { requests: 1, prompt: 100, output: sentMax, thoughts: 0 }, '/stats 에 적는다');
 });
 
 test('동시에 여러 번 와도 한도가 천장이다 (예약을 원자적으로 센다)', async () => {

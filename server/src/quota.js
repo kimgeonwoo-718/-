@@ -77,3 +77,46 @@ export function chargeFor(chars) {
 export function decideChars(used, charge, limit) {
   return { allowed: used + charge <= limit, remaining: Math.max(0, limit - used) };
 }
+
+/**
+ * ## 글자 대신 실제 값으로 정산 (2026-10-08, 윈도우 점검)
+ *
+ * 한도는 사용자 글자 수로 세는데 값은 모델이 쓴 토큰으로 나간다. 보통은 둘이 비슷하지만, 고친 앱이 지시문에
+ * "길게 써라" 를 실으면 50자만 깎이고 수천 토큰이 나갔다(구독 하나가 월 12만~17만 원). 그래서 **값이 나간
+ * 답은 실제 토큰으로 정산**한다. 단위는 그대로 "글자":
+ *
+ *     정산 = max(글자 수(최소 50), ⌈(입력 토큰 + 4 × (출력 토큰 + 숙고 토큰)) / 10⌉)
+ *
+ * 4 는 Solar 출력값이 입력값의 네 배라서(0.30 / 1.20 달러), 10 은 보통 사용이 지금과 똑같이 깎이게 맞춘 값이다.
+ * 실측 토큰(앱 지시문 고정분 약 262 + 한글 1자 약 0.4)으로 50자 요청은 ⌈(282 + 80) / 10⌉ = 37 → 50,
+ * 2,000자는 ⌈(1,062 + 3,200) / 10⌉ = 427 → 2,000 — **보통 사용은 글자 수가 이긴다.** 길게 쓰게 시킨 요청만
+ * 토큰이 이겨 더 깎인다. 1만 5천 "글자" 한도 = 하루 값 15만 단위 ≈ 출력 3만 7천 토큰 ≈ 하루 63원(월 약 1,900원)이
+ * 공격의 천장이다.
+ *
+ * 토큰 수가 안 오면(0) 글자 수로만 깎인다 — /stats 에 입력 0 인 날이 있으면 정산이 안 된 것이다.
+ *
+ * [tokens] 는 `{ prompt, output, thoughts }` — /stats 에 쌓는 것과 같은 모양(index.js 의 usageOf).
+ */
+export function settleChars(charge, tokens) {
+  const prompt = nonNegative(tokens?.prompt);
+  const output = nonNegative(tokens?.output) + nonNegative(tokens?.thoughts);
+  return Math.max(charge, Math.ceil((prompt + 4 * output) / 10));
+}
+
+/**
+ * 보내기 **전에** 잡아 둘 최악값. 정산은 답이 온 뒤라, 미리 글자 수만 잡고 들여보내면 동시에 여럿을
+ * 보내거나 남은 자리 끝에 끼워 넣어 정산 전에 한도를 뚫는다. 그래서 그 요청이 쓸 수 있는 최대를 통째로 잡는다:
+ *
+ *     예약 = max(정산의 바닥(글자 수), ⌈(보내는 요청 바이트 + 4 × 출력 상한) / 10⌉)
+ *
+ * 토큰 하나는 1바이트 이상이라 입력 토큰은 요청 바이트를 못 넘고, 출력은 출력 상한을 못 넘는다 — 정산값의 위쪽
+ * 경계다. 끝나면 실제 정산값과의 차이만큼 돌려주거나 더 깎는다.
+ */
+export function holdChars(charge, requestBytes, maxOutputTokens) {
+  return Math.max(charge, Math.ceil((nonNegative(requestBytes) + 4 * nonNegative(maxOutputTokens)) / 10));
+}
+
+function nonNegative(value) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}

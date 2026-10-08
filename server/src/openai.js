@@ -15,14 +15,6 @@ export const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 export const DEFAULT_OPENAI_MODEL = 'gpt-5-nano';
 
 /**
- * 출력 한도. **OpenAI 는 숙고 토큰도 이 한도에서 깎는다.** 앱이 부르는 4096 을 그대로
- * 주면 긴 글에서 답이 중간에 끊긴다. 끊긴 답은 사용자 글을 잘린 채로 덮어 버리므로
- * (앱은 받은 것으로 통째로 갈아 끼운다) 넉넉히 준다. 실제 요금은 쓴 만큼만 나간다.
- */
-const MIN_OUTPUT_TOKENS = 2048;
-const MAX_OUTPUT_TOKENS = 16384;
-
-/**
  * 숙고 항목을 빼고 다시 만든다.
  *
  * 모델이 `reasoning_effort` 를 안 받으면 400 이 온다. 한 번 빼고 다시 보내 본다 —
@@ -54,6 +46,40 @@ export const MAX_SYSTEM_PROMPT_CHARS = 4000;
 export function capPrompt(text) {
   if (typeof text !== 'string') return '';
   return text.length > MAX_SYSTEM_PROMPT_CHARS ? text.slice(0, MAX_SYSTEM_PROMPT_CHARS) : text;
+}
+
+/** 글의 UTF-8 바이트 수. 출력 상한과 한도 예약은 글자가 아니라 바이트로 잰다(토큰 하나는 1바이트 이상이다). */
+export function utf8Bytes(text) {
+  return new TextEncoder().encode(String(text ?? '')).length;
+}
+
+/** 출력 상한의 천장. 지금까지 실제로 보내던 값(앱의 4096)과 같다. */
+export const OUTPUT_CAP_CEILING = 4096;
+
+/**
+ * **출력 상한은 서버가 정한다**(윈도우 점검, 2026-10-08).
+ *
+ * 예전에는 앱이 보낸 maxOutputTokens 를 2048~8192 로 자르기만 했다. 그런데 고친 앱이나 새어 나간 시험 ID 가
+ * 지시문에 "길게 써라" 를 실으면, 한도는 사용자 글자 수(최소 50)만 깎이는데 모델은 수천 토큰을 써서 값이
+ * 나간다 — 서버가 그 답을 "교정이 아니다" 하고 버려도 업스테이지는 이미 청구했다. 구독 하나가 한 달에
+ * 12만~17만 원(정가)을 쓸 수 있었다.
+ *
+ * 교정문은 원문만큼, 번역문은 그 두어 배다. 그래서 사용자 글 바이트에 비례해 잡는다:
+ *   256 + (숙고 켜짐이면 2048) + (번역이면 4, 교정이면 2) × 사용자 글 UTF-8 바이트, 천장 4096.
+ * 한글은 한 글자 3바이트에 Solar 토큰 0.4개쯤이라 교정에 15배 넘게 넉넉하다 — 멀쩡한 글이 잘릴 일은 없다.
+ * 1자짜리 글로 4096 토큰을 받아 가는 길은 막힌다. 그래도 남는 값은 실제 토큰으로 정산해 한도에서 깎는다(index.js).
+ */
+export function outputCap(userBytes, { translate = false, reasoning = false } = {}) {
+  const bytes = Math.max(0, Number(userBytes) || 0);
+  return Math.min(OUTPUT_CAP_CEILING, 256 + (reasoning ? 2048 : 0) + (translate ? 4 : 2) * bytes);
+}
+
+/**
+ * **값이 나간** 실패 — 바깥이 200 을 줬는데 우리가 잘렸다·비었다로 502 를 돌려주는 경우.
+ * 토큰 사용량을 같이 실어 index.js 가 한도에서 정산하고 /stats 에 적게 한다.
+ */
+export function billedError(status, message, usageMetadata) {
+  return { ...errorReply(status, message), usage: usageMetadata };
 }
 
 /**
@@ -254,15 +280,17 @@ export function toOpenAiRequest(body, model, options = {}) {
       ? capPrompt(partsText(parsed.system_instruction ?? parsed.systemInstruction))
       : KO_SYSTEM_PROMPT;
 
-  const asked = Number(parsed.generationConfig?.maxOutputTokens ?? 0);
   const messages = [];
   if (system) messages.push({ role: 'system', content: system });
   messages.push({ role: 'user', content: user });
 
+  // 앱이 부른 maxOutputTokens 는 안 쓴다 — 서버가 글 길이로 정한다([outputCap]). OpenAI 는 숙고 토큰도
+  // 이 한도에서 깎으므로 숙고를 끄지 않았으면 숙고 몫을 얹는다.
+  const reasoning = (options.reasoning || 'low') !== 'none';
   return JSON.stringify({
     model,
     messages,
-    max_completion_tokens: clamp(asked * 2, MIN_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS),
+    max_completion_tokens: outputCap(utf8Bytes(user), { translate: !!options.translateTo, reasoning }),
     // 숙고를 아예 끄면(minimal) 값은 제일 싸지만 놓치는 것이 생긴다. 한 단계만 올려
     // 둔다 — 숙고 토큰은 출력 요금이라 공짜가 아니고, 교정에 깊은 생각은 필요 없다.
     reasoning_effort: options.reasoning || 'low',
@@ -420,10 +448,6 @@ export function toGeminiReply(status, text, user = '', options = {}) {
   // 교정일 때만 뗀다. 번역문의 부호는 그 언어의 것이다.
   const corrected = user && !options.translateTo ? dropAddedPunctuation(user, raw) : raw;
 
-  // **잘린 답은 주면 안 된다.** 앱은 받은 글로 입력란을 통째로 덮으므로, 뒷부분이
-  // 잘린 교정문을 주면 사용자가 쓴 글이 그만큼 사라진다. 차라리 실패로 알린다.
-  if (choice?.finish_reason === 'length') return errorReply(502, '글이 너무 길어 교정문이 잘렸다');
-  if (!corrected) return errorReply(502, `응답이 비었다 (${choice?.finish_reason ?? 'unknown'})`);
   const usage = parsed?.usage ?? {};
   const reasoning = num(usage.completion_tokens_details?.reasoning_tokens);
   const usageMetadata = {
@@ -433,6 +457,12 @@ export function toGeminiReply(status, text, user = '', options = {}) {
     candidatesTokenCount: Math.max(0, num(usage.completion_tokens) - reasoning),
     thoughtsTokenCount: reasoning,
   };
+
+  // **잘린 답은 주면 안 된다.** 앱은 받은 글로 입력란을 통째로 덮으므로, 뒷부분이
+  // 잘린 교정문을 주면 사용자가 쓴 글이 그만큼 사라진다. 차라리 실패로 알린다.
+  // 다만 값은 나갔다 — 토큰 수를 실어 index.js 가 한도에서 정산하게 한다([billedError]).
+  if (choice?.finish_reason === 'length') return billedError(502, '글이 너무 길어 교정문이 잘렸다', usageMetadata);
+  if (!corrected) return billedError(502, `응답이 비었다 (${choice?.finish_reason ?? 'unknown'})`, usageMetadata);
   // 교정이 아닌 답은 원문으로 바꿔 준다([keepOriginal]). 이 검사는 **교정일 때만**이다 — 번역문은
   // 원문과 길이도 글자도 다른 게 당연해서(한국어 20자가 영어 40자가 되기도 한다) 걸면 번역이 전부 막힌다.
   if (user && !options.translateTo && tooDifferent(user, corrected)) {
@@ -480,9 +510,4 @@ function safeParse(text) {
 function num(value) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function clamp(value, min, max) {
-  if (!Number.isFinite(value) || value < min) return min;
-  return Math.min(value, max);
 }
