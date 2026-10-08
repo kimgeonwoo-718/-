@@ -15,7 +15,6 @@ object Prefs {
     private const val KEY_TRANSLATE_TARGET = "translate_target"
     private const val KEY_KEY_ALPHA = "key_alpha_percent"
     private const val KEY_TOOLBAR_COLLAPSED = "toolbar_collapsed"
-    private const val KEY_CLIPBOARD = "clipboard"
     private const val KEY_INSTALL_ID = "install_id"
     private const val KEY_PURCHASE_TOKEN = "purchase_token"
     private const val KEY_DEVICE_TOKEN = "device_token"
@@ -272,21 +271,12 @@ object Prefs {
     // --- 클립보드 ---------------------------------------------------------------
 
     /**
-     * 복사해 둔 글 목록을 담아 두는 곳.
+     * 복사해 둔 글 목록을 담아 두는 곳. **암호화하고 하루 지나면 버린다**([ClipboardVault]).
      *
      * `StringSet` 은 순서를 안 지켜서 못 쓴다 — 최신이 맨 앞이어야 하는 목록이다.
-     * 잇고 쪼개는 방식은 core 에 두고 테스트로 확인한다. 여기서 깨지면 사용자가
-     * 복사해 둔 것이 조용히 날아간다.
+     * 잇고 쪼개는 방식은 core 에 두고 테스트로 확인한다. 예전 평문 기록은 처음 읽을 때 옮기고 지운다.
      */
-    fun clipboardStore(context: Context): ClipboardHistory.Store =
-        object : ClipboardHistory.Store {
-            override fun read(): List<String> =
-                ClipboardHistory.decode(prefs(context).getString(KEY_CLIPBOARD, "").orEmpty())
-
-            override fun write(items: List<String>) {
-                prefs(context).edit().putString(KEY_CLIPBOARD, ClipboardHistory.encode(items)).apply()
-            }
-        }
+    fun clipboardStore(context: Context): ClipboardHistory.Store = ClipboardVault(prefs(context))
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
