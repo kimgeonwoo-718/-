@@ -85,6 +85,39 @@ APK: https://github.com/kimgeonwoo-718/-/releases/tag/apk-latest (푸시할 때�
 
 ---
 
+## 보안 점검 4차 (2026-10-08) — Billing 8·결제 검사·배포 환경·클립보드
+
+사용자가 "남은 1~5 다 해" 해서 했다. **Play 콘솔이 아직 없어도 코드는 다 된다** — 진짜 결제 확인만 콘솔 뒤.
+
+1. **Billing 7.1.1 → 8.0.0.** ⚠ 앞서 "7.1.1 은 아직 Play 허용" 이라고 적었던 것은 **틀렸다.** 2026-08-31 부터 Play 는
+   새 앱·업데이트에 Billing 8 이상만 받는다(콘솔에서 연장 신청하면 11-01 까지). 8 에서 우리 코드에 걸린 것은
+   `queryProductDetailsAsync` 콜백 하나(목록 → `QueryProductDetailsResult.productDetailsList`). 9 는 더 새 코틀린으로
+   빌드됐을 수 있어(우리 2.0.21) 8.0.0. 로컬 타입 검사용 흉내(`tools/localcheck/stubs/billing.kt`)도 8 모양. CI 빌드 통과(진짜 라이브러리).
+2. **⑩ 배포 환경.** deploy·reset 일감에 `environment: production`. 각 가지는 **자기 가지의 옛 워크플로**대로 돌아서
+   워크플로 파일만으로는 윈도우 가지(서버 코드 50 커밋 뒤처짐)의 배포를 못 막는다. **사용자가 깃허브 설정에서**
+   production 환경의 배포 가지를 앱 가지로 묶고 CLOUDFLARE_API_TOKEN·CLOUDFLARE_ACCOUNT_ID 를 환경 비밀값으로 옮겨야 끝난다.
+   (아직이면 저장소 비밀값으로 그대로 배포된다 — 깨지지는 않는다.)
+3. **⑦ 결제 검사**(`play.js` interpretSubscription, `index.js` isSubscriber). 서비스 계정 키가 들어오는 순간부터 동작:
+   - 해지 예약(CANCELED)은 **만료 시각 전까지** 구독자(예전엔 해지 버튼 누르는 순간 막았다). 기억도 만료 시각까지만.
+   - `lineItems` 의 상품 ID 가 `PLAY_PRODUCT_ID`(ai_unlimited_monthly) 여야 한다.
+   - 승인 안 된 구매는 **서버가 승인**(subscriptions.acknowledge) — 서비스 계정에 Play 콘솔 "주문 및 구독 관리" 권한 필요.
+     그것도 실패하면 결제 뒤 1시간까지만 봐준다(3일 쓰고 자동 환불 되풀이 막기).
+   - 라이선스 테스터의 시험 결제(testPurchase)는 `ALLOW_TEST_PURCHASES = "1"` 일 때만 — **정식 출시 때 wrangler.toml 에서 지운다.**
+   - Play 가 고장이면 **사흘 안의 마지막 확인 결과**로 판단, 없으면 503 `subscription_check_unavailable`(예전엔 "구독자 전용").
+     로그인(signin)은 막지 않는다(무료로 알리고 나중에 /subscription 이 다시 묻는다). 410(오래 만료된 토큰)은 구독 아님.
+   - 테스트의 Play 흉내를 진짜 모양(상품 줄·승인 상태)으로 — `server/test/playFake.js`.
+4. **⑥** 시험 ID 로 통과한 요청은 **설치 ID 로만** 센다(확인 안 한 구매 토큰을 이름표로 쓰면 토큰 바꿔 한도 무한).
+5. **클립보드 암호화 + 하루 뒤 삭제**(`keyboard/.../ClipboardVault.kt`). AndroidKeyStore AES-256-GCM, 항목마다 담은 시각,
+   24시간 지나면 버림. 옛 평문(`clipboard`)은 처음 읽을 때 옮기고 **지운다**. 키 저장소가 고장 난 폰에서는 **평문으로
+   되돌아가지 않고** 기록을 안 남긴다. core 는 안 건드렸다(담는 방식만 바꿈). 맨 앞을 **지워서** 다음 것이 앞으로 온 경우는
+   새로 복사한 것으로 치지 않는다(시각을 새로 달면 하루 삭제가 밀린다). JVM 에서 가짜 열쇠로 13개 경우를 돌려 확인했다.
+   방침 4·9번에도 적었다.
+
+**출시 전 사용자 할 일(갱신):** TEST_INSTALL_IDS 삭제(GitHub + Cloudflare 두 곳), `ALLOW_TEST_PURCHASES` 줄 삭제,
+production 환경 설정(⑩), 서비스 계정 + "주문 및 구독 관리" 권한, Billing 8 로 올린 빌드로 내부 테스트에서 결제 확인.
+
+---
+
 ## 보안 점검 2차 (2026-10-08) — 윈도우 세션이 넘긴 13개 중 서버 쪽
 
 윈도우 세션이 자기들 점검 결과 13개를 사용자 통해 넘겼다(①~⑬). 명백히 맞고 위험 없는 **서버 넷**을 먼저 고쳤다.
@@ -113,7 +146,8 @@ APK: https://github.com/kimgeonwoo-718/-/releases/tag/apk-latest (푸시할 때�
 - **⑬ 폰(일부).** (1) 결제 **승인 재시도**(2·4·8초, BillingManager) — 결제 직후 끊겨 승인 실패하면 사흘 환불 전에 다시 붙잡는다.
   (2) **기기 간 이전으로 토큰 복사 차단** — `res/xml/data_extraction_rules.xml` 로 prefs(spell_keyboard.xml)를 클라우드 백업·기기이전에서 뺀다.
 
-  ⑬ 남은 것: **Billing 7.1.1 갱신은 보류**(8.x 는 API 가 바뀌어 빌드 확인 필요, 7.1.1 은 아직 Play 허용). **클립보드 평문은 core 공유**라 사용자 OK 받고.
+  ⑬ 남은 것: ~~Billing 7.1.1 갱신 보류, 클립보드는 core 공유~~ → **둘 다 4차에서 했다.** ("7.1.1 은 아직 Play 허용" 은 틀린 말이었고,
+  클립보드는 담는 쪽이 폰 코드라 core 를 안 건드리고 됐다 — 위 4차 참고.)
 
 **남은 것 — 사용자 결정/코디 필요(윈도우 세션에 회신할 것):**
 - **② max_tokens 서버가 정하기** — 사실 output 은 쓴 만큼만 청구돼서 비용 구멍은 아니다(방어 심화일 뿐). 낮은 우선순위.
