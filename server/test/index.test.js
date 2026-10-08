@@ -655,6 +655,32 @@ test('개인정보 처리방침은 계정과 탈퇴를 설명한다', async () =
   assert.match(body, /문의: help@example\.com/);
 });
 
+test('개인정보 처리방침은 PC 프로그램·IP·국외 이전·백업·14세 동의를 적는다 (⑫)', async () => {
+  const body = await (await handle(new Request('https://spell.test/privacy'), env({ AI_PROVIDER: 'upstage', UPSTAGE_API_KEY: 'k' }))).text();
+  // PC 프로그램: 다른 프로그램 글을 안 읽고, 키 소리는 키 종류만, 로그아웃하면 지운다.
+  assert.match(body, /윈도우 PC 프로그램/);
+  assert.match(body, /다른 프로그램에 입력한 글은 읽지 않습니다/);
+  assert.match(body, /키의 <strong>종류<\/strong>/);
+  assert.match(body, /로그아웃하면 기기 토큰·이메일·구독 상태를 PC에서 지웁니다/);
+  assert.match(body, /Win\+V/);
+  // 서버가 세는 IP 는 해시로, 이틀 뒤 삭제.
+  assert.match(body, /접속 IP 주소/);
+  // 국외 이전: 거부 방법까지.
+  assert.match(body, /거부 방법과 그 결과/);
+  assert.match(body, /Mozilla/);
+  // 파기: "되살릴 수 없게" 대신 복구용 기록 최대 30일.
+  assert.ok(!body.includes('되살릴 수 없게'), '자동 백업이 있는데 되살릴 수 없게 지운다고 적으면 안 된다');
+  assert.match(body, /최대 30일/);
+  // 만 14세 미만: 법정대리인 동의.
+  assert.match(body, /법정대리인의 동의를 받은 경우에만/);
+  assert.match(body, /시행일: 2026-10-08/);
+});
+
+test('이용약관의 시행일은 방침과 따로 간다', async () => {
+  const body = await (await handle(new Request('https://spell.test/terms'), env({ GEMINI_API_KEY: '' }))).text();
+  assert.match(body, /시행일: 2026-09-26/);
+});
+
 test('이용약관 페이지가 뜬다', async () => {
   const res = await handle(new Request('https://spell.test/terms'), env({ GEMINI_API_KEY: '' }));
   assert.equal(res.status, 200);
