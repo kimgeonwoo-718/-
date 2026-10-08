@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { handle } from '../src/index.js';
 import { fakeDb } from './fakeDb.js';
 import { testKeyPair } from './play.test.js';
+import { activeSubscriptionJson } from './playFake.js';
 import { verifyIdToken, allowedClientIds, base64UrlToBytes } from '../src/google.js';
 import { purchaseForDevice, purchaseOfAccount } from '../src/account.js';
 
@@ -51,7 +52,7 @@ function upstream(jwks, { activeToken = 'paid-token' } = {}) {
     if (url.includes('androidpublisher.googleapis.com')) {
       const token = decodeURIComponent(url.split('/tokens/')[1]);
       return token === activeToken
-        ? new Response(JSON.stringify({ subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE' }), { status: 200 })
+        ? new Response(JSON.stringify(activeSubscriptionJson()), { status: 200 })
         : new Response('{}', { status: 404 });
     }
     throw new Error(`unexpected upstream ${url}`);

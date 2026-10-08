@@ -28,7 +28,13 @@ import {
   deleteAccount,
 } from './account.js';
 import { allowedClientIds, fetchJwks, verifyIdToken } from './google.js';
-import { fetchAccessToken, verifySubscription } from './play.js';
+import {
+  fetchAccessToken,
+  verifySubscription,
+  acknowledgeSubscription,
+  DEFAULT_PRODUCT_ID,
+  CANCELED_STATE,
+} from './play.js';
 import { cacheGet, cacheSet } from './cache.js';
 import {
   geminiUrl,
@@ -235,7 +241,8 @@ async function signIn(request, env, fetchImpl, now) {
   // 쓰레기를 표에 안 쌓으려고, 그리고 붙이기가 **옛 계정에서 떼어 오는 동작**이라
   // 살아 있지도 않은 토큰으로 남의 자리를 흔들 여지를 아예 없애려고.
   const purchaseToken = typeof body?.purchaseToken === 'string' ? body.purchaseToken : '';
-  if (purchaseToken && (await isSubscriber(env, purchaseToken, fetchImpl, nowMs))) {
+  // Play 가 고장이면 붙이지 않는다(확인 못 한 구매는 안 붙인다). 로그인 자체는 막지 않는다.
+  if (purchaseToken && (await isSubscriberOrFalse(env, purchaseToken, fetchImpl, nowMs))) {
     await attachPurchase(env.DB, accountId, purchaseToken, nowMs);
   }
 
@@ -244,7 +251,9 @@ async function signIn(request, env, fetchImpl, now) {
   if ((await deviceCount(env.DB, accountId)) >= MAX_DEVICES) return fail(409, 'too_many_devices');
 
   const deviceToken = await issueDevice(env.DB, accountId, labelOf(body?.label), nowMs);
-  const active = await isSubscriber(env, await purchaseOfAccount(env.DB, accountId), fetchImpl, nowMs);
+  // 기기 토큰은 이미 발급했다 — 여기서 503 을 주면 그 토큰을 잃는다. 장애면 일단 무료로 알리고,
+  // 기기가 나중에 /subscription 으로 다시 묻는다.
+  const active = await isSubscriberOrFalse(env, await purchaseOfAccount(env.DB, accountId), fetchImpl, nowMs);
   return json(200, { deviceToken, plan: active ? 'subscriber' : 'free' });
 }
 
@@ -284,7 +293,15 @@ async function attachPurchaseOf(request, env, fetchImpl, now) {
   const found = await purchaseForDevice(env.DB, device, nowMs);
   if (!found) return fail(404, 'device_not_linked');
 
-  if (!(await isSubscriber(env, purchaseToken, fetchImpl, nowMs))) return fail(402, 'not_subscribed');
+  let active;
+  try {
+    active = await isSubscriber(env, purchaseToken, fetchImpl, nowMs);
+  } catch (err) {
+    // Play 고장. "구독 아님" 이라고 하면 앱이 붙이기를 포기한다 — 다음에 다시 하게 503 으로.
+    if (err instanceof PlayUnavailable) return fail(503, 'subscription_check_unavailable');
+    throw err;
+  }
+  if (!active) return fail(402, 'not_subscribed');
   await attachPurchase(env.DB, found.accountId, purchaseToken, nowMs);
   return json(200, { plan: 'subscriber' });
 }
@@ -350,7 +367,14 @@ async function subscriptionOf(request, env, fetchImpl, now) {
   const found = await purchaseForDevice(env.DB, device, nowMs);
   if (!found) return fail(404, 'device_not_linked');
 
-  const active = await isSubscriber(env, found.purchaseToken, fetchImpl, nowMs);
+  let active;
+  try {
+    active = await isSubscriber(env, found.purchaseToken, fetchImpl, nowMs);
+  } catch (err) {
+    // Play 고장이고 기댈 기록도 없다. "무료" 라고 하면 PC 가 구독자를 무료 화면으로 바꾼다 — 모른다고 한다.
+    if (err instanceof PlayUnavailable) return fail(503, 'subscription_check_unavailable');
+    throw err;
+  }
   return json(200, { plan: active ? 'subscriber' : 'free' });
 }
 
@@ -415,8 +439,17 @@ async function correct(request, env, url, fetchImpl, now) {
   // 아예 없고 아이폰은 스토어가 달라서, 그쪽은 서버가 발급한 기기 토큰을 들고 온다.
   // 기기 토큰은 계정을 거쳐 **같은 구매 토큰**으로 풀리므로, 어디서 쓰든 한도는 하나다.
   const purchaseToken = await identify(env, request, nowMs);
-  const subscriber =
-    isTestSubscriber(env, installId) || (await isSubscriber(env, purchaseToken, fetchImpl, nowMs));
+  // 시험 ID 는 Play 를 안 거치고 구독자로 친다. 그때 같이 실려 온 구매 토큰은 **확인한 적이 없다**.
+  const viaTestList = isTestSubscriber(env, installId);
+  let subscriber;
+  try {
+    subscriber = viaTestList || (await isSubscriber(env, purchaseToken, fetchImpl, nowMs));
+  } catch (err) {
+    // Play 가 고장 났고 예전에 확인한 기록도 없다. "구독자 전용" 이라고 하면 돈 낸 사람에게 거짓말이
+    // 된다(윈도우 점검 ⑦④). 잠깐 뒤 다시 하라고 503 — 앱은 503 을 잠깐 붐빔으로 보고 조금 뒤 다시 보낸다.
+    if (err instanceof PlayUnavailable) return fail(503, 'subscription_check_unavailable');
+    throw err;
+  }
   const plan = subscriber ? 'subscriber' : 'free';
 
   const unit = 'chars';
@@ -449,8 +482,9 @@ async function correct(request, env, url, fetchImpl, now) {
   // 토큰을 그대로 열쇠로 쓰지 않고 해시한다. 열쇠는 로그나 덤프에 섞여 나오기 쉽고,
   // 구매 토큰은 그 자체가 구독 증명이라 새면 남이 쓸 수 있다.
   //
-  // 시험용 설치 ID([isTestSubscriber])는 구매 토큰이 없다. 그때는 설치 ID 로 센다.
-  const subId = purchaseToken ? await sha256Hex(purchaseToken) : installId;
+  // **시험 ID 로 들어왔으면 설치 ID 로만 센다(윈도우 점검 ⑥).** 이때 실린 구매 토큰은 Play 에 확인하지
+  // 않았다 — 그걸 이름표로 쓰면 토큰을 아무렇게나 지어 바꿔 가며 한도를 매번 새로 받는다.
+  const subId = viaTestList ? installId : purchaseToken ? await sha256Hex(purchaseToken) : installId;
 
   // **구독자 하나가 분당 너무 많이 보내는 것도 막는다(④).** 글자 한도는 하루치 천장이고,
   // 이건 버스트 천장이다 — 한도가 아직 남아 있어도 1분에 수십 번씩 몰아치지 못하게 한다.
@@ -787,13 +821,6 @@ function withQuota(response, usage, limit, plan, unit = 'calls') {
 }
 
 /**
- * 구독자인가.
- *
- * 토큰이 없거나 서비스 계정이 설정돼 있지 않으면 무료다. 확인 자체가 실패하면(구글
- * 장애, 인증 오류) 그 순간만 무료로 보고 **캐시하지 않는다** — 돈 낸 사람을 한 시간
- * 동안 잘못 막는 것보다, 다음 요청에서 다시 물어보는 편이 낫다.
- */
-/**
  * Play 를 거치지 않고 구독자로 쳐 주는 설치 ID 들.
  *
  * 개발하는 사람이 자기 폰에서 유료 기능(AI 번역)을 확인하려면 진짜 구독이 있어야 하는데,
@@ -814,27 +841,105 @@ function isTestSubscriber(env, installId) {
     .some((one) => one.length > 0 && one === installId);
 }
 
+/** Play 가 답을 못 했고 기댈 예전 확인 기록도 없다. "구독 아님" 과 다르다 — 모르는 것이다. */
+class PlayUnavailable extends Error {}
+
+/** Play 장애 때 기댈 "마지막으로 확인한 결과" 를 들고 있는 기간. 한 달 구독 주기보다 조금 길게. */
+const LAST_VERDICT_TTL_MS = 35 * 24 * 60 * 60 * 1000;
+/** 장애 때 그 마지막 결과를 믿어 주는 기간. 이보다 오래된 기록이면 믿지 않고 503. */
+const LAST_VERDICT_TRUST_MS = 3 * 24 * 60 * 60 * 1000;
+/** 서버 승인까지 실패한 미승인 구매를 봐주는 시간. 정상 앱은 결제 몇 초 안에 승인한다. */
+const ACK_GRACE_MS = 60 * 60 * 1000;
+/** 승인에 실패한 결과를 들고 있는 시간. 짧게 — 곧 다시 물어 다시 승인해 본다. */
+const UNACKED_TTL_MS = 5 * 60 * 1000;
+
+function playProductId(env) {
+  return (env.PLAY_PRODUCT_ID ?? '').trim() || DEFAULT_PRODUCT_ID;
+}
+
+/**
+ * 구독자인가. 토큰이 없거나 서비스 계정이 설정돼 있지 않으면 무료다.
+ *
+ * Play 에 묻고 결과를 1시간 기억한다. 판단 규칙은 [interpretSubscription](play.js) — 우리 상품인가,
+ * 해지 예약이면 만료 전인가, 시험 결제인가. 여기서는 셋을 더 한다(윈도우 점검 ⑦):
+ *
+ * - **승인 안 된 구매는 서버가 승인한다(③).** 뜯어고친 앱이 승인을 일부러 안 하면 3일 쓰고 자동 환불을
+ *   되풀이할 수 있다. 서버 승인까지 실패하면 결제 뒤 1시간까지만 봐준다.
+ * - **Play 가 고장 나면 마지막으로 확인한 결과를 쓴다(④).** 예전에는 "구독 아님" 으로 보아 돈 낸 사람에게
+ *   "구독자 전용" 을 띄웠다. 사흘 안에 확인한 기록이 있으면 그걸 믿고, 없으면 [PlayUnavailable] 을 던진다.
+ * - 해지 예약이면 결과를 만료 시각 넘어서까지 들고 있지 않는다.
+ */
 async function isSubscriber(env, purchaseToken, fetchImpl, nowMs) {
   if (!purchaseToken || !env.PLAY_SERVICE_ACCOUNT || !env.PLAY_PACKAGE) return false;
 
-  const key = 'play:' + (await sha256Hex(purchaseToken));
+  const hash = await sha256Hex(purchaseToken);
+  const key = 'play:' + hash;
+  const lastKey = 'playlast:' + hash;
   const cached = await cacheGet(env.DB, key, nowMs);
   if (cached) return cached.active === true;
 
+  const productId = playProductId(env);
   let verdict;
+  let accessToken;
   try {
-    const accessToken = await playAccessToken(env, fetchImpl, nowMs);
+    accessToken = await playAccessToken(env, fetchImpl, nowMs);
     verdict = await verifySubscription({
       pkg: env.PLAY_PACKAGE,
       purchaseToken,
       accessToken,
       fetchImpl,
+      productId,
+      nowMs,
+      allowTest: isOn(env.ALLOW_TEST_PURCHASES),
     });
   } catch {
-    return false;
+    return lastKnownVerdict(await cacheGet(env.DB, lastKey, nowMs), nowMs);
   }
-  await cacheSet(env.DB, key, { active: verdict.active, state: verdict.state }, VERDICT_TTL_MS, nowMs);
+
+  let ttl = VERDICT_TTL_MS;
+  if (verdict.active && verdict.needsAck) {
+    const acked = await acknowledgeSubscription({ pkg: env.PLAY_PACKAGE, productId, purchaseToken, accessToken, fetchImpl });
+    if (!acked) {
+      ttl = UNACKED_TTL_MS;
+      if (verdict.startMs != null && nowMs - verdict.startMs > ACK_GRACE_MS) {
+        verdict = { ...verdict, active: false, state: 'UNACKNOWLEDGED' };
+      }
+    }
+  }
+  if (verdict.active && verdict.state === CANCELED_STATE && verdict.expiryMs != null) {
+    ttl = Math.max(60_000, Math.min(ttl, verdict.expiryMs - nowMs));
+  }
+
+  const record = { active: verdict.active, state: verdict.state, expiryMs: verdict.expiryMs };
+  await cacheSet(env.DB, key, record, ttl, nowMs);
+  await cacheSet(env.DB, lastKey, { ...record, checkedAt: nowMs }, LAST_VERDICT_TTL_MS, nowMs);
   return verdict.active;
+}
+
+/**
+ * Play 가 답을 못 했을 때 마지막 확인 결과로 판단한다. 사흘 넘은 기록이거나 기록이 없으면 모른다(던진다).
+ * 해지 예약이었던 사람은 그때 알려 준 만료 시각까지만. 정상 구독은 그사이 갱신됐을 것으로 본다.
+ */
+function lastKnownVerdict(last, nowMs) {
+  if (!last || typeof last.checkedAt !== 'number' || nowMs - last.checkedAt > LAST_VERDICT_TRUST_MS) {
+    throw new PlayUnavailable();
+  }
+  if (!last.active) return false;
+  if (last.state === CANCELED_STATE) return last.expiryMs != null && last.expiryMs > nowMs;
+  return true;
+}
+
+/**
+ * Play 장애를 "구독 아님" 으로 읽는다. 로그인처럼, 장애로 통째로 막는 것이 더 나쁜 길에서만 쓴다 —
+ * 그 길은 구독을 붙이거나 화면에 보여 줄 뿐 돈 드는 AI 를 열어 주지 않는다.
+ */
+async function isSubscriberOrFalse(env, purchaseToken, fetchImpl, nowMs) {
+  try {
+    return await isSubscriber(env, purchaseToken, fetchImpl, nowMs);
+  } catch (err) {
+    if (err instanceof PlayUnavailable) return false;
+    throw err;
+  }
 }
 
 async function playAccessToken(env, fetchImpl, nowMs) {

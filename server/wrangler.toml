@@ -21,6 +21,13 @@ new_sqlite_classes = ["GoogleRelay"]
 
 [vars]
 PLAY_PACKAGE = "com.spellkeyboard.ko"
+# 우리가 파는 구독 상품 ID. 앱(BillingManager.PRODUCT_ID)과 Play 콘솔과 글자 하나까지 같아야 한다.
+# 다른 상품(나중에 팔지 모를 테마팩 같은)의 구독으로는 AI 를 못 쓰게 이것만 쳐 준다(윈도우 점검 ⑦②).
+PLAY_PRODUCT_ID = "ai_unlimited_monthly"
+# 라이선스 테스터(Play 콘솔에 운영자가 넣은 계정)의 **시험 결제**를 구독으로 쳐 줄까. 출시 전 비공개 테스트
+# 동안은 켜 둔다(테스터가 돈 안 내고 결제·AI 를 시험한다). **정식 출시 때 이 줄을 지워라** — 시험 결제는
+# 다시 살 때마다 토큰이 새로 나와 한도도 새로 나기 때문이다(TEST_INSTALL_IDS 와 같이 지운다).
+ALLOW_TEST_PURCHASES = "1"
 # 개인정보 처리방침·이용약관 아래에 "문의:" 로 뜬다. 앱의 strings.xml support_email 과 같게 둔다.
 # 공개하려고 둔 주소라 여기 적어도 된다. 운영자 이름(OPERATOR_NAME)은 정해지면 이 밑에 넣는다.
 CONTACT_EMAIL = "tamtech828282@gmail.com"

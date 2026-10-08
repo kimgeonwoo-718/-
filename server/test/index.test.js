@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { handle, GoogleRelay } from '../src/index.js';
 import { fakeDb } from './fakeDb.js';
 import { testKeyPair } from './play.test.js';
+import { activeSubscriptionJson } from './playFake.js';
 // 한도는 코드에서 가져온다. 손으로 적어 두면 값을 바꿀 때마다 시험을 같이 고쳐야 한다.
 import { DEFAULT_SUB_DAILY_CHARS } from '../src/quota.js';
 
@@ -36,7 +37,7 @@ function upstream({ status = 200, activeToken = null, echo = false } = {}) {
     }
     if (url.includes('androidpublisher.googleapis.com')) {
       const token = decodeURIComponent(url.split('/tokens/')[1]);
-      if (token === activeToken) return new Response(JSON.stringify({ subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE' }), { status: 200 });
+      if (token === activeToken) return new Response(JSON.stringify(activeSubscriptionJson()), { status: 200 });
       return new Response('{}', { status: 404 });
     }
     if (url.endsWith('/v1beta/models?pageSize=200')) {
@@ -336,7 +337,8 @@ test('서비스 계정이 없으면 토큰이 있어도 무료다', async () => 
   assert.equal(res.headers.get('x-plan'), 'free');
 });
 
-test('Play 확인이 실패하면 그 순간만 무료로 보고 캐시하지 않는다', async () => {
+test('Play 가 고장이고 기댈 기록도 없으면 "구독 아님" 이 아니라 503 — 캐시하지 않는다 (⑦④)', async () => {
+  // 예전에는 무료로 보아 돈 낸 사람에게 "구독자 전용" 을 띄웠다.
   const { pem } = await testKeyPair();
   const e = env({ TEST_INSTALL_IDS: '', PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }) });
   let playDown = true;
@@ -346,11 +348,117 @@ test('Play 확인이 실패하면 그 순간만 무료로 보고 캐시하지 �
     return good(url, init);
   };
   const first = await handle(generate({ 'x-purchase-token': 'paid' }), e, { fetch: fetchImpl, now: () => NOON_KST });
-  assert.equal(first.headers.get('x-plan'), 'free');
+  assert.equal(first.status, 503);
+  assert.equal((await first.json()).error.message, 'subscription_check_unavailable');
 
   playDown = false;
   const second = await handle(generate({ 'x-purchase-token': 'paid' }), e, { fetch: fetchImpl, now: () => NOON_KST });
   assert.equal(second.headers.get('x-plan'), 'subscriber', '복구되면 바로 구독자로 본다');
+});
+
+test('Play 가 고장 나도 사흘 안에 확인한 구독자는 마지막 결과로 통과한다 (⑦④)', async () => {
+  const { pem } = await testKeyPair();
+  const e = env({ TEST_INSTALL_IDS: '', PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }) });
+  let playDown = false;
+  const good = upstream({ activeToken: 'paid', echo: true }).fetchImpl;
+  const fetchImpl = async (url, init) => {
+    if (playDown && url.includes('androidpublisher')) return new Response('', { status: 500 });
+    return good(url, init);
+  };
+  const ok = await handle(generate({ 'x-purchase-token': 'paid' }), e, { fetch: fetchImpl, now: () => NOON_KST });
+  assert.equal(ok.headers.get('x-plan'), 'subscriber');
+
+  // 두 시간 뒤(1시간 기억이 지난 뒤) Play 가 고장 났다 — 마지막 결과로 통과.
+  playDown = true;
+  const later = NOON_KST + 2 * 60 * 60 * 1000;
+  const during = await handle(generate({ 'x-purchase-token': 'paid' }), e, { fetch: fetchImpl, now: () => later });
+  assert.equal(during.status, 200);
+  assert.equal(during.headers.get('x-plan'), 'subscriber');
+
+  // 나흘 뒤에도 고장이면 그 기록은 너무 오래돼 믿지 않는다.
+  const muchLater = NOON_KST + 4 * 24 * 60 * 60 * 1000;
+  const stale = await handle(generate({ 'x-purchase-token': 'paid' }), e, { fetch: fetchImpl, now: () => muchLater });
+  assert.equal(stale.status, 503);
+});
+
+/** Play 가 이 답을 주는 세상. 승인 요청이 오면 [ackOk] 로 답하고, 무엇이 왔는지 붙잡아 둔다. */
+function playWith(json, { ackOk = true } = {}) {
+  const calls = [];
+  const echo = upstream({ echo: true }).fetchImpl;
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    if (url.includes(':acknowledge')) return new Response('', { status: ackOk ? 200 : 403 });
+    if (url.includes('androidpublisher')) return new Response(JSON.stringify(json), { status: 200 });
+    return echo(url, init);
+  };
+  return { fetchImpl, calls };
+}
+
+async function paidEnv(extra = {}) {
+  const { pem } = await testKeyPair();
+  return env({ TEST_INSTALL_IDS: '', PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'svc@x', private_key: pem }), ...extra });
+}
+
+test('해지 예약했어도 기간이 남았으면 AI 를 쓴다 (⑦①)', async () => {
+  const play = playWith(activeSubscriptionJson({
+    subscriptionState: 'SUBSCRIPTION_STATE_CANCELED',
+    lineItems: [{ productId: 'ai_unlimited_monthly', expiryTime: '2026-01-20T00:00:00Z' }],
+  }));
+  const res = await handle(generate({ 'x-purchase-token': 'paid' }), await paidEnv(), { fetch: play.fetchImpl, now: () => NOON_KST });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('x-plan'), 'subscriber');
+});
+
+test('다른 상품의 구독으로는 AI 를 못 쓴다 (⑦②)', async () => {
+  const play = playWith(activeSubscriptionJson({ lineItems: [{ productId: 'theme_pack_monthly', expiryTime: '2099-01-01T00:00:00Z' }] }));
+  const res = await handle(generate({ 'x-purchase-token': 'paid' }), await paidEnv(), { fetch: play.fetchImpl, now: () => NOON_KST });
+  assert.equal(res.status, 402);
+});
+
+test('승인 안 된 구매는 서버가 승인한다 (⑦③)', async () => {
+  const play = playWith(activeSubscriptionJson({ acknowledgementState: 'ACKNOWLEDGEMENT_STATE_PENDING' }));
+  const res = await handle(generate({ 'x-purchase-token': 'paid' }), await paidEnv(), { fetch: play.fetchImpl, now: () => NOON_KST });
+  assert.equal(res.status, 200);
+  const ack = play.calls.find((c) => c.url.includes(':acknowledge'));
+  assert.ok(ack, '서버가 승인을 보냈다');
+  assert.equal(ack.init.method, 'POST');
+  assert.ok(ack.url.includes('/purchases/subscriptions/ai_unlimited_monthly/tokens/paid:acknowledge'));
+});
+
+test('서버 승인도 실패하면 결제 뒤 1시간까지만 봐준다 (⑦③)', async () => {
+  // 뜯어고친 앱이 승인을 안 하고 3일 쓰고 환불받는 것을 되풀이하지 못하게.
+  const fresh = new Date(NOON_KST - 10 * 60 * 1000).toISOString(); // 10분 전에 산 것
+  const old = new Date(NOON_KST - 2 * 24 * 60 * 60 * 1000).toISOString(); // 이틀 전에 산 것
+  const pending = (startTime) => activeSubscriptionJson({ acknowledgementState: 'ACKNOWLEDGEMENT_STATE_PENDING', startTime });
+
+  const justBought = playWith(pending(fresh), { ackOk: false });
+  const ok = await handle(generate({ 'x-purchase-token': 'paid' }), await paidEnv(), { fetch: justBought.fetchImpl, now: () => NOON_KST });
+  assert.equal(ok.status, 200, '막 산 사람은 앱 승인이 늦은 것일 수 있다');
+
+  const neverAcked = playWith(pending(old), { ackOk: false });
+  const blocked = await handle(generate({ 'x-purchase-token': 'paid' }), await paidEnv(), { fetch: neverAcked.fetchImpl, now: () => NOON_KST });
+  assert.equal(blocked.status, 402);
+});
+
+test('라이선스 테스터의 시험 결제는 ALLOW_TEST_PURCHASES 일 때만 쳐 준다', async () => {
+  const play = () => playWith(activeSubscriptionJson({ testPurchase: {} }));
+  const off = await handle(generate({ 'x-purchase-token': 'paid' }), await paidEnv(), { fetch: play().fetchImpl, now: () => NOON_KST });
+  assert.equal(off.status, 402);
+  const on = await handle(generate({ 'x-purchase-token': 'paid' }), await paidEnv({ ALLOW_TEST_PURCHASES: '1' }), { fetch: play().fetchImpl, now: () => NOON_KST });
+  assert.equal(on.status, 200);
+});
+
+test('시험 ID 에 지어낸 구매 토큰을 바꿔 붙여도 한도를 새로 받지 못한다 (⑥)', async () => {
+  // 시험 ID 는 Play 를 안 거치므로 실린 토큰은 확인한 적이 없다. 그걸 이름표로 쓰면 토큰만 바꿔
+  // 한도를 무한히 받는다. 시험 ID 는 설치 ID 로만 센다.
+  const e = env({ SUB_DAILY_CHARS: '1000' });
+  const body = JSON.stringify({ contents: [{ parts: [{ text: '가'.repeat(600) }] }] });
+  const deps = { fetch: upstream({ echo: true }).fetchImpl, now: () => NOON_KST };
+  const first = await handle(generate({ 'x-purchase-token': 'made-up-1' }, body), e, deps);
+  assert.equal(first.status, 200);
+  const second = await handle(generate({ 'x-purchase-token': 'made-up-2' }, body), e, deps);
+  assert.equal(second.status, 402, '토큰을 바꿔도 같은 하루치에서 깎인다');
+  assert.equal((await second.json()).error.message, 'sub_daily_limit');
 });
 
 test('너무 긴 요청은 구글까지 가지 않는다', async () => {
