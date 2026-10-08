@@ -10,6 +10,11 @@ on:
       - ".github/workflows/deploy-worker.yml"
   workflow_dispatch:
 
+# 이 워크플로는 Cloudflare 토큰으로만 배포한다. 저장소 GITHUB_TOKEN 으로는 아무것도 쓰지 않으므로
+# 읽기만 준다 — 토큰이 새도 저장소를 건드리지 못한다.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: 서버 로직 테스트
@@ -78,15 +83,15 @@ jobs:
         working-directory: server
         run: |
           set -euo pipefail
-          id=$(npx --yes wrangler@3 d1 list --json | jq -r '.[] | select(.name=="spell-keyboard") | (.uuid // .id)' | head -n 1)
+          id=$(npx --yes wrangler@3.114.17 d1 list --json | jq -r '.[] | select(.name=="spell-keyboard") | (.uuid // .id)' | head -n 1)
           if [ -z "$id" ]; then
             echo "D1 이 없어 새로 만든다"
-            id=$(npx --yes wrangler@3 d1 create spell-keyboard 2>&1 | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -n 1)
+            id=$(npx --yes wrangler@3.114.17 d1 create spell-keyboard 2>&1 | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -n 1)
           fi
           [ -n "$id" ] || { echo "D1 ID 를 얻지 못했다" >&2; exit 1; }
           sed -i "s/DATABASE_ID_PLACEHOLDER/$id/" wrangler.toml
           echo "D1: $id"
-          npx --yes wrangler@3 d1 migrations apply spell-keyboard --remote
+          npx --yes wrangler@3.114.17 d1 migrations apply spell-keyboard --remote
 
       # workers.dev 주소는 계정마다 한 번 정해야 하는데, 그게 없으면 wrangler deploy 가
       # "subdomain 을 등록하라" 며 죽는다. 대시보드를 뒤지게 하는 대신 여기서 API 로 정한다.
@@ -117,7 +122,7 @@ jobs:
       - name: Worker 배포
         if: steps.creds.outputs.ready == 'true'
         working-directory: server
-        run: npx --yes wrangler@3 deploy
+        run: npx --yes wrangler@3.114.17 deploy
 
       - name: 비밀값 넣기
         if: steps.creds.outputs.ready == 'true'
@@ -134,7 +139,7 @@ jobs:
           # OPENAI_API_KEY 가 있으면 서버는 그쪽으로 간다. 되돌리려면 이 비밀값만 지우면
           # 되고, 그러면 다시 구글로 간다. 앱은 어느 쪽이든 같은 모양으로 주고받는다.
           if [ -n "${OPENAI_API_KEY:-}" ]; then
-            printf '%s' "$OPENAI_API_KEY" | npx --yes wrangler@3 secret put OPENAI_API_KEY
+            printf '%s' "$OPENAI_API_KEY" | npx --yes wrangler@3.114.17 secret put OPENAI_API_KEY
             echo "OPENAI_API_KEY: 넣음 — 교정은 gpt-5-nano 로 나간다"
           else
             # 여기서 지우지는 않는다. wrangler 의 삭제는 되묻기라 CI 에서 조용히 실패할 수
@@ -143,7 +148,7 @@ jobs:
             echo "  되돌리려면: npx wrangler secret delete OPENAI_API_KEY"
           fi
           if [ -n "${GEMINI_API_KEY:-}" ]; then
-            printf '%s' "$GEMINI_API_KEY" | npx --yes wrangler@3 secret put GEMINI_API_KEY
+            printf '%s' "$GEMINI_API_KEY" | npx --yes wrangler@3.114.17 secret put GEMINI_API_KEY
             echo "GEMINI_API_KEY: 넣음"
           else
             echo "GEMINI_API_KEY: 없음 — 서버가 503 을 돌려준다"
@@ -151,20 +156,20 @@ jobs:
           # Claude(AI_PROVIDER = "anthropic" 일 때 쓴다). 키만 넣어 둬도 AI_PROVIDER 가 안
           # 바뀌면 쓰이지 않는다 — 어느 쪽으로 보낼지는 wrangler.toml 한 줄이 정한다.
           if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-            printf '%s' "$ANTHROPIC_API_KEY" | npx --yes wrangler@3 secret put ANTHROPIC_API_KEY
+            printf '%s' "$ANTHROPIC_API_KEY" | npx --yes wrangler@3.114.17 secret put ANTHROPIC_API_KEY
             echo "ANTHROPIC_API_KEY: 넣음"
           else
             echo "ANTHROPIC_API_KEY: 비어 있음"
           fi
           # 업스테이지 Solar(AI_PROVIDER = "upstage" 일 때 쓴다). 위 Claude 와 같은 규칙.
           if [ -n "${UPSTAGE_API_KEY:-}" ]; then
-            printf '%s' "$UPSTAGE_API_KEY" | npx --yes wrangler@3 secret put UPSTAGE_API_KEY
+            printf '%s' "$UPSTAGE_API_KEY" | npx --yes wrangler@3.114.17 secret put UPSTAGE_API_KEY
             echo "UPSTAGE_API_KEY: 넣음"
           else
             echo "UPSTAGE_API_KEY: 비어 있음"
           fi
           if [ -n "${PLAY_SERVICE_ACCOUNT:-}" ]; then
-            printf '%s' "$PLAY_SERVICE_ACCOUNT" | npx --yes wrangler@3 secret put PLAY_SERVICE_ACCOUNT
+            printf '%s' "$PLAY_SERVICE_ACCOUNT" | npx --yes wrangler@3.114.17 secret put PLAY_SERVICE_ACCOUNT
             echo "PLAY_SERVICE_ACCOUNT: 넣음"
           else
             # 거꾸로 읽기 쉬운 자리다. 이 값이 없으면 isSubscriber 가 무조건 false 라
@@ -176,7 +181,7 @@ jobs:
           # 등록 전에 유료 기능(AI 번역)을 실기기에서 확인하려고 둔다.
           # 출시하면 GitHub 비밀값을 지우고 npx wrangler secret delete TEST_INSTALL_IDS 를 친다.
           if [ -n "${TEST_INSTALL_IDS:-}" ]; then
-            printf '%s' "$TEST_INSTALL_IDS" | npx --yes wrangler@3 secret put TEST_INSTALL_IDS
+            printf '%s' "$TEST_INSTALL_IDS" | npx --yes wrangler@3.114.17 secret put TEST_INSTALL_IDS
             echo "TEST_INSTALL_IDS: 넣음 — 이 설치 ID 들은 구독자로 동작한다"
           else
             echo "TEST_INSTALL_IDS: 없음 — 결제한 사람만 구독자다 (출시 때 맞는 상태)"

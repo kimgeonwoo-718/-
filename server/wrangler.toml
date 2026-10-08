@@ -125,6 +125,11 @@ OPENAI_REASONING = "low"
 [triggers]
 crons = ["0 18 * * *"]
 
+# 비상 정지. 값이 새거나 요금이 터질 때 한 줄로 AI 교정·번역을 통째로 끈다. 비워 두면 켜짐.
+# 끄려면 `wrangler secret put AI_DISABLED` 에 1 을 넣는다(배포 없이 즉시). 온디바이스 교정은 그대로.
+# 비밀값으로 두는 이유: 되돌릴 때 배포를 안 거치고 콘솔에서 바로 지우면 다시 켜진다.
+# AI_DISABLED = "1"  ← secret 으로만 넣는다. 여기(공개 저장소)에 적지 마라.
+
 # 비밀값은 여기 두지 않는다. CI 가 wrangler secret put 으로 넣는다:
 #   OPENAI_API_KEY         OpenAI 키 (있으면 이쪽으로 간다)
 #   GEMINI_API_KEY         구글 Gemini 키 (OpenAI 키가 없을 때)
@@ -132,3 +137,5 @@ crons = ["0 18 * * *"]
 #   UPSTAGE_API_KEY        업스테이지(Solar) 키 (AI_PROVIDER = "upstage" 일 때, 부모님 명의 계정)
 #   PLAY_SERVICE_ACCOUNT   Play Developer API 서비스 계정 JSON (없으면 전부 무료로 본다)
 #   TEST_INSTALL_IDS       결제 없이 구독자로 칠 설치 ID들 (쉼표로 구분, 출시 전 삭제)
+#   STATS_TOKEN            /stats 를 열 열쇠 (없으면 /stats 는 404 로 숨는다)
+#   AI_DISABLED            비상 정지 (1 이면 AI 교정·번역을 통째로 막는다)

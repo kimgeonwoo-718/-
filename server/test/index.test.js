@@ -73,6 +73,26 @@ test('health 는 키 없이도 응답한다', async () => {
   assert.equal(res.status, 200);
 });
 
+test('/stats 는 기본으로 숨고, STATS_TOKEN 이 맞을 때만 연다', async () => {
+  const noToken = await handle(new Request('https://spell.test/stats'), env());
+  assert.equal(noToken.status, 404, 'STATS_TOKEN 이 없으면 없는 길인 척');
+
+  const wrong = await handle(new Request('https://spell.test/stats?token=nope'), env({ STATS_TOKEN: 's3cret' }));
+  assert.equal(wrong.status, 404, '틀린 토큰도 404 — 있다는 것조차 안 알림');
+
+  const ok = await handle(new Request('https://spell.test/stats?token=s3cret'), env({ STATS_TOKEN: 's3cret' }));
+  assert.equal(ok.status, 200);
+  assert.ok('days' in (await ok.json()));
+});
+
+test('AI_DISABLED 면 교정을 바로 막는다 (비상 정지)', async () => {
+  const up = upstream();
+  const res = await handle(generate(), env({ AI_DISABLED: '1' }), { fetch: up.fetchImpl, now: () => NOON_KST });
+  assert.equal(res.status, 402);
+  assert.equal((await res.json()).error.message, 'ai_unavailable');
+  assert.equal(up.calls.length, 0, '바깥 모델을 아예 안 부른다');
+});
+
 test('서버에 키가 없으면 503 으로 말한다', async () => {
   const res = await handle(generate(), env({ GEMINI_API_KEY: '' }));
   assert.equal(res.status, 503);
@@ -117,6 +137,27 @@ test('구글이 거절한 요청은 세지 않는다 (예약을 돌려준다)', 
   assert.equal(res.headers.get('x-quota-remaining'), String(DEFAULT_SUB_DAILY_CHARS), '깎이지 않았다');
   // 미리 예약했다가 실패하면 돌려주므로, 쌓인 사용량은 0 이다.
   assert.equal([...e.DB.usage.values()].reduce((a, b) => a + b, 0), 0);
+});
+
+test('바깥이 200 인데 잘린 답이면 502 를 주되 한도는 깎인 채로 둔다', async () => {
+  // 바깥(구글·업스테이지)이 200 을 주면 값은 이미 나갔다. 그 답이 잘렸다·비었다고 우리가 502 로
+  // 바꾸더라도 한도를 돌려주면, 시험 ID 하나로 한도를 0 만 깎으면서 큰 요청을 끝없이 부를 수 있다.
+  const truncated = async (url) => {
+    if (url.endsWith('/v1beta/models?pageSize=200')) {
+      return new Response(JSON.stringify({ models: [{ name: 'models/gemini-3.5-flash-lite' }] }), { status: 200 });
+    }
+    // 200 인데 MAX_TOKENS 로 잘린 답 — 서버는 이걸 502 로 바꾼다.
+    return new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: '안녕' }] }, finishReason: 'MAX_TOKENS' }],
+      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 8000, thoughtsTokenCount: 0 },
+    }), { status: 200 });
+  };
+  const e = env({ SUB_DAILY_CHARS: '1000' });
+  const body = JSON.stringify({ contents: [{ parts: [{ text: '가'.repeat(300) }] }] });
+  const res = await handle(generate({}, body), e, { fetch: truncated, now: () => NOON_KST });
+  assert.equal(res.status, 502, '잘린 답은 502 로 알린다');
+  assert.equal([...e.DB.usage.values()].reduce((a, b) => a + b, 0), 300, '한도는 깎인 채로 둔다 (값이 나갔으므로)');
+  assert.equal(res.headers.get('x-quota-remaining'), '700');
 });
 
 test('동시에 여러 번 와도 한도가 천장이다 (예약을 원자적으로 센다)', async () => {
@@ -504,7 +545,7 @@ test('중계 객체는 키를 붙여 구글로 그대로 넘긴다', async () =>
 // --- 토큰 사용량 ---------------------------------------------------------------
 
 test('성공한 교정의 토큰 수를 날짜별로 쌓고 /stats 로 보여준다', async () => {
-  const e = env();
+  const e = env({ STATS_TOKEN: 's3cret' });
   const up = upstream();
   const deps = { fetch: up.fetchImpl, now: () => NOON_KST };
   await handle(generate(), e, deps);
@@ -512,7 +553,7 @@ test('성공한 교정의 토큰 수를 날짜별로 쌓고 /stats 로 보여준
   // 구글이 거절한 것은 세지 않는다 — 돈도 안 나간다.
   await handle(generate(), e, { fetch: upstream({ status: 503 }).fetchImpl, now: () => NOON_KST });
 
-  const res = await handle(new Request('https://spell.test/stats'), e, deps);
+  const res = await handle(new Request('https://spell.test/stats?token=s3cret'), e, deps);
   assert.equal(res.status, 200);
   const { days } = await res.json();
   assert.equal(days.length, 1);

@@ -165,6 +165,11 @@ export async function handle(request, env, deps = {}) {
   // 날짜별 토큰 사용량. 개인 정보는 없고 합계뿐이라 열어 둔다 — 요금이 얼마나 나가는지
   // 구글 콘솔을 안 열고도 보려고. 숙고 토큰(thoughts)이 따로 찍히니 그게 새는지도 보인다.
   if (request.method === 'GET' && url.pathname === '/stats') {
+    // 로그인 없이 하루 사용량(합계)을 보여 주던 자리다. 개인 정보는 없지만 서비스 규모가 드러나므로
+    // **기본으로 숨긴다.** `STATS_TOKEN` 비밀값을 넣고 `?token=` 이 맞을 때만 연다. 없으면 404 —
+    // 틀렸다고 알려 주면 있다는 것만 들키므로 없는 길인 척한다.
+    const token = env.STATS_TOKEN;
+    if (!token || url.searchParams.get('token') !== token) return fail(404, 'not_found');
     return json(200, { days: await tokenStats(env.DB) });
   }
   // 계정 쪽 길들. 돈이 안 드는 길이라 한도도 안 깎는다.
@@ -299,6 +304,12 @@ async function deleteAccountOf(request, env, now) {
   return json(200, { ok: true });
 }
 
+/** 비밀값·설정이 "켜짐" 인가. 빈 값·0·false·off 는 꺼짐, 그 밖의 값은 켜짐으로 본다. */
+function isOn(value) {
+  const v = String(value ?? '').trim().toLowerCase();
+  return v !== '' && v !== '0' && v !== 'false' && v !== 'off' && v !== 'no';
+}
+
 /** 기기가 붙인 이름. 사용자가 보낸 글자라 길이를 자르고 그대로는 안 믿는다. */
 function labelOf(value) {
   if (typeof value !== 'string') return null;
@@ -347,6 +358,11 @@ async function subscriptionOf(request, env, fetchImpl, now) {
 const MAX_DEVICES = 5;
 
 async function correct(request, env, url, fetchImpl, now) {
+  // 비상 정지. `AI_DISABLED` 비밀값을 넣으면 AI 교정·번역이 통째로 멈춘다 — 값이 샜거나 요금이
+  // 터질 때 배포를 기다리지 않고 한 번에 끈다(비밀값 하나로 즉시, 코드 배포 불필요). 온디바이스
+  // 교정은 서버를 안 거치므로 그대로 돈다. 402 라 앱은 바로 멈추고 다른 모델로 되쏘지 않는다.
+  if (isOn(env.AI_DISABLED)) return fail(402, 'ai_unavailable');
+
   const installId = request.headers.get('x-install-id') ?? '';
   if (!validInstallId(installId)) return fail(400, 'invalid_install_id');
 
@@ -419,25 +435,37 @@ async function correct(request, env, url, fetchImpl, now) {
   }
 
   const startedAt = Date.now();
-  const reply =
-    provider(env) === 'openai'
-      ? await askOpenAi(fetchImpl, env, openAiModel(env), body, translateTo)
-      : provider(env) === 'anthropic'
-        ? await askClaude(fetchImpl, env, claudeModel(env), body, translateTo)
-        : provider(env) === 'upstage'
-          ? await askUpstage(fetchImpl, env, upstageModel(env), body, translateTo)
-          : await askGemini(fetchImpl, env, await resolveGeminiModel(env, fetchImpl, nowMs), body, translateTo);
+  let reply;
+  try {
+    reply =
+      provider(env) === 'openai'
+        ? await askOpenAi(fetchImpl, env, openAiModel(env), body, translateTo)
+        : provider(env) === 'anthropic'
+          ? await askClaude(fetchImpl, env, claudeModel(env), body, translateTo)
+          : provider(env) === 'upstage'
+            ? await askUpstage(fetchImpl, env, upstageModel(env), body, translateTo)
+            : await askGemini(fetchImpl, env, await resolveGeminiModel(env, fetchImpl, nowMs), body, translateTo);
+  } catch (err) {
+    // 바깥에 닿지도 못했으면(통신 끊김 등) 청구가 없다. 예약을 돌려주고 올린다 —
+    // 안 그러면 보내지도 못한 요청에 하루치가 깎인 채로 남는다.
+    await refund(env.DB, charsKey, day, charge);
+    throw err;
+  }
   reply.tookMs = Date.now() - startedAt;
 
   if (reply.status === 200) {
     // 응답이 알려 준 토큰 수를 날짜별로 쌓는다. 성공했을 때만. (keepOriginal 도 200 이라 센다 — 값이 나갔다.)
     await recordTokens(env.DB, day, usageOf(reply.text));
-  } else {
-    // 실패한 요청은 돈이 안 나간다. 예약을 돌려줘야 거절당한 사람이 하루치만 잃지 않는다
-    // — 앱이 예전에 지키던 규칙과 같다.
+  } else if (!reply.billed) {
+    // **바깥이 청구하지 않았을 때만** 예약을 돌려준다. 바깥(업스테이지 등)이 200 을 줬으면
+    // 값은 이미 나갔다 — 우리가 그 답을 잘렸다·비었다로 502 로 바꿔 돌려주더라도 한도는
+    // 깎인 채로 둬야 한다. 안 그러면 시험 ID·구독자 하나가 한도를 0 만 깎으면서 max_tokens
+    // 짜리를 끝없이 부를 수 있다(윈도우 세션 지적 ①). 거절(비청구)일 때만 돌려준다.
     await refund(env.DB, charsKey, day, charge);
   }
-  const remaining = Math.max(0, limit - (reply.status === 200 ? reserved : reserved - charge));
+  // 청구됐으면(성공이든, 바깥 200 인데 우리가 버린 경우든) 한도는 깎인 채로 남는다.
+  const charged = reply.status === 200 || reply.billed === true;
+  const remaining = Math.max(0, limit - (charged ? reserved : reserved - charge));
   return withQuota(asResponse(reply), { remaining }, limit, plan, unit);
 }
 
@@ -545,7 +573,16 @@ async function askGemini(fetchImpl, env, model, body, translateTo = null) {
     return { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) };
   }
   const raw = await relayTo(fetchImpl, env, geminiUrl(model), 'POST', request);
-  return fromGeminiReply(raw.status, raw.text, user, { translateTo });
+  return billedBy(fromGeminiReply(raw.status, raw.text, user, { translateTo }), raw.status);
+}
+
+/**
+ * 바깥이 200 을 줬으면(=값이 나갔으면) 그 표시를 답에 붙인다. 우리가 그 답을 잘렸다·비었다로
+ * 502 로 바꾸더라도 한도는 깎인 채로 둬야 하기 때문이다([correct] 의 환불 판단 참고).
+ */
+function billedBy(reply, rawStatus) {
+  reply.billed = rawStatus === 200;
+  return reply;
 }
 
 /**
@@ -570,7 +607,7 @@ async function askOpenAi(fetchImpl, env, model, body, translateTo = null) {
     raw = await relayTo(fetchImpl, env, OPENAI_URL, 'POST', withoutReasoning(request));
   }
   // 원문을 같이 넘긴다. 교정이 아닌 답(요약, 대답, 지시문 따라가기)을 길이로 걸러낸다.
-  return toGeminiReply(raw.status, raw.text, userTextOf(body), { translateTo });
+  return billedBy(toGeminiReply(raw.status, raw.text, userTextOf(body), { translateTo }), raw.status);
 }
 
 /**
@@ -585,7 +622,7 @@ async function askClaude(fetchImpl, env, model, body, translateTo = null) {
     return { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) };
   }
   const raw = await relayTo(fetchImpl, env, ANTHROPIC_URL, 'POST', request);
-  return fromClaudeReply(raw.status, raw.text, userTextOf(body), { translateTo });
+  return billedBy(fromClaudeReply(raw.status, raw.text, userTextOf(body), { translateTo }), raw.status);
 }
 
 /**
@@ -606,7 +643,7 @@ async function askUpstage(fetchImpl, env, model, body, translateTo = null) {
     return { status: 400, text: JSON.stringify({ error: { code: 400, message: 'invalid_request', status: 'ERROR' } }) };
   }
   const raw = await relayTo(fetchImpl, env, UPSTAGE_URL, 'POST', request);
-  return toGeminiReply(raw.status, raw.text, userTextOf(body), { translateTo });
+  return billedBy(toGeminiReply(raw.status, raw.text, userTextOf(body), { translateTo }), raw.status);
 }
 
 /** 바깥에 보내고 상태와 본문 문자열만 받는다. 본문을 읽어야 토큰 수를 셀 수 있다. */
