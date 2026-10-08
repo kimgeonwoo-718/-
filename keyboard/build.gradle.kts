@@ -58,15 +58,45 @@ val kiwiHome: File = layout.buildDirectory.dir("kiwi").get().asFile
 val kiwiAar: File = File(kiwiHome, "kiwi-android-$kiwiVersion.aar")
 val kiwiModelAssets: File = File(kiwiHome, "assets")
 
-/** 받다 만 파일을 쓰지 않게, 임시 이름으로 받고 다 받은 뒤에 옮긴다. */
-fun download(url: String, target: File) {
-    if (target.exists() && target.length() > 0) return
-    target.parentFile.mkdirs()
-    val partial = File(target.parentFile, target.name + ".part")
-    logger.lifecycle("Kiwi 내려받는 중: $url")
-    uri(url).toURL().openStream().use { input -> partial.outputStream().use { input.copyTo(it) } }
-    check(partial.length() > 0) { "받은 파일이 비었다: $url" }
-    partial.renameTo(target)
+// 받는 두 파일의 SHA-256. **남의 GitHub 릴리스에서 받으므로** 그 릴리스가 바뀌거나 중간에서 바꿔치기되면
+// 네이티브 라이브러리(.so)와 모델이 통째로 우리 앱에 실린다. 해시를 박아 두고, 받은 것이 다르면 빌드를 세운다.
+// kiwiVersion 을 올릴 때는 이 두 값도 같이 바꿔라(새 릴리스를 받아 sha256 을 다시 재서).
+val kiwiAarSha = "006beced1a38fd0b07603e728fb348d71f263d5bb25463b1238e6789b54a281f"
+val kiwiModelSha = "33188ba932bba4717bad5244bbec0ef8b1c9cbb47e26e68394a7976d8d779083"
+
+fun sha256Of(file: File): String {
+    val md = java.security.MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { ins ->
+        val buf = ByteArray(1 shl 16)
+        while (true) {
+            val n = ins.read(buf)
+            if (n < 0) break
+            md.update(buf, 0, n)
+        }
+    }
+    return md.digest().joinToString("") { "%02x".format(it) }
+}
+
+/**
+ * 받다 만 파일을 쓰지 않게 임시 이름으로 받고 다 받은 뒤에 옮긴다. 그리고 **해시를 반드시 확인한다** —
+ * 받아 둔 파일(CI 캐시 포함)이든 새로 받은 것이든, 기대 해시와 다르면 세운다. 변조든 버전 어긋남이든
+ * 조용히 넘어가지 않는다.
+ */
+fun download(url: String, target: File, expectedSha: String) {
+    if (!(target.exists() && target.length() > 0)) {
+        target.parentFile.mkdirs()
+        val partial = File(target.parentFile, target.name + ".part")
+        logger.lifecycle("Kiwi 내려받는 중: $url")
+        uri(url).toURL().openStream().use { input -> partial.outputStream().use { input.copyTo(it) } }
+        check(partial.length() > 0) { "받은 파일이 비었다: $url" }
+        partial.renameTo(target)
+    }
+    val got = sha256Of(target)
+    check(got == expectedSha) {
+        "Kiwi 파일 해시가 다르다 — 변조됐거나 릴리스가 바뀐 것이다. 빌드를 세운다.\n" +
+            "  파일: $target\n  기대: $expectedSha\n  실제: $got\n" +
+            "  (버전을 일부러 올렸다면 build.gradle.kts 의 kiwiAarSha·kiwiModelSha 를 새 값으로 바꿔라.)"
+    }
 }
 
 val fetchKiwi by tasks.registering {
@@ -76,12 +106,12 @@ val fetchKiwi by tasks.registering {
     outputs.upToDateWhen { kiwiAar.exists() && File(kiwiModelAssets, "kiwi/sj.morph").exists() }
     doLast {
         val base = "https://github.com/bab2min/Kiwi/releases/download/$kiwiVersion"
-        download("$base/kiwi-android-$kiwiVersion.aar", kiwiAar)
+        download("$base/kiwi-android-$kiwiVersion.aar", kiwiAar, kiwiAarSha)
 
         val modelDir = File(kiwiModelAssets, "kiwi")
         if (!File(modelDir, "sj.morph").exists()) {
             val tgz = File(kiwiHome, "model.tgz")
-            download("$base/kiwi_model_${kiwiVersion}_base.tgz", tgz)
+            download("$base/kiwi_model_${kiwiVersion}_base.tgz", tgz, kiwiModelSha)
             modelDir.mkdirs()
             // 꾸러미 안은 models/cong/base/* 다. 경로를 납작하게 펴서 넣는다 —
             // 앱은 이 폴더 하나만 통째로 꺼내 쓴다.

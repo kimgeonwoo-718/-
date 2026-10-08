@@ -2,6 +2,8 @@ package com.spellkeyboard.ko
 
 import android.app.Activity
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
@@ -31,6 +33,9 @@ class BillingManager(
 
     private val app = context.applicationContext
 
+    /** 승인 재시도를 띄엄띄엄 돌리는 데 쓴다. */
+    private val retryHandler = Handler(Looper.getMainLooper())
+
     private val client: BillingClient = BillingClient.newBuilder(app)
         .setListener(this)
         .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
@@ -47,6 +52,7 @@ class BillingManager(
     }
 
     fun destroy() {
+        retryHandler.removeCallbacksAndMessages(null)
         runCatching { client.endConnection() }
     }
 
@@ -130,16 +136,30 @@ class BillingManager(
      */
     private fun handle(purchase: Purchase) {
         if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) return
-        if (!purchase.isAcknowledged) {
-            val params = AcknowledgePurchaseParams.newBuilder()
-                .setPurchaseToken(purchase.purchaseToken)
-                .build()
-            client.acknowledgePurchase(params) { /* 실패해도 다음 restore 에서 다시 한다 */ }
-        }
+        if (!purchase.isAcknowledged) acknowledge(purchase.purchaseToken, attempt = 0)
         Prefs.setPurchaseToken(app, purchase.purchaseToken)
         // 로그인해 둔 폰이면 이 구매를 계정에도 붙인다 — PC·아이폰이 같이 쓰게. 이미 붙었으면 안 간다.
         AccountManager.syncPurchase(app)
         onStatus(app.getString(R.string.billing_subscribed))
+    }
+
+    /**
+     * 구매 승인(acknowledge)을 **실패하면 곧바로 몇 번 더** 해 본다.
+     *
+     * 사흘 안에 승인하지 않으면 Play 가 환불한다. 예전에는 한 번 하고 실패해도 "다음 restore 에서
+     * 다시 한다" 고만 적어 뒀는데, 그 restore 는 **앱을 다시 열 때만** 돈다 — 결제 직후 잠깐 끊겨
+     * 실패하고 사용자가 사흘 안에 앱을 안 열면 환불되어 버린다. 그래서 여기서 짧은 간격으로 재시도한다.
+     * 그래도 다 실패하면 다음 앱 실행의 restore 가 마지막 안전망이다.
+     */
+    private fun acknowledge(token: String, attempt: Int) {
+        val params = AcknowledgePurchaseParams.newBuilder().setPurchaseToken(token).build()
+        client.acknowledgePurchase(params) { result ->
+            if (result.responseCode == BillingClient.BillingResponseCode.OK) return@acknowledgePurchase
+            if (attempt >= ACK_MAX_RETRIES) return@acknowledgePurchase
+            // 2초, 4초, 8초… 로 벌린다. 끊긴 연결이 돌아올 틈을 준다.
+            val delayMs = ACK_RETRY_BASE_MS shl attempt
+            retryHandler.postDelayed({ connect { acknowledge(token, attempt + 1) } }, delayMs)
+        }
     }
 
     private fun describe(result: BillingResult): String {
@@ -150,5 +170,9 @@ class BillingManager(
     companion object {
         /** Play Console 에 만들 구독 상품 ID. 여기와 콘솔이 글자 하나까지 같아야 한다. */
         const val PRODUCT_ID = "ai_unlimited_monthly"
+
+        /** 승인 재시도 횟수와 첫 간격(ms). 2초 → 4초 → 8초. 사흘 환불 전에 넉넉히 붙잡는다. */
+        private const val ACK_MAX_RETRIES = 3
+        private const val ACK_RETRY_BASE_MS = 2000L
     }
 }

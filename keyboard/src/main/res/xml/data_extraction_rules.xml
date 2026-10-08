@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  설치 ID·구매 토큰·기기 토큰이 든 prefs(spell_keyboard.xml)를 **다른 곳으로 복사되지 않게** 막는다.
+
+  구매 토큰·기기 토큰은 그 자체가 구독 증명이라, 새 폰에 복사되면 그 폰이 남의 구독을 그대로 쓴다.
+  allowBackup="false" 는 클라우드 백업만 막고, 안드로이드 12+ 의 **기기 간 이전(device transfer)** 은
+  따로라 이 규칙으로 막아야 한다. 둘 다에서 이 prefs 를 뺀다.
+
+  (API 31 미만은 이 파일을 안 보고 allowBackup="false" 로 백업이 꺼진다. fullBackupContent 는 안 쓴다.)
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="spell_keyboard.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="spell_keyboard.xml" />
+    </device-transfer>
+</data-extraction-rules>
