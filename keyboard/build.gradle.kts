@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -65,7 +67,7 @@ val kiwiAarSha = "006beced1a38fd0b07603e728fb348d71f263d5bb25463b1238e6789b54a28
 val kiwiModelSha = "33188ba932bba4717bad5244bbec0ef8b1c9cbb47e26e68394a7976d8d779083"
 
 fun sha256Of(file: File): String {
-    val md = java.security.MessageDigest.getInstance("SHA-256")
+    val md = MessageDigest.getInstance("SHA-256")
     file.inputStream().use { ins ->
         val buf = ByteArray(1 shl 16)
         while (true) {
@@ -74,7 +76,7 @@ fun sha256Of(file: File): String {
             md.update(buf, 0, n)
         }
     }
-    return md.digest().joinToString("") { "%02x".format(it) }
+    return md.digest().joinToString("") { "%02x".format(it.toInt() and 0xFF) }
 }
 
 /**
