@@ -357,6 +357,26 @@ async function subscriptionOf(request, env, fetchImpl, now) {
 /** 계정 하나에 붙일 수 있는 기기 수. 로그인 하나로 여럿이 나눠 쓰는 것을 막는다. */
 const MAX_DEVICES = 5;
 
+/**
+ * 분당 요청 상한. 분 버킷으로 센다 — usage 표를 재사용하되 id 앞가지(`rl:`)로 글자 한도(`chars:`)와
+ * 안 섞인다. sweep 이 이틀 지난 버킷을 치운다.
+ *
+ * - IP: 가짜 구매 토큰을 매번 바꿔 Play·D1 을 두드리는 것을 막는다(⑤). CGNAT 를 감안해 넉넉히.
+ * - 구독자: 한도가 남아 있어도 1분에 몰아치지 못하게 하는 버스트 천장(④).
+ */
+const IP_REQUESTS_PER_MIN = 60;
+const SUB_REQUESTS_PER_MIN = 20;
+
+/** 분 단위 버킷 문자열 'YYYY-MM-DDTHH:MM'. */
+function minuteBucket(nowMs) {
+  return new Date(nowMs).toISOString().slice(0, 16);
+}
+
+/** 이 분 버킷에서 [id] 를 1 올리고 올린 뒤의 값을 돌려준다. 넘으면 호출한 쪽이 429 로 막는다. */
+async function hitRate(db, id, nowMs) {
+  return reserve(db, 'rl:' + id, minuteBucket(nowMs), 1);
+}
+
 async function correct(request, env, url, fetchImpl, now) {
   // 비상 정지. `AI_DISABLED` 비밀값을 넣으면 AI 교정·번역이 통째로 멈춘다 — 값이 샜거나 요금이
   // 터질 때 배포를 기다리지 않고 한 번에 끈다(비밀값 하나로 즉시, 코드 배포 불필요). 온디바이스
@@ -381,6 +401,15 @@ async function correct(request, env, url, fetchImpl, now) {
 
   const nowMs = now();
   const day = kstDay(nowMs);
+
+  // **IP 당 분당 상한.** 처음 보는 구매 토큰마다 Play 확인과 D1 쓰기가 생긴다. 구매 토큰을 매번
+  // 바꿔 보내면 로그인 없이도 Play 확인 한도를 바닥낼 수 있다(⑤). Play 를 두드리기 **전에** 막는다.
+  // cf-connecting-ip 는 Cloudflare 가 끝단에서 박으므로 앱이 위조하지 못한다.
+  const ip = request.headers.get('cf-connecting-ip') ?? '';
+  if (ip && (await hitRate(env.DB, 'ip:' + ip, nowMs)) > IP_REQUESTS_PER_MIN) {
+    return fail(429, 'rate_limited');
+  }
+
   // 구매 토큰은 **스토어가 있는 기기**(안드로이드)만 들고 있다. 윈도우에는 스토어가
   // 아예 없고 아이폰은 스토어가 달라서, 그쪽은 서버가 발급한 기기 토큰을 들고 온다.
   // 기기 토큰은 계정을 거쳐 **같은 구매 토큰**으로 풀리므로, 어디서 쓰든 한도는 하나다.
@@ -420,7 +449,15 @@ async function correct(request, env, url, fetchImpl, now) {
   // 구매 토큰은 그 자체가 구독 증명이라 새면 남이 쓸 수 있다.
   //
   // 시험용 설치 ID([isTestSubscriber])는 구매 토큰이 없다. 그때는 설치 ID 로 센다.
-  const charsKey = 'chars:' + (purchaseToken ? await sha256Hex(purchaseToken) : installId);
+  const subId = purchaseToken ? await sha256Hex(purchaseToken) : installId;
+
+  // **구독자 하나가 분당 너무 많이 보내는 것도 막는다(④).** 글자 한도는 하루치 천장이고,
+  // 이건 버스트 천장이다 — 한도가 아직 남아 있어도 1분에 수십 번씩 몰아치지 못하게 한다.
+  if ((await hitRate(env.DB, 'sub:' + subId, nowMs)) > SUB_REQUESTS_PER_MIN) {
+    return withQuota(fail(429, 'rate_limited'), { remaining: Math.max(0, limit) }, limit, plan, unit);
+  }
+
+  const charsKey = 'chars:' + subId;
   const charge = chargeFor(safeUserLength(body));
 
   // 한도를 **미리 원자적으로 예약한다.** 읽고 나서 더하면(옛 방식) 동시에 들어온 요청이 전부

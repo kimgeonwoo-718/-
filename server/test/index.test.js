@@ -68,6 +68,13 @@ function generate(headers = {}, body = BODY) {
   });
 }
 
+/** 쌓인 **글자** 사용량만 더한다. usage 표에는 분당 카운터(rl:...)도 같이 있어 전부 더하면 안 된다. */
+function charsUsed(db) {
+  let sum = 0;
+  for (const [k, v] of db.usage) if (k.startsWith('chars:')) sum += v;
+  return sum;
+}
+
 test('health 는 키 없이도 응답한다', async () => {
   const res = await handle(new Request('https://spell.test/health'), { DB: fakeDb() });
   assert.equal(res.status, 200);
@@ -135,8 +142,8 @@ test('구글이 거절한 요청은 세지 않는다 (예약을 돌려준다)', 
   const res = await handle(generate(), e, { fetch: upstream({ status: 503 }).fetchImpl, now: () => NOON_KST });
   assert.equal(res.status, 503, '상태를 그대로 전한다');
   assert.equal(res.headers.get('x-quota-remaining'), String(DEFAULT_SUB_DAILY_CHARS), '깎이지 않았다');
-  // 미리 예약했다가 실패하면 돌려주므로, 쌓인 사용량은 0 이다.
-  assert.equal([...e.DB.usage.values()].reduce((a, b) => a + b, 0), 0);
+  // 미리 예약했다가 실패하면 돌려주므로, 쌓인 글자 사용량은 0 이다. (rl: 분당 카운터는 뺀다.)
+  assert.equal(charsUsed(e.DB), 0);
 });
 
 test('바깥이 200 인데 잘린 답이면 502 를 주되 한도는 깎인 채로 둔다', async () => {
@@ -156,7 +163,7 @@ test('바깥이 200 인데 잘린 답이면 502 를 주되 한도는 깎인 채�
   const body = JSON.stringify({ contents: [{ parts: [{ text: '가'.repeat(300) }] }] });
   const res = await handle(generate({}, body), e, { fetch: truncated, now: () => NOON_KST });
   assert.equal(res.status, 502, '잘린 답은 502 로 알린다');
-  assert.equal([...e.DB.usage.values()].reduce((a, b) => a + b, 0), 300, '한도는 깎인 채로 둔다 (값이 나갔으므로)');
+  assert.equal(charsUsed(e.DB), 300, '한도는 깎인 채로 둔다 (값이 나갔으므로)');
   assert.equal(res.headers.get('x-quota-remaining'), '700');
 });
 
@@ -172,7 +179,30 @@ test('동시에 여러 번 와도 한도가 천장이다 (예약을 원자적으
   const blocked = results.filter((r) => r.status === 402).length;
   assert.equal(ok, 1, '600자 한 번이면 1000자 안, 두 번이면 넘는다');
   assert.equal(blocked, 4);
-  assert.ok([...e.DB.usage.values()].reduce((a, b) => a + b, 0) <= 1000, '한도를 넘겨 청구되지 않는다');
+  assert.ok(charsUsed(e.DB) <= 1000, '한도를 넘겨 청구되지 않는다');
+});
+
+test('구독자는 분당 횟수 상한이 있다 (버스트 차단, ④)', async () => {
+  const e = env({ SUB_DAILY_CHARS: '100000' });
+  const up = upstream({ echo: true });
+  const body = JSON.stringify({ contents: [{ parts: [{ text: '가'.repeat(100) }] }] });
+  const deps = { fetch: up.fetchImpl, now: () => NOON_KST };
+  const results = [];
+  for (let i = 0; i < 22; i++) results.push(await handle(generate({}, body), e, deps));
+  assert.equal(results[19].status, 200, '20번째까지는 통과');
+  assert.equal(results[20].status, 429, '21번째부터 분당 상한에 걸린다');
+  assert.equal((await results[20].json()).error.message, 'rate_limited');
+});
+
+test('IP 당 분당 상한이 있다 (가짜 결제 남발 차단, ⑤)', async () => {
+  // 무료(비구독) 요청으로도 IP 카운터가 오른다 — Play 확인 전에 막기 때문. 60번까지는 402(무료),
+  // 61번째부터 429. 가짜 구매 토큰을 매번 바꿔 Play 를 두드리는 것을 이 천장이 막는다.
+  const e = env({ TEST_INSTALL_IDS: '' });
+  const deps = { fetch: upstream().fetchImpl, now: () => NOON_KST };
+  const results = [];
+  for (let i = 0; i < 62; i++) results.push(await handle(generate(), e, deps));
+  assert.equal(results[59].status, 402, '60번째까지는 무료 거절(402)');
+  assert.equal(results[60].status, 429, '61번째부터 IP 분당 상한');
 });
 
 test('자정을 넘기면 되살아난다', async () => {
