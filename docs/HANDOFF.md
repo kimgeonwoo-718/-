@@ -96,7 +96,12 @@ APK: https://github.com/kimgeonwoo-718/-/releases/tag/apk-latest (푸시할 때�
 2. **⑩ 배포 환경.** deploy·reset 일감에 `environment: production`. 각 가지는 **자기 가지의 옛 워크플로**대로 돌아서
    워크플로 파일만으로는 윈도우 가지(서버 코드 50 커밋 뒤처짐)의 배포를 못 막는다. **사용자가 깃허브 설정에서**
    production 환경의 배포 가지를 앱 가지로 묶고 CLOUDFLARE_API_TOKEN·CLOUDFLARE_ACCOUNT_ID 를 환경 비밀값으로 옮겨야 끝난다.
-   (아직이면 저장소 비밀값으로 그대로 배포된다 — 깨지지는 않는다.)
+   **→ 2026-10-08 사용자가 끝냈다.** 배포 가지 규칙 = `claude/auto-spell-spacing-checker-r4ymq5`, 저장소 쪽 두 비밀값은 지움.
+   Cloudflare 토큰은 **새로 만들었다**(옛 것은 다시 볼 수 없어서): "Edit Cloudflare Workers" 템플릿 + **Account → D1 → Edit**
+   추가, Zone Resources 는 **All zones**(우리는 workers.dev 라 도메인이 없다). 손으로 돌린 배포(workflow_dispatch)가
+   D1·배포·비밀값 넣기·구독자 확인까지 전부 통과 — 열쇠가 production 환경에서 온다. **토큰을 다시 만들 일이 있으면 D1 Edit 을
+   빼먹지 마라** — 빠지면 "D1 데이터베이스 준비" 에서 깨진다. 앞으로 안드로이드 작업이 다른 가지에서 되면, 그 가지는 이 기본
+   가지에 합쳐져야 배포된다(그게 맞는 동작이다).
 3. **⑦ 결제 검사**(`play.js` interpretSubscription, `index.js` isSubscriber). 서비스 계정 키가 들어오는 순간부터 동작:
    - 해지 예약(CANCELED)은 **만료 시각 전까지** 구독자(예전엔 해지 버튼 누르는 순간 막았다). 기억도 만료 시각까지만.
    - `lineItems` 의 상품 ID 가 `PLAY_PRODUCT_ID`(ai_unlimited_monthly) 여야 한다.
