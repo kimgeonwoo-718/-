@@ -66,7 +66,9 @@ jobs:
           fi
           # **쓰기로 한 쪽의 키가 있어야 한다.** 없이 배포하면 서버가 503 을 내고 AI 가
           # 통째로 죽는데, 그때는 "왜 안 되지" 를 실기기에서 알게 된다. 여기서 막는다.
-          want=$(grep -o 'AI_PROVIDER = "[^"]*"' wrangler.toml | cut -d'"' -f2)
+          # 이 단계는 저장소 맨 위에서 돈다 — server/ 를 붙여야 읽힌다. 예전엔 못 읽어 늘 "(안 적힘)" 이었고,
+          # 그러면 아래 검사가 "구글 키가 있어야 한다" 로 떨어져, 안 쓰는 구글 키를 지우는 순간 배포가 막혔다.
+          want=$(grep -o 'AI_PROVIDER = "[^"]*"' server/wrangler.toml | cut -d'"' -f2)
           echo "wrangler.toml 이 쓰기로 한 쪽: ${want:-(안 적힘)}"
           if [ "$want" = "openai" ] && [ -z "${OPENAI_API_KEY:-}" ]; then
             echo "::error title=OPENAI_API_KEY 가 없다::AI_PROVIDER 가 openai 인데 키가 없다. 배포하면 서버가 503 을 낸다. 비밀값을 넣거나 AI_PROVIDER 를 gemini 로 되돌려라."
@@ -93,7 +95,14 @@ jobs:
         working-directory: server
         run: |
           set -euo pipefail
-          id=$(npx --yes wrangler@3.114.17 d1 list --json | jq -r '.[] | select(.name=="spell-keyboard") | (.uuid // .id)' | head -n 1)
+          # 토큰이 거절되면 wrangler 가 JSON 대신 오류 글을 내서 jq 가 알아보기 힘든 말로 죽는다. 먼저 받아 보고,
+          # 실패하면 무엇을 고칠지 바로 적는다(2026-10-08 에 토큰이 지워져 이렇게 막혔다).
+          if ! list=$(npx --yes wrangler@3.114.17 d1 list --json 2>&1); then
+            echo "$list" | tail -n 5
+            echo "::error title=Cloudflare 토큰이 거절됐다::production 환경의 CLOUDFLARE_API_TOKEN 이 지워졌거나 권한이 모자라다. 클라우드플레어 → 내 프로필 → API 토큰에서 'Edit Cloudflare Workers' 템플릿 + Account·D1·Edit, Zone 은 All zones 로 새로 만들어 production 환경 비밀값에 넣어라."
+            exit 1
+          fi
+          id=$(printf '%s' "$list" | jq -r '.[] | select(.name=="spell-keyboard") | (.uuid // .id)' | head -n 1)
           if [ -z "$id" ]; then
             echo "D1 이 없어 새로 만든다"
             id=$(npx --yes wrangler@3.114.17 d1 create spell-keyboard 2>&1 | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -n 1)
