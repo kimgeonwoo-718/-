@@ -25,6 +25,8 @@ jobs:
     name: 오늘 사용량 지우기
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    # Cloudflare 열쇠가 production 환경으로 옮겨 가므로 이 일감도 그 환경에서 돈다(deploy-worker.yml 참고).
+    environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

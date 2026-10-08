@@ -32,6 +32,16 @@ jobs:
     name: Cloudflare 에 배포
     needs: test
     runs-on: ubuntu-latest
+    # **배포 열쇠는 production 환경에만 있다**(윈도우 점검 ⑩).
+    #
+    # 예전에는 claude/** 어느 가지든 server/ 가 바뀌면 그 가지의 서버를 진짜로 올렸다. 윈도우 가지에는
+    # 옛 서버 코드가 남아 있어서, 거기서 server/ 가 한 번만 밀려도 오늘 고친 것이 통째로 되돌아간다.
+    # 워크플로 파일로는 못 막는다 — 각 가지는 **자기 가지에 있는 옛 워크플로**대로 돈다.
+    #
+    # 그래서 깃허브 설정에서 막는다: Settings → Environments → production 에 "배포 가지 = 앱 가지" 를 걸고,
+    # CLOUDFLARE_API_TOKEN·CLOUDFLARE_ACCOUNT_ID 를 저장소 비밀값에서 이 환경 비밀값으로 옮긴다. 그러면
+    # 이 줄이 없는 옛 워크플로(다른 가지)는 열쇠를 못 받아 아래 "비밀값 확인" 에서 배포를 건너뛴다.
+    environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
