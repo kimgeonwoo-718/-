@@ -13,6 +13,17 @@ class ProductDetails {
     class SubscriptionOfferDetails { val offerToken: String = "" }
 }
 
+/** Billing 8 부터 상품 정보 콜백이 주는 것. 받은 것과 못 받은 것이 나뉜다. */
+class QueryProductDetailsResult {
+    val productDetailsList: MutableList<ProductDetails> = mutableListOf()
+    val unfetchedProductList: MutableList<UnfetchedProduct> = mutableListOf()
+}
+
+class UnfetchedProduct {
+    val productId: String = ""
+    val statusCode: Int = 0
+}
+
 class Purchase {
     val purchaseState: Int = 0
     val purchaseToken: String = ""
@@ -107,7 +118,8 @@ class BillingClient {
     fun startConnection(listener: BillingClientStateListener) {}
     fun endConnection() {}
     fun queryPurchasesAsync(params: QueryPurchasesParams, listener: (BillingResult, MutableList<Purchase>) -> Unit) {}
-    fun queryProductDetailsAsync(params: QueryProductDetailsParams, listener: (BillingResult, MutableList<ProductDetails>) -> Unit) {}
+    // Billing 8: 목록 대신 QueryProductDetailsResult (7 까지는 MutableList<ProductDetails> 였다).
+    fun queryProductDetailsAsync(params: QueryProductDetailsParams, listener: (BillingResult, QueryProductDetailsResult) -> Unit) {}
     fun launchBillingFlow(activity: Activity, params: BillingFlowParams): BillingResult = BillingResult()
     fun acknowledgePurchase(params: AcknowledgePurchaseParams, listener: (BillingResult) -> Unit) {}
 }

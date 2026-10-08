@@ -99,8 +99,9 @@ class BillingManager(
             .build()
         val params = QueryProductDetailsParams.newBuilder().setProductList(listOf(product)).build()
 
-        client.queryProductDetailsAsync(params) { result, details ->
-            val detail = details.firstOrNull()
+        // Billing 8 부터 콜백이 목록 대신 QueryProductDetailsResult 를 준다(받은 것·못 받은 것이 나뉘어 온다).
+        client.queryProductDetailsAsync(params) { result, queried ->
+            val detail = queried.productDetailsList.firstOrNull()
             val offerToken = detail?.subscriptionOfferDetails?.firstOrNull()?.offerToken
             if (result.responseCode != BillingClient.BillingResponseCode.OK || detail == null || offerToken == null) {
                 onStatus(app.getString(R.string.billing_product_missing))

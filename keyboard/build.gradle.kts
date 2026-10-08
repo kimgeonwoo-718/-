@@ -229,7 +229,11 @@ dependencies {
 
     // Google Play 구독. 결제창을 띄우고 구매 토큰을 받는 것까지만 한다 —
     // "구독자인가" 는 서버가 그 토큰을 Play 에 물어 판단한다.
-    implementation("com.android.billingclient:billing-ktx:7.1.1")
+    //
+    // **8 이상이어야 Play 에 올라간다.** 2026-08-31 부터 새 앱·업데이트는 Billing 8 이상만 받는다(연장해도
+    // 11-01). 7.1.1 로는 콘솔이 업로드를 거절한다. 9 가 최신이지만 더 새 코틀린으로 빌드돼 있을 수 있어서
+    // (우리는 2.0.21) 요구를 채우는 8.0.0 으로 간다. 8 에서 바뀐 것은 상품 정보 콜백 하나다(BillingManager.launch).
+    implementation("com.android.billingclient:billing-ktx:8.0.0")
 
     // 구글 로그인. 계정 고르는 창을 띄워 **ID 토큰** 하나를 받는 데까지만 쓴다 —
     // 그 토큰이 진짜인지는 서버가 구글 공개키로 확인한다(docs/ACCOUNTS.md).
