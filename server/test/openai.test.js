@@ -396,3 +396,30 @@ test('translatePromptV2: 일본어·중국어 요청에 영어 보기만 있으�
   assert.ok(translatePromptV2('ja', { shots: 0 }).indexOf('보기') === -1);
   assert.ok(translatePromptV2('ja', { shots: 3 }).split('\n- ').length < translatePromptV2('ja').split('\n- ').length);
 });
+
+test('translatePromptV3: 한글 금지와 풀이·보기 스무 개가 들어 있다', async () => {
+  const { translatePromptV3, translatePromptFor } = await import('../src/openai.js');
+  for (const code of ['en', 'ja', 'zh']) {
+    const prompt = translatePromptV3(code);
+    assert.match(prompt, /한글을 한 글자도 남기지 마라/);
+    assert.match(prompt, /글자대로 읽으면 틀리는 한국어/);
+    assert.equal(prompt.split('보기')[1].split('\n- ').length - 1, 20, `${code}: 보기는 스무 개`);
+    assert.equal(translatePromptFor(code, 'v3'), prompt);
+  }
+  assert.match(translatePromptV3('ja'), /カカオトーク/);
+  // 2판은 그대로다 — 겨루기에서 견주는 기준이라 몰래 바뀌면 안 된다.
+  assert.ok(!translatePromptV2('ja').includes('글자대로 읽으면 틀리는'));
+  assert.ok(translatePromptV3('ja', { shots: 5 }).split('보기')[1].split('\n- ').length - 1 === 5);
+});
+
+test('translatePromptV3: 보기와 풀이가 시험지 B(부풀지 않은 값을 재는 곳)의 문장을 담지 않는다', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { translatePromptV3 } = await import('../src/openai.js');
+  const sheetB = readFileSync(new URL('../bench/translate-cases-b.tsv', import.meta.url), 'utf8')
+    .split('\n').slice(1).filter(Boolean).map((line) => line.split('\t')[2]);
+  assert.equal(sheetB.length, 60);
+  for (const code of ['en', 'ja', 'zh']) {
+    const prompt = translatePromptV3(code);
+    for (const ko of sheetB) assert.ok(!prompt.includes(ko), `시험지 B 문장이 지시문에 있다: ${ko}`);
+  }
+});

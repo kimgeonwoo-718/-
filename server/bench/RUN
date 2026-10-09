@@ -1,1 +1,1 @@
-translate solar-pro4 solar-pro3 gpt-5-mini gpt-4.1-mini --prompt=v2-shots5 --maxWon=700 --show
+translate solar-pro4 gpt-4.1-mini --prompt=v3 --sheet=ab --maxWon=800 --show

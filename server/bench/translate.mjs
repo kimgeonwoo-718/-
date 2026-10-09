@@ -1,5 +1,5 @@
 /**
- * **번역 겨루기.** 같은 시험지(`translate-cases.tsv`, 한국어 121문장 × 영·일·중)를 여러 모델·지시문에 돌려 점수를 낸다.
+ * **번역 겨루기.** 같은 시험지(`translate-cases.tsv` 한국어 121문장, `--sheet=b` 는 `translate-cases-b.tsv` 60문장; 각각 × 영·일·중)를 여러 모델·지시문에 돌려 점수를 낸다.
  *
  * ## 왜 필요한가
  *
@@ -26,7 +26,7 @@
  * 넘으면 그 자리에서 멈춘다.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { translatePrompt, translatePromptV2, TRANSLATE_TARGETS } from '../src/openai.js';
+import { translatePrompt, translatePromptV2, translatePromptV3, TRANSLATE_TARGETS } from '../src/openai.js';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback = '') => {
@@ -49,17 +49,23 @@ if (!models.length) {
   process.exit(2);
 }
 
-/** `v1`, `v2`, `v2-shots5`(보기 5개만), `v2-shots0`(보기 없음), 또는 지시문 파일 경로. */
+/** `v1`, `v2`, `v3`, `v2-shots5`(보기 5개만), `v2-shots0`(보기 없음), 또는 지시문 파일 경로. */
 const promptFor = (name, lang) => {
   if (name === 'v1') return translatePrompt(lang);
-  const m = /^v2(?:-shots(\d+))?$/.exec(name);
-  if (m) return translatePromptV2(lang, m[1] == null ? {} : { shots: Number(m[1]) });
+  const m = /^(v2|v3)(?:-shots(\d+))?$/.exec(name);
+  if (m) {
+    const options = m[2] == null ? {} : { shots: Number(m[2]) };
+    return m[1] === 'v3' ? translatePromptV3(lang, options) : translatePromptV2(lang, options);
+  }
   return readFileSync(name, 'utf8');
 };
 
 // --- 시험지 ----------------------------------------------------------------------------------------------
-const cases = readFileSync(new URL('./translate-cases.tsv', import.meta.url), 'utf8')
-  .split('\n').slice(1).filter(Boolean)
+// `--sheet=a`(기본, 121문장) | `b`(60문장 — 지시문·보기에 없는 문장이다. 지시문을 시험지 A 의 실수로 고쳤으니 부풀지 않은 값은 여기서 본다) | `ab`.
+const SHEETS = { a: 'translate-cases.tsv', b: 'translate-cases-b.tsv' };
+const sheetKeys = [...flag('sheet', 'a')].filter((k) => SHEETS[k]);
+const cases = sheetKeys
+  .flatMap((k) => readFileSync(new URL(`./${SHEETS[k]}`, import.meta.url), 'utf8').split('\n').slice(1).filter(Boolean))
   .map((line) => {
     const [id, cat, ko, en, ja, zh] = line.split('\t');
     return { id, cat, ko, ref: { en, ja, zh } };
@@ -314,7 +320,7 @@ for (const spec of models) {
     const mean = LANGS.reduce((s, l) => s + (per[l].n ? per[l].chrf / per[l].n : 0), 0) / LANGS.length;
     console.log(`   평균 chrF ${mean.toFixed(1)}   문장당 ${(won == null ? 0 : (won / Math.max(1, cases.length * LANGS.length))).toFixed(3)}원\n`);
     all.push({ model: spec, prompt: promptName, rows });
-    summary.push(`${spec.padEnd(22)} ${promptName.padEnd(10)} ` + LANGS.map((l) => `${l} ${(per[l].n ? per[l].chrf / per[l].n : 0).toFixed(1)}${per[l].script ? `(글자틀림${per[l].script})` : ''}${per[l].err ? `(실패${per[l].err})` : ''}`).join('  ') + `   평균 ${mean.toFixed(1)}   ${(won == null ? 0 : won / Math.max(1, cases.length * LANGS.length)).toFixed(3)}원`);
+    summary.push(`${spec.padEnd(22)} ${promptName.padEnd(10)} ` + LANGS.map((l) => `${l} ${(per[l].n ? per[l].chrf / per[l].n : 0).toFixed(1)}${per[l].script ? `(글자틀림${per[l].script})` : ''}${per[l].hangul ? `(한글남음${per[l].hangul})` : ''}${per[l].err ? `(실패${per[l].err})` : ''}`).join('  ') + `   평균 ${mean.toFixed(1)}   ${(won == null ? 0 : won / Math.max(1, cases.length * LANGS.length)).toFixed(3)}원`);
 
     if (SHOW) {
       for (const r of rows) {
