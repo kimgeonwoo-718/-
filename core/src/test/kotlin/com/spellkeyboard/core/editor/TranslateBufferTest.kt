@@ -97,4 +97,73 @@ class TranslateBufferTest {
         if (jong != 0) out += com.spellkeyboard.core.hangul.Hangul.JONGSEONG[jong]
         return out
     }
+
+    @Test
+    fun `커서를 옮기면 글자가 커서 자리에 들어간다`() {
+        val buffer = TranslateBuffer()
+        buffer.commitText("안녕세요")
+        assertEquals(4, buffer.cursorIndex)
+        buffer.moveCursor(-2)
+        assertEquals(2, buffer.cursorIndex)
+        buffer.commitText("하")
+        assertEquals("안녕하세요", buffer.text)
+        assertEquals(3, buffer.cursorIndex)
+        assertEquals("안녕하", buffer.textBeforeCursor(10))
+        assertEquals("세요", buffer.textAfterCursor(10))
+    }
+
+    @Test
+    fun `커서 앞을 지우면 커서 뒤는 그대로다`() {
+        val buffer = TranslateBuffer()
+        buffer.commitText("안녕하세요")
+        buffer.setCursor(3)
+        buffer.deleteBefore(1)
+        assertEquals("안녕세요", buffer.text)
+        assertEquals(2, buffer.cursorIndex)
+    }
+
+    @Test
+    fun `한글 조합이 커서 자리에서 돈다`() {
+        val buffer = TranslateBuffer()
+        val session = TypingSession()
+        // '안녕' 을 쓰고 '하' 를 앞에 끼운다: 커서를 맨 앞으로 옮기고 ㅎ ㅏ
+        "안녕".forEach { syllable -> jamoOf(syllable).forEach { session.pressJamo(buffer, it) } }
+        session.commitPending(buffer)
+        buffer.setCursor(0)
+        session.reset()
+        jamoOf('하').forEach { session.pressJamo(buffer, it) }
+        assertEquals("하안녕", buffer.text)
+        assertEquals(1, buffer.cursorIndex)
+    }
+
+    @Test
+    fun `커서만 옮기면 내용이 바뀌었다고 알리지 않는다`() {
+        val buffer = TranslateBuffer()
+        buffer.commitText("가나다")
+        var changes = 0
+        var carets = 0
+        buffer.onChange = { changes++ }
+        buffer.onCaret = { carets++ }
+        buffer.moveCursor(-1)
+        assertEquals(0, changes)
+        assertEquals(1, carets)
+        // 같은 자리로는 알리지 않는다
+        buffer.setCursor(2)
+        assertEquals(1, carets)
+        // 범위를 벗어나면 끝으로 맞춘다
+        buffer.moveCursor(100)
+        assertEquals(3, buffer.cursorIndex)
+        buffer.moveCursor(-100)
+        assertEquals(0, buffer.cursorIndex)
+    }
+
+    @Test
+    fun `커서를 옮기면 조합이 확정된다`() {
+        val buffer = TranslateBuffer()
+        buffer.setComposingText("ㅎ")
+        buffer.moveCursor(-1)
+        // 조합이 풀렸으니 새 조합은 커서 자리에서 새로 시작한다
+        buffer.setComposingText("가")
+        assertEquals("가ㅎ", buffer.text)
+    }
 }

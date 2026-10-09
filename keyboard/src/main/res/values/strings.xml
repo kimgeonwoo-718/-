@@ -33,6 +33,9 @@
     <string name="translate_hint">한국어를 쓰면 %1$s로 번역돼 들어갑니다</string>
     <string name="translate_downloading">%1$s 언어팩 내려받는 중… (처음 한 번, 약 30MB)</string>
     <string name="translate_download_failed">%1$s 언어팩을 받지 못했습니다. 인터넷을 확인해 주십시오</string>
+    <string name="translate_all">전체번역</string>
+    <string name="translate_undo">되돌리기</string>
+    <string name="translate_preview_empty">번역 결과가 여기에 보입니다</string>
     <string name="translate_failed">번역하지 못했습니다</string>
     <string name="translate_blocks_ai">번역 중에는 AI 교정을 쓸 수 없습니다</string>
     <string name="translate_ai_failed">자연스러운 번역 실패: %1$s</string>
@@ -195,7 +198,7 @@
     <string name="guide_live_name">실시간 교정</string>
     <string name="guide_live_desc">치는 동안 어절이 끝날 때마다 바로 고칩니다. 이렇게 파랗게 차 있으면 켜진 것입니다. 비밀번호·이메일 칸에서는 알아서 꺼집니다.</string>
     <string name="guide_translate_name">번역</string>
-    <string name="guide_translate_desc">짧게 누르면 번역 입력줄이 열립니다. 한국어로 치면 앱에는 번역돼 들어갑니다. 꾹 누르면 써 놓은 글 전체를 AI 가 옮깁니다(프리미엄).</string>
+    <string name="guide_translate_desc">짧게 누르면 번역 패널이 열립니다. 한국어로 치면 앱에는 번역돼 들어가고, 패널의 전체번역을 누르면 써 놓은 글 전체를 옮깁니다. 꾹 눌러도 전체번역입니다. 구독자는 AI 가, 아니면 기기 번역이 옮깁니다.</string>
     <string name="guide_settings_name">설정</string>
     <string name="guide_settings_desc">키보드 맞춤설정을 엽니다. 자판 종류(쿼티·천지인), 밝기, 배경 사진을 여기서 바꿉니다.</string>
 

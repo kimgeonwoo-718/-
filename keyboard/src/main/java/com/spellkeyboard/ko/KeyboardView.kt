@@ -80,11 +80,17 @@ class KeyboardView @JvmOverloads constructor(
         /** 번역 입력줄 열기/닫기. */
         fun onToggleTranslate()
 
-        /** 번역 입력줄의 언어 칩을 눌러 다음 언어로. */
-        fun onCycleTranslateTarget()
+        /** 번역 패널의 언어 칩을 눌렀다. [index] 는 [setTranslateMode] 에 준 언어 목록의 번호. */
+        fun onSelectTranslateTarget(index: Int)
+
+        /** 번역 패널의 '전체번역'(또는 '되돌리기')을 눌렀다. 번역 동그라미를 길게 눌러도 같다. */
+        fun onTranslateAll()
 
         /** 번역 동그라미를 길게 눌렀다. 입력란에 이미 쓴 글을 통째로 옮긴다. */
         fun onTranslateField()
+
+        /** 번역 입력줄의 글자를 눌러 커서를 [index] 로 옮기려 한다. */
+        fun onTranslateCaret(index: Int)
 
         /** 자판 위 '교정' 버튼. 실시간 온디바이스 교정을 끄고 켠다. */
 
@@ -154,8 +160,14 @@ class KeyboardView @JvmOverloads constructor(
     private val translateButton: TextView
     private var translateOn = false
     private val translatePanel: LinearLayout
-    private val translateSource: TextView
-    private val translateTarget: TextView
+    private val translateSource: TranslateSourceView
+    private val translatePreview: TextView
+    private val translateChips = ArrayList<TextView>()
+    private val translateAllButton: TextView
+    private val translateClose: TextView
+    private var translateSelected = 0
+    private var translateUndo = false
+    private var translateBusy = false
     private val settingsButton: TextView
 
     /** 도구 줄을 접는 손잡이. 접혀 있어도 이것만은 남아 있어야 다시 펼 수 있다. */
@@ -290,32 +302,51 @@ class KeyboardView @JvmOverloads constructor(
         addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOLBAR_HEIGHT_DP)))
         applyToolbarCollapsed()
 
-        // 번역 입력줄. 지보드처럼 자판 바로 위에 열리고, 여기 쓴 한국어가 앱에는 번역돼 들어간다.
-        translateSource = TextView(context).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        // 번역 패널. 자판 바로 위에 열린다. 세 줄이다:
+        //   1) 언어 칩(영어·일본어·중국어)과 '전체번역'·닫기
+        //   2) 한국어를 쓰는 줄 — 깜빡이는 커서가 있고 두 줄까지 보인다
+        //   3) 번역 결과 미리보기 — 앱 입력란에 들어간 것과 같은 글
+        translateSource = TranslateSourceView(context).apply {
+            setPadding(dp(10), dp(2), dp(10), dp(2))
+            onCaretRequested = { index -> listener?.onTranslateCaret(index) }
+        }
+        translatePreview = TextView(context).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             maxLines = 1
+            // 긴 번역은 앞이 아니라 **끝**이 방금 친 부분이다. 끝이 보이게 앞을 줄인다.
             ellipsize = TextUtils.TruncateAt.START
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), 0, dp(8), 0)
+            setPadding(dp(10), 0, dp(10), 0)
         }
-        translateTarget = TextView(context).apply {
+        translateAllButton = TextView(context).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             gravity = Gravity.CENTER
-            setPadding(dp(10), 0, dp(10), 0)
-            attachKeyTouch(this, onPress = { listener?.onCycleTranslateTarget() })
+            setPadding(dp(12), 0, dp(12), 0)
+            maxLines = 1
+            text = context.getString(R.string.translate_all)
+            attachKeyTouch(this, onPress = { listener?.onTranslateAll() })
         }
-        translatePanel = LinearLayout(context).apply {
+        translateClose = toolbarButton("✕") { listener?.onToggleTranslate() }
+        val translateHeader = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, dp(4), 0)
+            // 언어 칩은 목록이 정해진 뒤([setTranslateMode])에 이 줄 앞쪽에 끼운다. 자리만 잡아 둔다.
+            addView(View(context), LayoutParams(0, 1, 1f))
+            addView(translateAllButton, LayoutParams(LayoutParams.WRAP_CONTENT, dp(TRANSLATE_CHIP_DP)))
+            addView(View(context), LayoutParams(dp(6), 1))
+            addView(translateClose, toolbarParams())
+        }
+        translatePanel = LinearLayout(context).apply {
+            orientation = VERTICAL
             isVisible = false
             setPadding(dp(4), dp(2), dp(4), dp(2))
-            addView(translateSource, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
-            addView(translateTarget, LayoutParams(LayoutParams.WRAP_CONTENT, dp(TOOLBAR_BUTTON_DP)))
-            addView(View(context), LayoutParams(dp(6), 1))
-            addView(toolbarButton("✕") { listener?.onToggleTranslate() }, toolbarParams())
+            addView(translateHeader, LayoutParams(LayoutParams.MATCH_PARENT, dp(TRANSLATE_HEADER_DP)))
+            addView(translateSource, LayoutParams(LayoutParams.MATCH_PARENT, dp(TRANSLATE_SOURCE_DP)))
+            addView(translatePreview, LayoutParams(LayoutParams.MATCH_PARENT, dp(TRANSLATE_PREVIEW_DP)))
         }
-        addView(translatePanel, LayoutParams(LayoutParams.MATCH_PARENT, dp(TRANSLATE_HEIGHT_DP)))
+        addView(translatePanel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
         rowContainer = KeyPad(context).apply {
             orientation = VERTICAL
@@ -455,22 +486,76 @@ class KeyboardView @JvmOverloads constructor(
 
     /** 서버 번역이 도는 동안 번역 버튼을 흐리게. */
     fun setTranslateBusy(busy: Boolean) {
+        translateBusy = busy
         translateButton.alpha = if (busy) 0.35f else 1f
+        translateAllButton.alpha = if (busy) 0.35f else 1f
     }
 
-    /** 번역 입력줄을 열거나 닫는다. [targetLabel] 은 언어 칩에 쓰는 이름("영어"). */
-    fun setTranslateMode(on: Boolean, targetLabel: String) {
+    /**
+     * 번역 패널을 열거나 닫는다.
+     *
+     * @param labels 언어 칩에 쓸 이름들("영어", "일본어", "중국어"). 칩은 이 목록대로 만든다.
+     * @param selected 지금 고른 언어의 번호
+     */
+    fun setTranslateMode(on: Boolean, labels: List<String>, selected: Int) {
         translateOn = on
-        translateTarget.text = "$targetLabel ▾"
+        translateSelected = selected
+        if (translateChips.size != labels.size) rebuildTranslateChips(labels)
+        labels.forEachIndexed { i, label -> translateChips[i].text = label }
+        // 가로 화면은 높이가 모자라 한국어 줄을 한 줄로, 미리보기는 없앤다.
+        val landscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        translatePreview.isVisible = !landscape
+        translateSource.updateLayoutParams<LayoutParams> {
+            height = dp(if (landscape) TRANSLATE_SOURCE_LANDSCAPE_DP else TRANSLATE_SOURCE_DP)
+        }
         translatePanel.isVisible = on
         if (on) closePanels()
         styleTranslateButton()
     }
 
-    /** 입력줄에 지금까지 쓴 한국어. 비면 [hint] 가 흐리게 보인다. */
-    fun setTranslateSource(text: String, hint: String) {
-        translateSource.text = text
-        translateSource.hint = hint
+    /** 언어 칩을 목록대로 다시 만든다. 머리 줄의 맨 앞(빈칸 앞)에 끼운다. */
+    private fun rebuildTranslateChips(labels: List<String>) {
+        val header = translatePanel.getChildAt(0) as LinearLayout
+        translateChips.forEach { header.removeView(it) }
+        translateChips.clear()
+        labels.forEachIndexed { index, label ->
+            val chip = TextView(context).apply {
+                text = label
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                gravity = Gravity.CENTER
+                setPadding(dp(11), 0, dp(11), 0)
+                maxLines = 1
+                attachKeyTouch(this, onPress = { listener?.onSelectTranslateTarget(index) })
+            }
+            translateChips += chip
+            header.addView(chip, index, LayoutParams(LayoutParams.WRAP_CONTENT, dp(TRANSLATE_CHIP_DP)).apply {
+                rightMargin = dp(4)
+            })
+        }
+    }
+
+    /** 고른 언어가 바뀌었다(칩 색만 바꾼다). */
+    fun setTranslateSelected(selected: Int) {
+        translateSelected = selected
+        styleTranslateButton()
+    }
+
+    /** 입력줄에 지금까지 쓴 한국어와 커서 자리. 비면 [hint] 가 흐리게 보인다. */
+    fun setTranslateSource(text: String, cursor: Int, hint: String) {
+        translateSource.setContent(text, cursor, hint)
+    }
+
+    /** 번역 결과 미리보기. 앱 입력란에 들어간 것과 같은 글이다. 비면 안내([note])를 흐리게. */
+    fun setTranslatePreview(text: String, note: String = "") {
+        translatePreview.text = text.ifEmpty { note }
+        translatePreview.alpha = if (text.isEmpty()) 0.7f else 1f
+    }
+
+    /** '전체번역' 자리를 '되돌리기' 로 바꾼다(방금 입력란을 통째로 옮겼을 때). */
+    fun setTranslateUndo(available: Boolean) {
+        translateUndo = available
+        translateAllButton.text = context.getString(if (available) R.string.translate_undo else R.string.translate_all)
     }
 
     private fun styleTranslateButton() {
@@ -480,11 +565,21 @@ class KeyboardView @JvmOverloads constructor(
         } else {
             styleToolbarButton(translateButton)
         }
-        translateSource.setTextColor(theme.text)
-        translateSource.setHintTextColor(theme.hint)
-        translateTarget.setTextColor(theme.onAccent)
-        translateTarget.background = roundRect(theme.accent)
+        translateSource.setColors(theme.text, theme.hint, theme.accent)
+        translatePreview.setTextColor(theme.hint)
         translatePanel.background = roundRect(toolbarFill(theme.panelItem))
+        translateChips.forEachIndexed { index, chip ->
+            if (index == translateSelected) {
+                chip.setTextColor(theme.onAccent)
+                chip.background = roundRect(theme.accent)
+            } else {
+                chip.setTextColor(theme.text)
+                chip.background = roundRect(toolbarFill(theme.toolbarButton))
+            }
+        }
+        translateAllButton.setTextColor(if (translateUndo) theme.onAccent else theme.text)
+        translateAllButton.background = roundRect(if (translateUndo) theme.accent else toolbarFill(theme.toolbarButton))
+        styleToolbarButton(translateClose)
     }
 
     /**
@@ -1845,7 +1940,12 @@ class KeyboardView @JvmOverloads constructor(
         /** 펴져 있을 때 손잡이가 차지하는 너비. 동그라미들보다 좁아서 도구로 안 보인다. */
         const val COLLAPSE_BUTTON_DP = 22
 
-        const val TRANSLATE_HEIGHT_DP = 40
+        /** 번역 패널의 세 줄. 한국어 줄은 두 줄까지 보인다(가로 화면은 한 줄). */
+        const val TRANSLATE_HEADER_DP = 32
+        const val TRANSLATE_CHIP_DP = 26
+        const val TRANSLATE_SOURCE_DP = 46
+        const val TRANSLATE_SOURCE_LANDSCAPE_DP = 26
+        const val TRANSLATE_PREVIEW_DP = 22
         const val TOOLBAR_BUTTON_DP = 28
 
         /**

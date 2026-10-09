@@ -24,10 +24,8 @@ import com.spellkeyboard.core.hangul.HangulAutomata
 import com.spellkeyboard.core.editor.TranslateBuffer
 import com.spellkeyboard.core.editor.TranslationOutput
 import com.spellkeyboard.core.lm.ContextCorrector
-import com.spellkeyboard.core.translate.ChatText
-import com.spellkeyboard.core.translate.Phrasebook
 import com.spellkeyboard.core.translate.SentenceSplitter
-import com.spellkeyboard.core.translate.TranslationMemory
+import com.spellkeyboard.core.translate.TranslationPipeline
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.Speller
 import android.util.Log
@@ -138,7 +136,11 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     // 잠깐 뒤 온디바이스 번역기가 돌아 앱 입력란의 번역문을 갈아 끼운다.
 
     private var translating = false
-    private val translateBuffer = TranslateBuffer().also { it.onChange = { onTranslateSourceChanged() } }
+    private val translateBuffer = TranslateBuffer().also {
+        it.onChange = { onTranslateSourceChanged() }
+        // 커서만 움직였을 때는 화면만 갱신한다. 번역을 다시 돌리면 입력란의 번역문이 깜빡인다.
+        it.onCaret = { showTranslateSource() }
+    }
     private val translateOutput = TranslationOutput()
     private var translator: OnDeviceTranslator? = null
 
@@ -153,8 +155,19 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private val sentenceSplitter =
         SentenceSplitter { session.engine.spacer?.endsWithFinalEnding(it) == true }
 
-    /** 문장별 번역 결과. 끝에만 글자가 붙으므로 앞 문장은 다시 번역할 일이 없다. */
-    private val translationMemory = TranslationMemory()
+    /**
+     * 기기 번역 한 벌(문장 자르기 → 다듬기 → 관용구 표 → 번역기 → 이어 붙이기). 입력줄의 실시간 미리보기와
+     * '전체번역' 이 같이 쓴다. 문장별 결과를 기억하므로 끝에만 글자가 붙는 입력줄에서 앞 문장은 다시 옮기지 않는다.
+     */
+    private val translationPipeline = TranslationPipeline(sentenceSplitter)
+
+    /**
+     * '전체번역' 직후에만 있다. 입력란을 통째로 갈아 끼웠으니 원문을 쥐고 있다가 '되돌리기' 에 돌려준다.
+     * 입력줄에 글자를 더 치거나 패널을 닫으면 버린다 — 그 뒤에는 되돌릴 자리가 어긋난다.
+     */
+    private var fullUndo: FullUndo? = null
+
+    private class FullUndo(val original: String, val translatedLength: Int)
 
     /** 마지막으로 번역한 원문. 지금 내용과 같으면 입력란의 번역문이 최신이다. */
     private var translatedSource = ""
@@ -647,6 +660,11 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         val editor = editor() ?: return
         session.commitPending(editor)
         session.reset()
+        // 번역 입력줄이 열려 있으면 움직이는 것은 앱 입력란이 아니라 입력줄의 커서다.
+        if (translating) {
+            translateBuffer.moveCursor(delta)
+            return
+        }
         val key = if (delta < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
         repeat(kotlin.math.abs(delta)) { sendDownUpKeyEvents(key) }
     }
@@ -706,13 +724,20 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         if (translating) exitTranslate() else enterTranslate()
     }
 
-    override fun onCycleTranslateTarget() {
-        val next = Prefs.translateTarget(this).next()
+    private fun targetLabels(): List<String> = TargetLanguage.entries.map { it.label(this) }
+
+    /** 패널의 언어 칩을 눌렀다. 번호는 [TargetLanguage.entries] 의 순서다. */
+    override fun onSelectTranslateTarget(index: Int) {
+        val next = TargetLanguage.entries.getOrNull(index) ?: return
+        if (next == Prefs.translateTarget(this)) return
         Prefs.setTranslateTarget(this, next)
-        translationMemory.clear()
+        // 언어가 바뀌면 기억해 둔 번역은 전부 틀린 언어다.
+        translationPipeline.memory.clear()
+        clearFullUndo()
+        keyboard?.setTranslateSelected(next.ordinal)
         if (!translating) return
-        keyboard?.setTranslateMode(true, next.label(this))
         translatedSource = ""
+        showTranslateSource()
         prepareTranslator(next)
     }
 
@@ -729,10 +754,12 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         translateOutput.detach()
         translatedSource = ""
         pendingEnter = false
+        clearFullUndo()
         translating = true
         val target = Prefs.translateTarget(this)
-        keyboard?.setTranslateMode(true, target.label(this))
-        keyboard?.setTranslateSource("", getString(R.string.translate_hint, target.label(this)))
+        keyboard?.setTranslateMode(true, targetLabels(), target.ordinal)
+        showTranslateSource()
+        keyboard?.setTranslatePreview("", getString(R.string.translate_preview_empty))
         prepareTranslator(target)
     }
 
@@ -750,28 +777,42 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         translateBuffer.clear()
         translateOutput.detach()
         translatedSource = ""
+        clearFullUndo()
         session.reset()
-        keyboard?.setTranslateMode(false, Prefs.translateTarget(this).label(this))
+        keyboard?.setTranslateMode(false, targetLabels(), Prefs.translateTarget(this).ordinal)
+    }
+
+    /** 입력줄(한국어 + 커서)을 화면에 그린다. */
+    private fun showTranslateSource(hint: String? = null) {
+        val label = Prefs.translateTarget(this).label(this)
+        keyboard?.setTranslateSource(
+            translateBuffer.text,
+            translateBuffer.cursorIndex,
+            hint ?: getString(R.string.translate_hint, label)
+        )
     }
 
     /** 언어팩이 있으면 바로, 없으면 받고 나서 입력줄의 안내를 바꾼다. */
-    private fun prepareTranslator(target: TargetLanguage) {
+    private fun prepareTranslator(target: TargetLanguage, then: (() -> Unit)? = null) {
         val translator = this.translator ?: OnDeviceTranslator().also { this.translator = it }
         val label = target.label(this)
         if (!translator.isReady(target)) {
-            keyboard?.setTranslateSource(translateBuffer.text, getString(R.string.translate_downloading, label))
+            keyboard?.setTranslatePreview("", getString(R.string.translate_downloading, label))
         }
         translator.ensureModel(
             target,
             onReady = {
-                if (!translating) return@ensureModel
-                keyboard?.setTranslateSource(translateBuffer.text, getString(R.string.translate_hint, label))
-                onTranslateSourceChanged()
+                if (translating) {
+                    if (translateBuffer.isEmpty) {
+                        keyboard?.setTranslatePreview("", getString(R.string.translate_preview_empty))
+                    }
+                    onTranslateSourceChanged()
+                }
+                then?.invoke()
             },
             onFailed = {
-                if (!translating) return@ensureModel
                 notify(getString(R.string.translate_download_failed, label))
-                keyboard?.setTranslateSource(translateBuffer.text, getString(R.string.translate_download_failed, label))
+                if (translating) keyboard?.setTranslatePreview("", getString(R.string.translate_download_failed, label))
             }
         )
     }
@@ -779,11 +820,16 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     /** 입력줄 내용이 바뀌었다. 화면을 갱신하고 잠깐 뒤 번역한다 — 글자마다 돌리면 낭비다. */
     private fun onTranslateSourceChanged() {
         if (!translating) return
-        val target = Prefs.translateTarget(this)
-        keyboard?.setTranslateSource(translateBuffer.text, getString(R.string.translate_hint, target.label(this)))
+        showTranslateSource()
+        // 글을 더 쳤으면 방금 한 '전체번역' 은 되돌릴 자리가 어긋난다.
+        clearFullUndo()
         mainHandler.removeCallbacks(translateNow)
         mainHandler.postDelayed(translateNow, TRANSLATE_DEBOUNCE_MS)
     }
+
+    /** 기기 번역기를 [TranslationPipeline] 이 쓰는 모양으로. */
+    private fun deviceEngine(translator: OnDeviceTranslator, target: TargetLanguage) =
+        TranslationPipeline.Engine { text, onResult, onFailed -> translator.translate(text, target, onResult, onFailed) }
 
     private fun translateBufferNow() {
         if (!translating) return
@@ -792,6 +838,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         if (source.isEmpty()) {
             translateOutput.replace(ConnectionEditor(connection), "")
             translatedSource = ""
+            keyboard?.setTranslatePreview("", getString(R.string.translate_preview_empty))
             if (pendingEnter) finishEnter()
             return
         }
@@ -799,68 +846,22 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         val translator = translator ?: return
         if (!translator.isReady(target)) return
 
-        // 문장마다 따로 번역해서 이어 붙인다. 이미 번역한 문장은 기억해 둔 것을 쓴다 —
-        // 빠르기도 하고, 앞쪽 번역문이 이유 없이 흔들리지도 않는다.
-        val sentences = sentenceSplitter.split(source)
         val serial = ++translateSerial
-        val code = target.tag
-
-        // 모델을 부르기 전에 두 가지를 먼저 한다.
-        // 1) 채팅 한국어를 다듬는다 — 마침표를 붙이고 'ㅋㅋ' 와 늘여 쓴 글자를 떼어 낸다.
-        //    번역기는 문장다운 문장으로 배웠고, 그렇지 않은 입력에서 눈에 띄게 나빠진다.
-        // 2) 관용구 표를 본다 — 자주 쓰는 채팅 문장은 사람이 옮겨 둔 것이 모델보다 낫다.
-        //    '저는 좋아요' 를 모델은 "I like it" 으로 옮겼다.
-        val pending = ArrayList<String>()
-        for (sentence in translationMemory.missing(sentences)) {
-            val normalized = ChatText.normalize(sentence)
-            if (normalized.core.isEmpty()) {
-                // 'ㅋㅋ' 만 있는 문장. 옮길 말이 없으니 감탄만 남긴다.
-                val only = normalized.emphasis?.let { Phrasebook.emphasis(it, code) }.orEmpty()
-                translationMemory.remember(sentence, only)
-                continue
-            }
-            val fromBook = Phrasebook.lookup(normalized.core, code)
-            if (fromBook != null) {
-                translationMemory.remember(sentence, Phrasebook.decorate(fromBook, normalized, code))
-                continue
-            }
-            pending += sentence
-        }
-        if (pending.isEmpty()) {
-            renderTranslation(sentences, source, serial)
-            return
-        }
-
-        var remaining = pending.size
-        for (sentence in pending) {
-            val normalized = ChatText.normalize(sentence)
-            translator.translate(
-                normalized.core + normalized.ending, target,
-                onResult = { result ->
-                    // 늦게 온 결과라도 기억은 해 둔다. 다음 요청이 그걸 쓴다.
-                    translationMemory.remember(sentence, Phrasebook.decorate(result, normalized, code))
-                    if (--remaining == 0) renderTranslation(sentences, source, serial)
-                },
-                onFailed = {
-                    // 못 옮긴 문장은 원문을 그대로 둔다. 그 자리가 비면 글이 사라진 것처럼 보인다.
-                    translationMemory.remember(sentence, sentence)
-                    if (--remaining == 0) {
-                        notify(getString(R.string.translate_failed))
-                        renderTranslation(sentences, source, serial)
-                    }
-                }
-            )
+        translationPipeline.translate(source, target.tag, deviceEngine(translator, target)) { result ->
+            renderTranslation(result, source, serial)
         }
     }
 
-    /** 문장별 번역을 이어 붙여 앱 입력란에 넣는다. 그사이 새 요청이 나갔으면 버린다. */
-    private fun renderTranslation(sentences: List<String>, source: String, serial: Int) {
+    /** 문장별 번역을 이어 붙인 것을 앱 입력란과 미리보기에 넣는다. 그사이 새 요청이 나갔으면 버린다. */
+    private fun renderTranslation(result: TranslationPipeline.Result, source: String, serial: Int) {
         if (!translating || serial != translateSerial) return
         val connection = currentInputConnection ?: return
         // 이 편집으로 올 커서 알림도 우리 것이다.
         lastEditAt = android.os.SystemClock.uptimeMillis()
-        translateOutput.replace(ConnectionEditor(connection), translationMemory.assemble(sentences))
+        translateOutput.replace(ConnectionEditor(connection), result.text)
         translatedSource = source
+        keyboard?.setTranslatePreview(result.text)
+        if (result.failed > 0) notify(getString(R.string.translate_failed))
         if (pendingEnter) finishEnter()
     }
 
@@ -934,6 +935,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                         currentInputConnection?.let {
                             translateOutput.replace(ConnectionEditor(it), polished)
                         }
+                        keyboard?.setTranslatePreview(polished)
                         finishEnter()
                     }
                     .onFailure {
@@ -948,12 +950,26 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     /**
-     * 번역 동그라미를 길게 눌렀다. 입력란에 이미 쓴 글을 통째로 옮긴다.
+     * '전체번역'. 입력란에 이미 써 둔 글을 통째로 옮긴다.
      *
-     * 입력줄은 한 줄짜리라 긴 글을 거기 칠 수는 없다. 붙여넣었거나 이미 써 둔 글은
-     * 이 길로 옮긴다 — AI 교정 버튼이 하는 일과 같은 모양이다.
+     * 번역 패널의 '전체번역' 단추와 번역 동그라미를 길게 누르는 것이 둘 다 여기로 온다.
+     *
+     * - **구독자**: 서버 AI. 실패하면 기기 번역으로 대신한다(아무것도 못 받는 것보다 낫다).
+     * - **무료**: 기기 번역. 서버도 한도도 쓰지 않는다.
+     *
+     * 입력줄이 열려 있어 한국어를 쓰는 중이었다면 그 글도 같이 옮긴다. 입력란 끝에 미리보기로 들어가 있던
+     * 번역문은 원문이 아니므로 뺀다. 방금 한 전체번역은 [fullUndo] 로 되돌릴 수 있다 —
+     * 단추가 '되돌리기' 로 바뀐다.
      */
-    override fun onTranslateField() {
+    override fun onTranslateAll() = translateAll()
+
+    override fun onTranslateField() = translateAll()
+
+    private fun translateAll() {
+        if (fullUndo != null) {
+            undoFullTranslate()
+            return
+        }
         if (!fieldSendable) {
             notify(getString(R.string.sensitive_field_blocked))
             return
@@ -962,36 +978,34 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             notify(getString(R.string.ai_busy))
             return
         }
-        if (!isSubscriber()) {
-            notify(getString(R.string.translate_premium_only))
-            return
-        }
         val connection = currentInputConnection
         if (connection == null) {
             notify(getString(R.string.ai_no_connection))
             return
         }
-        if (!Prefs.aiAvailable()) {
-            notify(getString(R.string.ai_no_key))
-            return
-        }
-        // 입력줄이 열려 있으면 닫는다. 여기서 옮기는 것은 입력란의 글이다.
-        if (translating) exitTranslate()
 
+        val useAi = Prefs.aiAvailable() && isSubscriber()
         val editor = ConnectionEditor(connection)
-        val before = session.readBeforeCursor(editor, AI_BEFORE_CHARS)
-        val after = connection.getTextAfterCursor(AI_AFTER_CHARS, 0)?.toString().orEmpty()
-        val original = before + after
+        val inserted = if (translating) translateOutput.inserted else 0
+        val beforeAll = session.readBeforeCursor(editor, (if (useAi) AI_BEFORE_CHARS else FULL_BEFORE_CHARS) + inserted)
+        // 입력란 끝에 미리보기로 들어가 있는 번역문은 원문이 아니다.
+        val prefix = if (inserted in 1..beforeAll.length) beforeAll.dropLast(inserted) else beforeAll
+        val after = connection.getTextAfterCursor(if (useAi) AI_AFTER_CHARS else FULL_AFTER_CHARS, 0)?.toString().orEmpty()
+        val typed = if (translating) translateBuffer.text.trim() else ""
+        val joiner = if (typed.isNotEmpty() && prefix.isNotEmpty() && !prefix.last().isWhitespace()) " " else ""
+        val original = prefix + joiner + typed + after
         if (original.isBlank()) {
             notify(getString(R.string.ai_empty))
             return
         }
+        // 지울 범위: 커서 앞은 (원문 + 미리보기 번역문), 커서 뒤는 전부.
+        val deleteBefore = prefix.length + inserted
+        val deleteAfter = after.length
+        val target = Prefs.translateTarget(this)
 
         polishing = true
         keyboard?.setTranslateBusy(true)
         val requestId = aiRequestId.incrementAndGet()
-        val target = Prefs.translateTarget(this)
-
         mainHandler.postDelayed({
             if (polishing && aiRequestId.get() == requestId) {
                 polishing = false
@@ -1000,6 +1014,36 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             }
         }, AI_WATCHDOG_MS)
 
+        fun finish(translated: String) {
+            if (aiRequestId.get() != requestId) return
+            polishing = false
+            keyboard?.setTranslateBusy(false)
+            applyFullTranslation(original, deleteBefore, deleteAfter, translated)
+        }
+
+        // 기기 번역. 언어팩이 아직 없으면 받고 나서 한다.
+        fun onDevice() {
+            prepareTranslator(target) {
+                val translator = this.translator
+                if (aiRequestId.get() != requestId || translator == null || !translator.isReady(target)) {
+                    if (aiRequestId.get() == requestId) {
+                        polishing = false
+                        keyboard?.setTranslateBusy(false)
+                    }
+                    return@prepareTranslator
+                }
+                translationPipeline.translate(original, target.tag, deviceEngine(translator, target)) { result ->
+                    if (result.failed > 0) notify(getString(R.string.translate_failed))
+                    finish(result.text)
+                }
+            }
+        }
+
+        if (!useAi) {
+            onDevice()
+            return
+        }
+
         Thread {
             val toSend = spacedForServer(original)
             val engine = runCatching { corrector() }
@@ -1007,19 +1051,74 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             val quota = engine.getOrNull()?.lastQuota
             mainHandler.post {
                 if (aiRequestId.get() != requestId) return@post
-                polishing = false
-                keyboard?.setTranslateBusy(false)
                 quota?.let { Prefs.rememberQuota(this, it) }
                 result
-                    .onSuccess { applyAiResult(before, after, it) }
+                    .onSuccess { finish(it) }
                     .onFailure {
                         notify(getString(R.string.translate_ai_failed, GeminiCorrector.explain(it.message)))
+                        onDevice()
                     }
             }
         }.apply {
             isDaemon = true
             start()
         }
+    }
+
+    /** 입력란의 글을 번역문으로 갈아 끼운다. 입력줄은 비우고, 되돌릴 수 있게 원문을 쥔다. */
+    private fun applyFullTranslation(original: String, deleteBefore: Int, deleteAfter: Int, translated: String) {
+        val connection = currentInputConnection ?: return
+        if (translated.isBlank() || translated == original) {
+            notify(getString(R.string.ai_unchanged))
+            return
+        }
+        lastEditAt = android.os.SystemClock.uptimeMillis()
+        connection.beginBatchEdit()
+        connection.deleteSurroundingText(deleteBefore, deleteAfter)
+        connection.commitText(translated, 1)
+        connection.endBatchEdit()
+        session.reset()
+        if (translating) {
+            // 입력줄의 한국어는 이제 번역문 안에 들어갔다. 비우고, 다음에 치는 글이 이 뒤에 붙게 한다.
+            mainHandler.removeCallbacks(translateNow)
+            translateSerial++
+            translateBuffer.finishComposing()
+            translateBuffer.clear()
+            translateOutput.detach()
+            translatedSource = ""
+            showTranslateSource()
+            keyboard?.setTranslatePreview(translated)
+        }
+        fullUndo = FullUndo(original, translated.length)
+        keyboard?.setTranslateUndo(true)
+    }
+
+    /** '되돌리기'. 방금 번역으로 갈아 끼운 글을 지우고 원문을 다시 넣는다. */
+    private fun undoFullTranslate() {
+        val undo = fullUndo ?: return
+        clearFullUndo()
+        val connection = currentInputConnection ?: return
+        lastEditAt = android.os.SystemClock.uptimeMillis()
+        connection.beginBatchEdit()
+        connection.deleteSurroundingText(undo.translatedLength, 0)
+        connection.commitText(undo.original, 1)
+        connection.endBatchEdit()
+        session.reset()
+        if (translating) keyboard?.setTranslatePreview("", getString(R.string.translate_preview_empty))
+    }
+
+    private fun clearFullUndo() {
+        if (fullUndo == null) return
+        fullUndo = null
+        keyboard?.setTranslateUndo(false)
+    }
+
+    /** 번역 입력줄의 글자를 눌러 커서를 옮긴다. */
+    override fun onTranslateCaret(index: Int) {
+        if (!translating) return
+        session.commitPending(translateBuffer)
+        session.reset()
+        translateBuffer.setCursor(index)
     }
 
     /** 입력줄을 닫고 번역문을 앱에 보낸다(엔터 동작). 보낼 수 없는 입력란이면 줄바꿈. */
