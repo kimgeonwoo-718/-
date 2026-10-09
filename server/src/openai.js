@@ -583,16 +583,23 @@ export function toOpenAiRequest(body, model, options = {}) {
 
   // 앱이 부른 maxOutputTokens 는 안 쓴다 — 서버가 글 길이로 정한다([outputCap]). OpenAI 는 숙고 토큰도
   // 이 한도에서 깎으므로 숙고를 끄지 않았으면 숙고 몫을 얹는다.
-  const reasoning = (options.reasoning || 'low') !== 'none';
+  // 숙고 항목은 gpt-5·o 계열만 안다. gpt-4.1 같은 일반 모델은 모르는 항목이라 400 을 내고(→ 빼고 한 번 더 보내느라 느려진다),
+  // 대신 temperature 를 받는다. 번역을 gpt-4.1-mini 로 보내 볼 수 있게 열어 둔 길이다(index.js 의 TRANSLATE_PROVIDER).
+  const thinks = /^(gpt-5|o\d)/i.test(model);
+  const reasoning = thinks && (options.reasoning || 'low') !== 'none';
   return JSON.stringify({
     model,
     messages,
     max_completion_tokens: outputCap(utf8Bytes(user), { translate: !!options.translateTo, reasoning }),
-    // 숙고를 아예 끄면(minimal) 값은 제일 싸지만 놓치는 것이 생긴다. 한 단계만 올려
-    // 둔다 — 숙고 토큰은 출력 요금이라 공짜가 아니고, 교정에 깊은 생각은 필요 없다.
-    reasoning_effort: options.reasoning || 'low',
-    // temperature 는 보내지 않는다. gpt-5 계열은 이 항목을 받으면 400 을 돌려준다.
-    // 그래서 답의 흔들림을 줄이는 수단이 지시문뿐이다.
+    ...(thinks
+      ? {
+          // 숙고를 아예 끄면(minimal) 값은 제일 싸지만 놓치는 것이 생긴다. 한 단계만 올려
+          // 둔다 — 숙고 토큰은 출력 요금이라 공짜가 아니고, 교정에 깊은 생각은 필요 없다.
+          // temperature 는 보내지 않는다. gpt-5 계열은 이 항목을 받으면 400 을 돌려준다.
+          // 그래서 답의 흔들림을 줄이는 수단이 지시문뿐이다.
+          reasoning_effort: options.reasoning || 'low',
+        }
+      : { temperature: 0 }),
   });
 }
 

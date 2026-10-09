@@ -146,7 +146,10 @@ export async function handle(request, env, deps = {}) {
 
   // 어느 AI 로 보내는지도 싣는다. 비밀이 아니고(방침 페이지에도 적힌다), 배포 기록에서
   // "OpenAI 키가 남아 있어 그쪽으로 새는가" 를 값 한 푼 안 들이고 확인하는 자리다.
-  if (url.pathname === '/health') return json(200, { ok: true, provider: provider(env) });
+  if (url.pathname === '/health') {
+    const translate = translateProvider(env);
+    return json(200, translate === provider(env) ? { ok: true, provider: provider(env) } : { ok: true, provider: provider(env), translate });
+  }
   // Play 는 키보드 앱에 개인정보 처리방침 주소를 요구한다. 따로 호스팅할 데가 없어 여기서 낸다.
   if (request.method === 'GET' && url.pathname === '/privacy') return privacyPage(env);
   if (request.method === 'GET' && url.pathname === '/terms') return termsPage(env);
@@ -572,27 +575,46 @@ function provider(env) {
 
 /** 지금 쓰기로 한 쪽의 키 이름. 그 키가 없으면 서버는 AI 를 503 으로 막는다. */
 function providerKeyName(env) {
-  const p = provider(env);
+  return keyNameOf(provider(env));
+}
+
+function keyNameOf(p) {
   if (p === 'openai') return 'OPENAI_API_KEY';
   if (p === 'anthropic') return 'ANTHROPIC_API_KEY';
   if (p === 'upstage') return 'UPSTAGE_API_KEY';
   return 'GEMINI_API_KEY';
 }
 
-function upstageModel(env) {
-  return (env.UPSTAGE_MODEL ?? '').trim() || DEFAULT_UPSTAGE_MODEL;
+/**
+ * **번역만** 다른 업체로 보낼 수 있다 — `TRANSLATE_PROVIDER` (openai | anthropic | upstage | gemini).
+ *
+ * 비워 두면 교정과 같은 업체다(지금 그렇다). 겨루기(2026-10-09)에서 번역은 업체마다 결과가 꽤 갈렸다 — 교정에서 고른 업체가 번역에서도
+ * 제일이라는 법이 없다. 업체를 갈아 끼우려고 교정까지 흔들지 않게 따로 열어 둔 자리다. 모델은 `TRANSLATE_MODEL` 로 바꾼다.
+ *
+ * **그 업체의 키가 없으면 교정 업체로 돌아간다.** 번역이 통째로 401·503 이 되는 것보다 낫다.
+ * 개인정보 처리방침이 실제로 보내는 곳을 따라가므로(privacyPage), 값을 바꾸기 전에 방침 문구가 맞는지 본다.
+ */
+function translateProvider(env) {
+  const asked = (env.TRANSLATE_PROVIDER ?? '').trim().toLowerCase();
+  const name = { google: 'gemini', claude: 'anthropic', solar: 'upstage' }[asked] ?? asked;
+  if (!['gemini', 'openai', 'anthropic', 'upstage'].includes(name)) return provider(env);
+  return env[keyNameOf(name)] ? name : provider(env);
 }
 
-function claudeModel(env) {
-  return (env.CLAUDE_MODEL ?? '').trim() || DEFAULT_CLAUDE_MODEL;
+function upstageModel(env, override = '') {
+  return override || (env.UPSTAGE_MODEL ?? '').trim() || DEFAULT_UPSTAGE_MODEL;
 }
 
-function openAiModel(env) {
-  return (env.OPENAI_MODEL ?? '').trim() || DEFAULT_OPENAI_MODEL;
+function claudeModel(env, override = '') {
+  return override || (env.CLAUDE_MODEL ?? '').trim() || DEFAULT_CLAUDE_MODEL;
 }
 
-function geminiModel(env) {
-  return (env.GEMINI_MODEL ?? '').trim() || DEFAULT_GEMINI_MODEL;
+function openAiModel(env, override = '') {
+  return override || (env.OPENAI_MODEL ?? '').trim() || DEFAULT_OPENAI_MODEL;
+}
+
+function geminiModel(env, override = '') {
+  return override || (env.GEMINI_MODEL ?? '').trim() || DEFAULT_GEMINI_MODEL;
 }
 
 /**
@@ -651,11 +673,13 @@ async function resolveGeminiModel(env, fetchImpl, nowMs) {
  *   모델이면 빼고 한 번 더 보낸다. 구글: 교정은 앱 지시문, 번역은 우리 지시문(gemini.js).
  */
 async function buildAiCall(env, fetchImpl, body, translateTo, nowMs) {
-  const which = provider(env);
+  // 번역은 따로 정한 업체·모델로 갈 수 있다([translateProvider]). 비워 두면 교정과 같다.
+  const which = translateTo ? translateProvider(env) : provider(env);
+  const modelOverride = translateTo ? (env.TRANSLATE_MODEL ?? '').trim() : '';
   // 번역 지시문 판("v1"|"v2"). 비면 기본값(openai.js DEFAULT_TRANSLATE_PROMPT). 배포 없이 값만 바꿔 되돌린다.
   const translatePrompt = (env.TRANSLATE_PROMPT ?? '').trim();
   // 구글 모델 고르기는 짓기 실패와 섞이면 안 된다(저장소 오류를 "잘못된 요청" 으로 바꿔 버린다). 밖에서 한다.
-  const geminiModelName = which === 'gemini' ? await resolveGeminiModel(env, fetchImpl, nowMs) : null;
+  const geminiModelName = which === 'gemini' ? modelOverride || (await resolveGeminiModel(env, fetchImpl, nowMs)) : null;
   let target;
   let request;
   let maxTokens;
@@ -664,7 +688,7 @@ async function buildAiCall(env, fetchImpl, body, translateTo, nowMs) {
     const user = userTextOf(body);
     if (which === 'upstage') {
       target = UPSTAGE_URL;
-      request = toUpstageRequest(body, upstageModel(env), {
+      request = toUpstageRequest(body, upstageModel(env, modelOverride), {
         prompt: (env.UPSTAGE_PROMPT ?? '').trim(),
         reasoning: (env.UPSTAGE_REASONING ?? '').trim(),
         extraRules: (env.UPSTAGE_EXTRA_RULES ?? '').trim().toLowerCase() !== 'off',
@@ -675,12 +699,12 @@ async function buildAiCall(env, fetchImpl, body, translateTo, nowMs) {
       finish = (raw) => toGeminiReply(raw.status, raw.text, user, { translateTo });
     } else if (which === 'anthropic') {
       target = ANTHROPIC_URL;
-      request = toClaudeRequest(body, claudeModel(env), { prompt: (env.CLAUDE_PROMPT ?? '').trim(), translateTo, translatePrompt });
+      request = toClaudeRequest(body, claudeModel(env, modelOverride), { prompt: (env.CLAUDE_PROMPT ?? '').trim(), translateTo, translatePrompt });
       maxTokens = JSON.parse(request).max_tokens;
       finish = (raw) => fromClaudeReply(raw.status, raw.text, user, { translateTo });
     } else if (which === 'openai') {
       target = OPENAI_URL;
-      request = toOpenAiRequest(body, openAiModel(env), {
+      request = toOpenAiRequest(body, openAiModel(env, modelOverride), {
         reasoning: (env.OPENAI_REASONING ?? '').trim(),
         prompt: (env.OPENAI_PROMPT ?? '').trim(),
         translateTo,
@@ -1066,30 +1090,39 @@ function privacyPage(env) {
   // 어느 회사로 보내는지는 방침의 핵심이라 실제 설정을 그대로 따라가게 둔다.
   // **실제로 보내는 곳(provider)** 을 봐야 한다. 예전에는 openAiModel(env) 를 봤는데, 그건
   // 기본 모델 이름이 늘 있어서 참이다 — 구글로 보내면서 방침에는 OpenAI 라고 적혀 있었다.
+  // 교정과 번역이 다른 업체로 갈 수 있다([translateProvider]). 같으면 예전 문구 그대로이고, 다르면 두 곳을 다 적는다.
   const which = provider(env);
-  const openai = which === 'openai';
-  const claude = which === 'anthropic';
-  const upstage = which === 'upstage';
-  const providerApi = openai
-    ? 'OpenAI API'
-    : claude
-      ? 'Anthropic Claude API'
-      : upstage
-        ? '업스테이지 Solar API'
-        : 'Google Gemini API';
-  const providerName = openai ? 'OpenAI' : claude ? 'Anthropic' : upstage ? '업스테이지' : 'Google';
-  const aiAbroad = openai
-    ? '<li><strong>OpenAI (미국)</strong> — AI 교정·번역 처리. 누를 때 그 입력란의 글. 처리 즉시 결과만 돌려받습니다.</li>'
-    : claude
-      ? '<li><strong>Anthropic (미국)</strong> — AI 교정·번역 처리. 누를 때 그 입력란의 글. 처리 즉시 결과만 돌려받습니다.</li>'
-      : '';
-  // 업스테이지는 한국 회사지만 자기 처리방침에 미국 업체(추론 인프라 포함)로의 이전을 적어 둔다.
-  // 그래서 "국내라 이전 없음" 이라고 단정하지 않고 그대로 옮긴다.
-  const aiProcessor = upstage
-    ? '<li><strong>주식회사 업스테이지 (대한민국)</strong> — AI 교정·번역 처리. 누를 때 그 입력란의 글. 처리 즉시 결과만 돌려받습니다. 업스테이지는 처리를 위해 미국 등 해외 클라우드 업체를 이용할 수 있습니다.</li>'
-    : '';
+  const translateWhich = translateProvider(env);
+  const info = (p) => {
+    const openai = p === 'openai';
+    const claude = p === 'anthropic';
+    const upstage = p === 'upstage';
+    return {
+      api: openai ? 'OpenAI API' : claude ? 'Anthropic Claude API' : upstage ? '업스테이지 Solar API' : 'Google Gemini API',
+      name: openai ? 'OpenAI' : claude ? 'Anthropic' : upstage ? '업스테이지' : 'Google',
+      abroad: openai
+        ? '<li><strong>OpenAI (미국)</strong> — AI 교정·번역 처리. 누를 때 그 입력란의 글. 처리 즉시 결과만 돌려받습니다.</li>'
+        : claude
+          ? '<li><strong>Anthropic (미국)</strong> — AI 교정·번역 처리. 누를 때 그 입력란의 글. 처리 즉시 결과만 돌려받습니다.</li>'
+          : '',
+      // 업스테이지는 한국 회사지만 자기 처리방침에 미국 업체(추론 인프라 포함)로의 이전을 적어 둔다.
+      // 그래서 "국내라 이전 없음" 이라고 단정하지 않고 그대로 옮긴다.
+      processor: upstage
+        ? '<li><strong>주식회사 업스테이지 (대한민국)</strong> — AI 교정·번역 처리. 누를 때 그 입력란의 글. 처리 즉시 결과만 돌려받습니다. 업스테이지는 처리를 위해 미국 등 해외 클라우드 업체를 이용할 수 있습니다.</li>'
+        : '',
+      google: !openai && !claude && !upstage,
+    };
+  };
+  const main = info(which);
+  const split = translateWhich !== which;
+  const second = split ? info(translateWhich) : null;
+  const providerApi = split ? `${main.api}(교정)·${second.api}(번역)` : main.api;
+  const providerName = main.name;
+  const providerNames = split ? `${main.name}·${second.name}` : main.name;
+  const aiAbroad = main.abroad + (second?.abroad ?? '');
+  const aiProcessor = main.processor + (second?.processor ?? '');
   // Google 줄에서 "AI 교정·번역 처리" 를 빼는 것은 AI 가 구글이 아닐 때다.
-  const googleDoesAi = !openai && !claude && !upstage;
+  const googleDoesAi = main.google || (second?.google ?? false);
   // PC 프로그램 내용은 윈도우 세션이 실제 동작을 확인해 넘겨준 답(2026-10-08)을 그대로 옮겼다.
   // PC 동작이 바뀌면 그쪽(desktop/)에서 알려 줘야 여기도 고친다.
   return docPage(env, '개인정보 처리방침', `
@@ -1107,7 +1140,7 @@ function privacyPage(env) {
 <li><strong>휴대폰</strong>: 자판 위 전체 교정이나 번역 버튼을 <strong>직접 꾹 누를 때</strong> — 그 입력란의 글(커서 앞뒤 최대 2,000자). 프리미엄 구독자가 번역 입력줄에서 <strong>보내기(엔터)를 누를 때</strong> — 그 입력줄에 쓴 글.</li>
 <li><strong>PC 프로그램</strong>: 사용자가 <strong>"AI 교정" 또는 "AI 번역"을 직접 누를 때</strong> — PC 프로그램 창에 입력된 글(교정 최대 3,000자, 번역 최대 2,000자). 로그인하지 않았으면 보내지 않습니다.</li>
 </ul>
-<p>치는 동안 저절로 보내는 일은 없습니다. 휴대폰에서는 비밀번호·이메일·URL 입력란의 글을 보내지 않습니다. PC 프로그램 창에 직접 입력한 글은 걸러 내지 않고 그대로 보내므로, 비밀번호 같은 민감한 내용은 넣지 마십시오. 글과 함께 설치 식별자(그리고 로그인한 경우 기기 토큰)가 전송되며, 이름·이메일은 전송되지 않습니다. 서버는 글을 저장하지 않으며, 하루 사용량(글자 수)만 셉니다. ${providerName}의 처리에는 ${providerName}의 개인정보 처리방침이 적용됩니다.</p>
+<p>치는 동안 저절로 보내는 일은 없습니다. 휴대폰에서는 비밀번호·이메일·URL 입력란의 글을 보내지 않습니다. PC 프로그램 창에 직접 입력한 글은 걸러 내지 않고 그대로 보내므로, 비밀번호 같은 민감한 내용은 넣지 마십시오. 글과 함께 설치 식별자(그리고 로그인한 경우 기기 토큰)가 전송되며, 이름·이메일은 전송되지 않습니다. 서버는 글을 저장하지 않으며, 하루 사용량(글자 수)만 셉니다. ${split ? `${providerNames}의 처리에는 각 회사의 개인정보 처리방침이 적용됩니다.` : `${providerName}의 처리에는 ${providerName}의 개인정보 처리방침이 적용됩니다.`}</p>
 
 <h2>3. 서버가 보관하는 것</h2>
 <ul>

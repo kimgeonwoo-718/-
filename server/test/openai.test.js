@@ -423,3 +423,86 @@ test('translatePromptV3: 보기와 풀이가 시험지 B(부풀지 않은 값을
     for (const ko of sheetB) assert.ok(!prompt.includes(ko), `시험지 B 문장이 지시문에 있다: ${ko}`);
   }
 });
+
+// ── 번역만 다른 업체로 (TRANSLATE_PROVIDER) ────────────────────────────────────────────────
+const SPLIT_INSTALL = '3f2a9c1e-7b4d-4e8a-9c2f-1a2b3c4d5e6f';
+
+function splitEnv(overrides = {}) {
+  return {
+    DB: fakeDb(),
+    AI_PROVIDER: 'upstage',
+    UPSTAGE_API_KEY: 'up-key',
+    OPENAI_API_KEY: 'sk-key',
+    TEST_INSTALL_IDS: SPLIT_INSTALL,
+    ...overrides,
+  };
+}
+
+function splitRequest(query = '') {
+  return new Request(`https://spell.test/v1beta/models/gemini-3.5-flash-lite:generateContent${query}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'cf-connecting-ip': '1.2.3.4', 'x-install-id': SPLIT_INSTALL },
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: '내일 저녁 같이 먹자' }] }] }),
+  });
+}
+
+function chat(text) {
+  return JSON.stringify({
+    id: 'x',
+    choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 40, completion_tokens: 10, total_tokens: 50 },
+  });
+}
+
+test('TRANSLATE_PROVIDER: 번역은 따로 정한 업체·모델로, 교정은 그대로 간다', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body), auth: init.headers.authorization });
+    return new Response(chat('Let\'s eat dinner together tomorrow.'), { status: 200 });
+  };
+  const e = splitEnv({ TRANSLATE_PROVIDER: 'openai', TRANSLATE_MODEL: 'gpt-4.1-mini' });
+  const translated = await handle(splitRequest('?translate=en'), e, { fetch: fetchImpl });
+  assert.equal(translated.status, 200);
+  assert.match(calls[0].url, /api\.openai\.com/);
+  assert.equal(calls[0].body.model, 'gpt-4.1-mini');
+  assert.equal(calls[0].body.temperature, 0);
+  assert.equal('reasoning_effort' in calls[0].body, false, '일반 모델은 숙고 항목을 모른다');
+  assert.equal(calls[0].auth, 'Bearer sk-key');
+
+  const corrected = await handle(splitRequest(), e, { fetch: async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    return new Response(chat('내일 저녁 같이 먹자'), { status: 200 });
+  } });
+  assert.equal(corrected.status, 200);
+  assert.match(calls[1].url, /api\.upstage\.ai/, '교정은 본래 업체로');
+});
+
+test('TRANSLATE_PROVIDER: 그 업체의 키가 없으면 본래 업체로 돌아간다', async () => {
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(url);
+    return new Response(chat('Let\'s eat dinner together tomorrow.'), { status: 200 });
+  };
+  const e = splitEnv({ TRANSLATE_PROVIDER: 'openai', OPENAI_API_KEY: '' });
+  const res = await handle(splitRequest('?translate=en'), e, { fetch: fetchImpl });
+  assert.equal(res.status, 200);
+  assert.match(urls[0], /api\.upstage\.ai/);
+});
+
+test('TRANSLATE_PROVIDER: 비워 두면 예전과 같다 (health 에도 안 나온다)', async () => {
+  const res = await handle(new Request('https://spell.test/health'), splitEnv());
+  assert.deepEqual(await res.json(), { ok: true, provider: 'upstage' });
+  const split = await handle(new Request('https://spell.test/health'), splitEnv({ TRANSLATE_PROVIDER: 'openai' }));
+  assert.deepEqual(await split.json(), { ok: true, provider: 'upstage', translate: 'openai' });
+});
+
+test('개인정보 처리방침: 번역을 다른 업체로 보내면 두 곳을 다 적는다', async () => {
+  const one = await (await handle(new Request('https://spell.test/privacy'), splitEnv())).text();
+  assert.ok(one.includes('업스테이지 Solar API'));
+  assert.ok(!one.includes('OpenAI'));
+  const two = await (await handle(new Request('https://spell.test/privacy'), splitEnv({ TRANSLATE_PROVIDER: 'openai' }))).text();
+  assert.ok(two.includes('업스테이지 Solar API(교정)·OpenAI API(번역)'));
+  assert.ok(two.includes('<strong>OpenAI (미국)</strong>'));
+  assert.ok(two.includes('주식회사 업스테이지 (대한민국)'));
+  assert.ok(two.includes('업스테이지·OpenAI의 처리에는 각 회사의 개인정보 처리방침이 적용됩니다'));
+});
