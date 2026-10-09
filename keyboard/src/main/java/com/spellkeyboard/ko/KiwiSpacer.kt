@@ -3,6 +3,7 @@ package com.spellkeyboard.ko
 import android.content.Context
 import android.util.Log
 import com.spellkeyboard.core.correct.TypoFixer
+import com.spellkeyboard.core.correct.TypoGuard
 import com.spellkeyboard.core.spacing.LongSpacer
 import kr.pe.bab2min.Kiwi
 import kr.pe.bab2min.KiwiBuilder
@@ -171,7 +172,10 @@ class KiwiSpacer private constructor(
             }.getOrNull() ?: continue
             // 띄어쓰기가 끼어들었으면 이 단계가 할 일이 아니다.
             if (joined.isEmpty() || joined.any { it.isWhitespace() }) continue
-            if (knownWord(text.substring(word.first, word.last + 1))) continue
+            val original = text.substring(word.first, word.last + 1)
+            if (knownWord(original)) continue
+            // 오타 고침이 아닌 것(류서인→유서인, 로운아→로우나 …)은 이름·외래어를 망친다. 이유와 값은 TypoGuard.
+            if (TypoGuard.rejects(original, joined)) continue
             out.replace(word.first, word.last + 1, joined)
         }
         val fixed = out.toString()
