@@ -59,6 +59,7 @@ import {
   TRANSLATE_TARGETS,
   hangulFragments,
   billedError,
+  DEFAULT_TRANSLATE_PROMPT,
 } from './openai.js';
 import {
   ANTHROPIC_URL,
@@ -678,8 +679,9 @@ async function buildAiCall(env, fetchImpl, body, translateTo, nowMs) {
   // 번역은 따로 정한 업체·모델로 갈 수 있다([translateProvider]). 비워 두면 교정과 같다.
   const which = translateTo ? translateProvider(env) : provider(env);
   const modelOverride = translateTo ? (env.TRANSLATE_MODEL ?? '').trim() : '';
-  // 번역 지시문 판("v1"|"v2"). 비면 기본값(openai.js DEFAULT_TRANSLATE_PROMPT). 배포 없이 값만 바꿔 되돌린다.
-  const translatePrompt = (env.TRANSLATE_PROMPT ?? '').trim();
+  // 번역 지시문 판("v1"~"v4"). 비면 업체에 맞는 기본값 — OpenAI 모델은 영어 규칙으로 줄인 4판이 3판과 같은 점수를 반값에 내고,
+  // Solar 는 한국어 지시문(3판)이 낫다(겨루기 2026-10-09). 배포 없이 값만 바꿔 되돌린다.
+  const translatePrompt = (env.TRANSLATE_PROMPT ?? '').trim() || (which === 'openai' ? 'v4' : DEFAULT_TRANSLATE_PROMPT);
   // 구글 모델 고르기는 짓기 실패와 섞이면 안 된다(저장소 오류를 "잘못된 요청" 으로 바꿔 버린다). 밖에서 한다.
   const geminiModelName = which === 'gemini' ? modelOverride || (await resolveGeminiModel(env, fetchImpl, nowMs)) : null;
   let target;

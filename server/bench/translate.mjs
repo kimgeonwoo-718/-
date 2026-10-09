@@ -41,7 +41,7 @@ const MAX_WON = Number(flag('maxWon', '300'));
 const OUT = flag('out', '');
 const CATS = flag('cats', '').split(',').filter(Boolean);
 const PROMPTS = args.filter((a) => a.startsWith('--prompt=')).map((a) => a.slice('--prompt='.length));
-if (!PROMPTS.length) PROMPTS.push('v2');
+if (!PROMPTS.length) PROMPTS.push('v3');
 const models = args.filter((a) => !a.startsWith('--'));
 if (FAKE && !models.length) models.push('fake');
 if (!models.length) {

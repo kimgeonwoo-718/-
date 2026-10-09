@@ -337,14 +337,16 @@ const TRANSLATE_STYLE = {
 };
 
 /**
- * 쓸 번역 지시문을 고른다. `version` 은 환경변수 `TRANSLATE_PROMPT`("v1"|"v2")에서 오고, 비면 [DEFAULT_TRANSLATE_PROMPT].
+ * 쓸 번역 지시문을 고른다. `version` 은 환경변수 `TRANSLATE_PROMPT`("v1"|"v2"|"v3"|"v4")에서 오고, 비면 [DEFAULT_TRANSLATE_PROMPT].
  * 코드를 고쳐 배포하지 않고 값만 바꿔 되돌릴 수 있게 열어 둔 자리다.
  *
- * **기본값은 v2 다(2026-10-09).** 1판은 보기가 영어뿐이라 solar-pro4 가 일본어·중국어를 달라는 요청에 **영어로 답했다** —
+ * **기본값은 v3 다(2026-10-09).** 1판은 보기가 영어뿐이라 solar-pro4 가 일본어·중국어를 달라는 요청에 **영어로 답했다** —
  * 시험지 121문장 중 일본어 114개, 중국어 97개가 엉뚱한 언어였다(chrF 4.4·9.7). 2판은 일본어 58.1·중국어 51.0, 영어는 같다(72.9 → 72.7).
- * 1판이 "일본어·중국어 번역이 형편없다" 의 정체였다.
+ * 1판이 "일본어·중국어 번역이 형편없다" 의 정체였다. 3판은 2판의 실수(한글 남음·관용어를 글자대로·남자 말투)를 풀이로 막았고
+ * 새 문장 60개(시험지 B)에서 solar-pro4 가 +2.1 올랐다. 4판은 같은 내용을 영어 규칙으로 줄인 것이다 — gpt-4.1-mini 에서는 3판과 비슷한 점수가
+ * 57% 의 값이지만, Solar 는 한국어 지시문이 낫다(−2.0). 그래서 업체에 맞춰 고른다(index.js 의 translatePromptDefault).
  */
-export const DEFAULT_TRANSLATE_PROMPT = 'v2';
+export const DEFAULT_TRANSLATE_PROMPT = 'v3';
 
 export function translatePromptFor(target, version, hint = '') {
   const which = (version || DEFAULT_TRANSLATE_PROMPT).toLowerCase();

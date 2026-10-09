@@ -1,1 +1,0 @@
-translate gpt-4.1-mini solar-pro4 --prompt=v4 --sheet=ab --cats=인사,음식,연애,감정,인터넷 --maxWon=350 --show

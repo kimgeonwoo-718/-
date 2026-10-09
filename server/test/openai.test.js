@@ -377,10 +377,10 @@ test('translatePromptV2: 언어마다 규칙과 보기가 들어 있다', () => 
   assert.match(translatePromptV2('zh'), /您/);
 });
 
-test('translatePromptFor: 기본은 2판이고 환경변수로 1판으로 되돌릴 수 있다', async () => {
-  const { translatePromptFor, translatePrompt, translatePromptV2 } = await import('../src/openai.js');
-  assert.equal(translatePromptFor('ja', ''), translatePromptV2('ja'));
-  assert.equal(translatePromptFor('ja', undefined), translatePromptV2('ja'));
+test('translatePromptFor: 기본은 3판이고 환경변수로 2판·1판으로 되돌릴 수 있다', async () => {
+  const { translatePromptFor, translatePrompt, translatePromptV2, translatePromptV3 } = await import('../src/openai.js');
+  assert.equal(translatePromptFor('ja', ''), translatePromptV3('ja'));
+  assert.equal(translatePromptFor('ja', undefined), translatePromptV3('ja'));
   assert.equal(translatePromptFor('ja', 'v2'), translatePromptV2('ja'));
   assert.equal(translatePromptFor('ja', 'V1'), translatePrompt('ja'));
 });
@@ -588,4 +588,22 @@ test('translatePromptV4: 규칙은 영어, 보기 열네 개, 한글 금지와 �
   const { readFileSync } = await import('node:fs');
   const sheetB = readFileSync(new URL('../bench/translate-cases-b.tsv', import.meta.url), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t')[2]);
   for (const code of ['en', 'ja', 'zh']) for (const ko of sheetB) assert.ok(!translatePromptV4(code).includes(ko));
+});
+
+test('번역 지시문의 기본판은 업체를 따라간다 — OpenAI 는 4판, 나머지는 3판, 환경변수가 이긴다', async () => {
+  const seen = [];
+  const fetchImpl = async (url, init) => {
+    const body = JSON.parse(init.body);
+    seen.push({ url, system: body.messages[0].content });
+    return new Response(chat('Let\'s eat dinner together tomorrow.'), { status: 200 });
+  };
+  await handle(splitRequest('?translate=en'), splitEnv(), { fetch: fetchImpl });
+  assert.match(seen[0].system, /번역가/, 'Solar 는 한국어 지시문(3판)');
+  assert.match(seen[0].system, /글자대로 읽으면 틀리는 한국어/);
+
+  await handle(splitRequest('?translate=en'), splitEnv({ TRANSLATE_PROVIDER: 'openai', TRANSLATE_MODEL: 'gpt-4.1-mini' }), { fetch: fetchImpl });
+  assert.match(seen[1].system, /professional Korean-to-English translator/, 'OpenAI 는 영어 규칙(4판)');
+
+  await handle(splitRequest('?translate=en'), splitEnv({ TRANSLATE_PROVIDER: 'openai', TRANSLATE_PROMPT: 'v2' }), { fetch: fetchImpl });
+  assert.ok(!seen[2].system.includes('Korean-to-English') && !seen[2].system.includes('글자대로 읽으면'), '환경변수가 이긴다');
 });
