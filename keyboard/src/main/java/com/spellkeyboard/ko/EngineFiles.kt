@@ -1,6 +1,7 @@
 package com.spellkeyboard.ko
 
 import android.content.Context
+import com.spellkeyboard.core.correct.ConfusableClassifier
 import com.spellkeyboard.core.lm.LanguageModel
 import com.spellkeyboard.core.spacing.SpacingDictionary
 import java.io.File
@@ -74,6 +75,8 @@ internal object EngineFiles {
         val app = context.applicationContext
         background("dictionary") {
             val target = dir(app)
+            // 헷갈리는 말 모델(220KB)은 작아서 먼저 읽는다. 안 읽어 두면 처음 '낳/낫' 이 나온 스페이스에서 읽느라 키가 멈칫한다.
+            runCatching { ConfusableClassifier.bundled() }
             runCatching { openSpacing(target) }
             runCatching { openLanguageModel(target) }
         }

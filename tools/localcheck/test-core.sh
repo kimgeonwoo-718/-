@@ -26,6 +26,8 @@ cp -r "$ROOT/core/src/main/resources/." "$WORK/main/"
 # 시험이 internal 을 보려면 친구 경로가 필요하다. 그레이들이 조용히 해 주던 것이다.
 kc -Xfriend-paths="$WORK/main" -cp "$KS:$KT:$J:$WORK/main" -d "$WORK/test" \
    $(find "$ROOT/core/src/test/kotlin" -name "*.kt") || exit 1
+# 시험용 자원(골든 파일 같은 것). 그레이들은 src/test/resources 를 알아서 얹는다.
+[ -d "$ROOT/core/src/test/resources" ] && cp -r "$ROOT/core/src/test/resources/." "$WORK/test/"
 
 cat > "$WORK/RunTests.java" <<'JAVA'
 import org.junit.platform.launcher.*;

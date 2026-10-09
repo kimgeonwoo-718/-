@@ -103,6 +103,16 @@ class CorrectionEngine(
             clearAnalysed()
         }
 
+    /**
+     * 헷갈리는 말('나을까/낳을까')을 문맥으로 가리는 교정기. 묶음 안에 구워 둔 모델을 쓴다([ConfusableClassifier.bundled]).
+     * 직접 끼우면 그걸 쓴다. 시험에서 이 단계만 빼려면 [confusableEnabled] 를 끈다.
+     */
+    @Volatile
+    var confusable: ConfusableClassifier? = null
+
+    @Volatile
+    var confusableEnabled: Boolean = true
+
     /** 천지인 자판으로 치고 있는가. 문맥 교정기가 천지인 오타도 보게 한다([ContextCorrector.cheonjiin]). */
     @Volatile
     var cheonjiin: Boolean = false
@@ -156,8 +166,10 @@ class CorrectionEngine(
      *
      * @param contextBefore [text] 바로 앞 어절. 문맥 교정기가 첫 어절의 앞뒤를 볼 때 쓴다.
      *   [LanguageModel.BOS] 면 문장 첫머리, null 이면 모름.
+     * @param lookahead [text] 가 문장을 끝까지 담고 있나. 입력 중 창이면 false — 그러면 헷갈리는 말을
+     *   앞 두 어절만으로 가린다([ConfusableClassifier]).
      */
-    fun correct(text: String, contextBefore: String? = null): CorrectionResult {
+    fun correct(text: String, contextBefore: String? = null, lookahead: Boolean = true): CorrectionResult {
         if (!hasHangul(text)) return CorrectionResult(text, text, emptyList())
 
         val sink = mutableListOf<Correction>()
@@ -177,6 +189,7 @@ class CorrectionEngine(
         // (디코더가 아는 답) 대신 '열라할게' 로 굳었다.
         current = applyTypoFixer(current, sink)
         current = applyTextRules(current, sink)
+        current = applyConfusable(current, contextBefore, lookahead, sink)
         // 띄어쓰기 교정으로 새 어절이 드러날 수 있어 어절 규칙을 한 번 더 돌린다.
         current = applyWordRules(current, sink)
 
@@ -275,7 +288,7 @@ class CorrectionEngine(
 
         val start = windowStart(textBeforeCursor, maxWords)
         val window = textBeforeCursor.substring(start)
-        val result = correct(window, contextBefore(textBeforeCursor, start))
+        val result = correct(window, contextBefore(textBeforeCursor, start), lookahead = false)
         if (!result.changed) return null
 
         return TailCorrection(
@@ -442,6 +455,21 @@ class CorrectionEngine(
 
     private fun applyTextRules(text: String, sink: MutableList<Correction>): String =
         textRules.fold(text) { acc, rule -> rule.apply(acc, sink) }
+
+    /**
+     * 헷갈리는 말을 문맥으로 가린다. **띄어쓰기·규칙이 다 끝난 뒤에 돈다** — 어절이 자리를 잡은 글을 본다.
+     * 어절 하나가 앞뒤에 따라 달라지므로 [analyse] 로 기억해 둘 수 없다. 대신 후보 어절이 없는 창은 거의 공짜다.
+     */
+    private fun applyConfusable(
+        text: String,
+        contextBefore: String?,
+        lookahead: Boolean,
+        sink: MutableList<Correction>
+    ): String {
+        if (!confusableEnabled) return text
+        val classifier = confusable ?: ConfusableClassifier.bundled() ?: return text
+        return classifier.apply(text, contextBefore, lookahead, sink)
+    }
 
     companion object {
         /** 기억해 둘 어절 수. 한 문단 분량이면 충분하고, 넘으면 오래된 것부터 버린다. */

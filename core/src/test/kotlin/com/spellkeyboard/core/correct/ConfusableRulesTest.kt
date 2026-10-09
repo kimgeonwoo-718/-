@@ -6,6 +6,8 @@ import kotlin.test.assertEquals
 /**
  * 소리가 같거나 비슷해 헷갈리는 말([ConfusableRules]). **고치는 것보다 안 건드리는 것이 더 중요하다** — 그래서 맞는 글을 지키는
  * 시험이 고치는 시험만큼 길다.
+ *
+ * 낫다/낳다의 문맥 판정은 규칙이 아니라 학습된 모델이 한다 — [ConfusableClassifierTest]. 여기 남은 것은 문맥을 볼 것 없이 없는 꼴인 것뿐이다.
  */
 class ConfusableRulesTest {
 
@@ -16,72 +18,6 @@ class ConfusableRulesTest {
     private fun assertUntouched(text: String) {
         val result = engine.correct(text)
         assertEquals(text, result.text, "고치지 말아야 할 문장을 고쳤다: ${result.corrections}")
-    }
-
-    @Test
-    fun `이게 낳을까 저게 낳을까 — 비교하는 자리의 낳은 낫이다`() {
-        assertEquals("이게 나을까 저게 나을까", fix("이게 낳을까 저게 낳을까"))
-        assertEquals("뭐가 더 나을까", fix("뭐가 더 낳을까"))
-        assertEquals("뭐가 나을까", fix("뭐가 낳을까"))
-        assertEquals("차라리 그게 낫겠다", fix("차라리 그게 낳겠다"))
-        assertEquals("이건 저것보다 낫다", fix("이건 저것보다 낳다"))
-        assertEquals("그 사람보다는 내가 낫지", fix("그 사람보다는 내가 낳지"))
-        assertEquals("커피보다 차가 나을까", fix("커피보다 차가 낳을까"))
-        assertEquals("혼자 하는 게 나아", fix("혼자 하는 게 낳아"))
-        assertEquals("훨씬 나은 거 같아", fix("훨씬 낳은 거 같아"))
-        assertEquals("어제보다 나아졌어", fix("어제보다 낳아졌어"))
-        assertEquals("상황이 나아지면 좋겠다", fix("상황이 낳아지면 좋겠다"))
-    }
-
-    @Test
-    fun `병이 낫는 자리 — 아픈 곳 뒤의 낳은 낫이다`() {
-        assertEquals("감기가 빨리 나았으면 좋겠다", fix("감기가 빨리 낳았으면 좋겠다"))
-        assertEquals("몸이 좀 나았어?", fix("몸이 좀 낳았어?"))
-        assertEquals("허리가 나으면 운동할래", fix("허리가 낳으면 운동할래"))
-        assertEquals("열이 다 나았어", fix("열이 다 낳았어"))
-    }
-
-    @Test
-    fun `아이와 결과를 낳는 자리 — 목적어 뒤의 나는 낳이다`() {
-        assertEquals("아이를 낳을까 고민했어", fix("아이를 나을까 고민했어"))
-        assertEquals("아기를 낳았어", fix("아기를 나았어"))
-        assertEquals("고양이가 새끼를 낳았어", fix("고양이가 새끼를 나았어"))
-        assertEquals("닭이 알을 낳았다", fix("닭이 알을 나았다"))
-        assertEquals("쌍둥이를 낳았대", fix("쌍둥이를 나았대"))
-        assertEquals("아들을 낳으면 좋겠다", fix("아들을 나으면 좋겠다"))
-        assertEquals("큰 비극을 낳았다", fix("큰 비극을 나았다"))
-        assertEquals("좋은 결과를 낳을 거야", fix("좋은 결과를 나을 거야"))
-        assertEquals("오해를 낳을 수 있어", fix("오해를 나을 수 있어"))
-    }
-
-    @Test
-    fun `낫과 낳이 둘 다 되는 자리는 건드리지 않는다`() {
-        // 이것이 빚어낸 결과(낳다) ↔ 더 좋은 결과(낫다)
-        assertUntouched("이게 낳은 결과야")
-        assertUntouched("그게 낳은 비극이지")
-        // 목적어를 줄인 출산
-        assertUntouched("몸이 안 좋아서 일찍 낳았어")
-        assertUntouched("허리가 아파서 일찍 낳았어")
-        assertUntouched("하나 더 낳을까")
-        assertUntouched("아이를 더 낳을까 고민이야")
-        assertUntouched("고양이가 새끼를 더 낳았어")
-        assertUntouched("병이 있는데도 아이를 낳았어")
-        // 아이가 나았다(병) — '아이도' 를 '낳았어' 로 읽으면 안 된다
-        assertUntouched("아이도 나았어")
-        assertUntouched("애도 나았어")
-        assertUntouched("아이 나았어")
-        // 좋아 보이다
-        assertUntouched("결과를 더 나아 보이게 만들었다")
-        assertUntouched("문제를 나아 보이게 하는 방법")
-    }
-
-    @Test
-    fun `맞는 낫과 낳은 그대로 둔다`() {
-        for (s in listOf(
-            "이게 나을까 저게 나을까", "뭐가 더 나을까", "감기가 빨리 나았으면 좋겠다", "그게 더 낫다", "이게 더 나은 것 같아",
-            "기분이 나아졌어", "아이를 낳을까 고민했어", "아기를 낳았어", "알을 낳았다", "좋은 결과를 낳을 거야", "쌍둥이를 낳았대",
-            "나아가야 해", "낫을 갈았어", "낫으로 풀을 베었다", "병이 나았어", "빨리 나으세요", "그 사람이 낳은 아이야",
-        )) assertUntouched(s)
     }
 
     @Test

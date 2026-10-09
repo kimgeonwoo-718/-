@@ -18,7 +18,11 @@ import java.io.File
  */
 fun main(args: Array<String>) {
     val cache = File(System.getProperty("java.io.tmpdir"), "spell-live")
-    val engine = CorrectionEngine().apply { cheonjiin = System.getenv("SPELL_CJI") == "1" }
+    val engine = CorrectionEngine().apply {
+        cheonjiin = System.getenv("SPELL_CJI") == "1"
+        // SPELL_NO_CONFUSABLE=1: 헷갈리는 말 모델 단계를 끄고 잰다 (켠 것과 견주려고)
+        confusableEnabled = System.getenv("SPELL_NO_CONFUSABLE") != "1"
+    }
     val spacer = runCatching { Spacer(SpacingDictionary.open(cache)) }
         .onSuccess { engine.spacer = it; engine.speller = Speller(it) }
         .getOrNull()
