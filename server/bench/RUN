@@ -1,1 +1,1 @@
-translate solar-pro4 claude-haiku-5-5 --prompt=v1 --prompt=v2 --maxWon=900 --show
+translate solar-pro4 solar-pro3 gpt-5-mini gpt-4.1-mini --prompt=v2-shots5 --maxWon=700 --show

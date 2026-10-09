@@ -339,17 +339,23 @@ const TRANSLATE_STYLE = {
 /**
  * 쓸 번역 지시문을 고른다. `version` 은 환경변수 `TRANSLATE_PROMPT`("v1"|"v2")에서 오고, 비면 [DEFAULT_TRANSLATE_PROMPT].
  * 코드를 고쳐 배포하지 않고 값만 바꿔 되돌릴 수 있게 열어 둔 자리다.
+ *
+ * **기본값은 v2 다(2026-10-09).** 1판은 보기가 영어뿐이라 solar-pro4 가 일본어·중국어를 달라는 요청에 **영어로 답했다** —
+ * 시험지 121문장 중 일본어 114개, 중국어 97개가 엉뚱한 언어였다(chrF 4.4·9.7). 2판은 일본어 58.1·중국어 51.0, 영어는 같다(72.9 → 72.7).
+ * 1판이 "일본어·중국어 번역이 형편없다" 의 정체였다.
  */
-export const DEFAULT_TRANSLATE_PROMPT = 'v1';
+export const DEFAULT_TRANSLATE_PROMPT = 'v2';
 
 export function translatePromptFor(target, version) {
   const which = (version || DEFAULT_TRANSLATE_PROMPT).toLowerCase();
   return which === 'v2' ? translatePromptV2(target) : translatePrompt(target);
 }
 
-export function translatePromptV2(target) {
+export function translatePromptV2(target, options = {}) {
   const name = TRANSLATE_TARGETS[target];
   const style = TRANSLATE_STYLE[target];
+  // 보기 개수. 입력 토큰은 요청마다 값이 나가므로(보기 열 개 ≈ 400토큰) 겨루기에서 줄여 본다.
+  const shots = options.shots == null ? style.shots : style.shots.slice(0, options.shots);
   return [
     '당신은 한국어를 ' + name + ' 로 옮기는 전문 번역가다. 메신저·SNS·업무 메시지처럼 사람이 키보드로 친 글을 옮기고,',
     '목표는 파파고·DeepL 수준의 정확함과 그 언어 사람이 실제로 쓰는 자연스러움이다. 다른 일은 하지 않는다.',
@@ -367,14 +373,14 @@ export function translatePromptV2(target) {
     '- 말투(반말·존댓말·격식)를 지켜라. 원문이 편하게 쓴 채팅이면 번역도 편하게, 정중한 글이면 정중하게.',
     '- 줄임말·신조어·인터넷 말(ㅇㅈ, ㄹㅇ, 갓생, 존맛, 레전드, 읽씹, 실화냐 …)은 뜻을 알아내 그 언어의 비슷한 인터넷 말투로 옮겨라.',
     '  "ㅋㅋ"·"ㅎㅎ"·"ㅠㅠ" 같은 자모는 그 언어에서 같은 자리에 쓰는 표현으로 바꾼다(lol, (笑), 哈哈, 😭).',
-    '- 이름·상호·지명은 널리 쓰이는 표기가 있으면 그것을 쓴다.',
+    '- 이름·상호·지명은 널리 쓰이는 표기가 있으면 그것을 쓴다. 한국 서비스 이름(카카오톡, 네이버, 쿠팡, 배민 …)은 로마자로 그대로 쓰고 다른 나라 서비스로 바꾸지 마라(카톡 → KakaoTalk).',
     '- 원문에 맞춤법이 틀리거나 띄어쓰기가 없어도 뜻을 헤아려 바르게 옮겨라.',
     '',
     name + ' 로 옮길 때',
     ...style.rules.map((rule) => '- ' + rule),
-    '',
-    '보기 (한국어 → ' + name + ')',
-    ...style.shots.map(([ko, out]) => '- ' + ko + ' → ' + out),
+    ...(shots.length
+      ? ['', '보기 (한국어 → ' + name + ')', ...shots.map(([ko, out]) => '- ' + ko + ' → ' + out)]
+      : []),
   ].join('\n');
 }
 

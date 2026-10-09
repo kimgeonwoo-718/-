@@ -49,8 +49,13 @@ if (!models.length) {
   process.exit(2);
 }
 
-const promptFor = (name, lang) =>
-  name === 'v1' ? translatePrompt(lang) : name === 'v2' ? translatePromptV2(lang) : readFileSync(name, 'utf8');
+/** `v1`, `v2`, `v2-shots5`(보기 5개만), `v2-shots0`(보기 없음), 또는 지시문 파일 경로. */
+const promptFor = (name, lang) => {
+  if (name === 'v1') return translatePrompt(lang);
+  const m = /^v2(?:-shots(\d+))?$/.exec(name);
+  if (m) return translatePromptV2(lang, m[1] == null ? {} : { shots: Number(m[1]) });
+  return readFileSync(name, 'utf8');
+};
 
 // --- 시험지 ----------------------------------------------------------------------------------------------
 const cases = readFileSync(new URL('./translate-cases.tsv', import.meta.url), 'utf8')
@@ -264,6 +269,7 @@ for (const m of models) {
 console.log();
 
 const all = [];
+const summary = [];
 for (const spec of models) {
   for (const promptName of PROMPTS) {
     const started = Date.now();
@@ -308,6 +314,7 @@ for (const spec of models) {
     const mean = LANGS.reduce((s, l) => s + (per[l].n ? per[l].chrf / per[l].n : 0), 0) / LANGS.length;
     console.log(`   평균 chrF ${mean.toFixed(1)}   문장당 ${(won == null ? 0 : (won / Math.max(1, cases.length * LANGS.length))).toFixed(3)}원\n`);
     all.push({ model: spec, prompt: promptName, rows });
+    summary.push(`${spec.padEnd(22)} ${promptName.padEnd(10)} ` + LANGS.map((l) => `${l} ${(per[l].n ? per[l].chrf / per[l].n : 0).toFixed(1)}${per[l].script ? `(글자틀림${per[l].script})` : ''}${per[l].err ? `(실패${per[l].err})` : ''}`).join('  ') + `   평균 ${mean.toFixed(1)}   ${(won == null ? 0 : won / Math.max(1, cases.length * LANGS.length)).toFixed(3)}원`);
 
     if (SHOW) {
       for (const r of rows) {
@@ -319,4 +326,6 @@ for (const spec of models) {
   }
 }
 if (OUT) writeFileSync(OUT, JSON.stringify(all, null, 1));
+console.log('\n=== 요약 (모델 / 지시문 / en·ja·zh chrF / 평균 / 문장당 원) ===');
+for (const r of summary) console.log(r);
 console.log(`쓴 돈 약 ${spentWon.toFixed(1)}원`);

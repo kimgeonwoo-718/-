@@ -376,3 +376,23 @@ test('translatePromptV2: 언어마다 규칙과 보기가 들어 있다', () => 
   assert.match(translatePromptV2('ja'), /タメ口/);
   assert.match(translatePromptV2('zh'), /您/);
 });
+
+test('translatePromptFor: 기본은 2판이고 환경변수로 1판으로 되돌릴 수 있다', async () => {
+  const { translatePromptFor, translatePrompt, translatePromptV2 } = await import('../src/openai.js');
+  assert.equal(translatePromptFor('ja', ''), translatePromptV2('ja'));
+  assert.equal(translatePromptFor('ja', undefined), translatePromptV2('ja'));
+  assert.equal(translatePromptFor('ja', 'v2'), translatePromptV2('ja'));
+  assert.equal(translatePromptFor('ja', 'V1'), translatePrompt('ja'));
+});
+
+test('translatePromptV2: 일본어·중국어 요청에 영어 보기만 있으면 안 된다', () => {
+  // 1판이 영어 보기만 들고 있어서 solar-pro4 가 일본어·중국어 요청에 영어로 답했다(2026-10-09 시험지 114/121·97/121).
+  for (const code of ['ja', 'zh']) {
+    const prompt = translatePromptV2(code);
+    const shots = prompt.split('보기')[1];
+    const ascii = (shots.match(/[A-Za-z]/g) ?? []).length;
+    assert.ok(ascii < shots.length * 0.1, `${code}: 보기가 영어로 쏠려 있다`);
+  }
+  assert.ok(translatePromptV2('ja', { shots: 0 }).indexOf('보기') === -1);
+  assert.ok(translatePromptV2('ja', { shots: 3 }).split('\n- ').length < translatePromptV2('ja').split('\n- ').length);
+});
