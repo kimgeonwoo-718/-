@@ -22,7 +22,7 @@
  * (`buildRequest(text, withPrompt = false)`).
  */
 import {
-  translatePrompt,
+  translatePromptFor,
   userTextOf,
   tooDifferent,
   keepOriginal,
@@ -57,7 +57,7 @@ export function toGeminiRequest(body, options = {}) {
   if (!user) throw new Error('empty_request');
 
   const system = options.translateTo
-    ? translatePrompt(options.translateTo)
+    ? translatePromptFor(options.translateTo, options.translatePrompt)
     : capPrompt(partsText(parsed.system_instruction ?? parsed.systemInstruction)) || KO_SYSTEM_PROMPT;
 
   return JSON.stringify({

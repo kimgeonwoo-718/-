@@ -17,11 +17,13 @@
  */
 import {
   KO_SYSTEM_PROMPT,
-  translatePrompt,
+  translatePromptFor,
   userTextOf,
   tooDifferent,
   keepOriginal,
   dropAddedPunctuation,
+  cleanTranslation,
+  translationProblem,
   capPrompt,
   upstreamErrorMessage,
   outputCap,
@@ -49,7 +51,7 @@ export function toClaudeRequest(body, model, options = {}) {
   if (!user) throw new Error('empty_request');
 
   const system = options.translateTo
-    ? translatePrompt(options.translateTo)
+    ? translatePromptFor(options.translateTo, options.translatePrompt)
     : options.prompt === 'server'
       ? KO_SYSTEM_PROMPT
       : capPrompt(partsText(parsed.system_instruction ?? parsed.systemInstruction)) || KO_SYSTEM_PROMPT;
@@ -83,8 +85,10 @@ export function fromClaudeReply(status, text, user = '', options = {}) {
     .map((block) => block.text ?? '')
     .join('')
     .trim();
-  // 원문에 없던 문장부호는 뗀다(openai.js 의 dropAddedPunctuation). 교정일 때만.
-  const corrected = user && !options.translateTo ? dropAddedPunctuation(user, raw) : raw;
+  // 원문에 없던 문장부호는 뗀다(openai.js 의 dropAddedPunctuation). 교정일 때만. 번역이면 군더더기를 뗀다.
+  const corrected = options.translateTo
+    ? cleanTranslation(raw)
+    : user ? dropAddedPunctuation(user, raw) : raw;
 
   const usage = parsed?.usage ?? {};
   const usageMetadata = {
@@ -98,6 +102,11 @@ export function fromClaudeReply(status, text, user = '', options = {}) {
   // 잘린 답은 주지 않는다 — 앱이 사용자 글을 잘린 교정문으로 덮어 버린다. 값은 나갔으니 사용량은 싣는다.
   if (parsed?.stop_reason === 'max_tokens') return billedError(502, '글이 너무 길어 교정문이 잘렸다', usageMetadata);
   if (!corrected) return billedError(502, `응답이 비었다 (${parsed?.stop_reason ?? 'unknown'})`, usageMetadata);
+  // 엉뚱한 언어로 나온 번역은 주지 않는다(앱이 기기 번역으로 대신한다). 값은 나갔으니 사용량은 싣는다.
+  if (options.translateTo) {
+    const problem = translationProblem(corrected, options.translateTo);
+    if (problem) return billedError(502, `번역이 맞는 언어가 아니다 (${problem})`, usageMetadata);
+  }
   // 교정이 아닌 답은 원문으로(openai.js 의 keepOriginal). 교정일 때만 — 번역문은 길이가 다른 게 당연하다.
   if (user && !options.translateTo && tooDifferent(user, corrected)) {
     return keepOriginal(user, usageMetadata);

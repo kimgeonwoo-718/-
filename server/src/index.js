@@ -652,6 +652,8 @@ async function resolveGeminiModel(env, fetchImpl, nowMs) {
  */
 async function buildAiCall(env, fetchImpl, body, translateTo, nowMs) {
   const which = provider(env);
+  // 번역 지시문 판("v1"|"v2"). 비면 기본값(openai.js DEFAULT_TRANSLATE_PROMPT). 배포 없이 값만 바꿔 되돌린다.
+  const translatePrompt = (env.TRANSLATE_PROMPT ?? '').trim();
   // 구글 모델 고르기는 짓기 실패와 섞이면 안 된다(저장소 오류를 "잘못된 요청" 으로 바꿔 버린다). 밖에서 한다.
   const geminiModelName = which === 'gemini' ? await resolveGeminiModel(env, fetchImpl, nowMs) : null;
   let target;
@@ -667,12 +669,13 @@ async function buildAiCall(env, fetchImpl, body, translateTo, nowMs) {
         reasoning: (env.UPSTAGE_REASONING ?? '').trim(),
         extraRules: (env.UPSTAGE_EXTRA_RULES ?? '').trim().toLowerCase() !== 'off',
         translateTo,
+        translatePrompt,
       });
       maxTokens = JSON.parse(request).max_tokens;
       finish = (raw) => toGeminiReply(raw.status, raw.text, user, { translateTo });
     } else if (which === 'anthropic') {
       target = ANTHROPIC_URL;
-      request = toClaudeRequest(body, claudeModel(env), { prompt: (env.CLAUDE_PROMPT ?? '').trim(), translateTo });
+      request = toClaudeRequest(body, claudeModel(env), { prompt: (env.CLAUDE_PROMPT ?? '').trim(), translateTo, translatePrompt });
       maxTokens = JSON.parse(request).max_tokens;
       finish = (raw) => fromClaudeReply(raw.status, raw.text, user, { translateTo });
     } else if (which === 'openai') {
@@ -681,12 +684,13 @@ async function buildAiCall(env, fetchImpl, body, translateTo, nowMs) {
         reasoning: (env.OPENAI_REASONING ?? '').trim(),
         prompt: (env.OPENAI_PROMPT ?? '').trim(),
         translateTo,
+        translatePrompt,
       });
       maxTokens = JSON.parse(request).max_completion_tokens;
       finish = (raw) => toGeminiReply(raw.status, raw.text, user, { translateTo });
     } else {
       target = geminiUrl(geminiModelName);
-      request = toGeminiRequest(body, { translateTo });
+      request = toGeminiRequest(body, { translateTo, translatePrompt });
       maxTokens = JSON.parse(request).generationConfig.maxOutputTokens;
       finish = (raw) => fromGeminiReply(raw.status, raw.text, user, { translateTo });
     }

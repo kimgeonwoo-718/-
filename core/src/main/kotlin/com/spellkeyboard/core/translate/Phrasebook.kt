@@ -26,7 +26,53 @@ object Phrasebook {
     /** 표에 있으면 손으로 옮긴 문장, 없으면 null(모델이 옮긴다). */
     fun lookup(core: String, code: String): String? {
         val key = core.replace(" ", "")
-        return table(code)[key]
+        // 자원 파일(phrasebook.tsv)이 코드 안의 표보다 먼저다 — 늘 이쪽을 고친다.
+        return big[key]?.get(languageIndex(code)) ?: table(code)[key]
+    }
+
+    private fun languageIndex(code: String): Int = when (code) {
+        JAPANESE -> 1
+        CHINESE -> 2
+        else -> 0
+    }
+
+    /**
+     * 자원 파일 `phrasebook.tsv` 의 표. 열쇠 → [영어, 일본어, 중국어].
+     *
+     * 코드 안의 표(아래 [EN]·[JA]·[ZH])는 처음 만든 작은 표다. 문장을 늘리는 일은 이 파일에서 한다 — 한 줄에
+     * 세 언어가 같이 있어 하나만 빠지는 일이 없고, 변형(반말·존댓말)을 `|` 로 묶을 수 있다. 읽을 때 각 변형을
+     * [ChatText.normalize] 에 통과시켜 **번역 전에 문장이 이 모습으로 다듬어진다는 사실에 열쇠를 맞춘다.**
+     * 처음 쓸 때 한 번 읽는다(수백 줄이라 수 ms).
+     */
+    private val big: Map<String, Array<String>> by lazy { loadBig() }
+
+    private fun loadBig(): Map<String, Array<String>> {
+        val stream = Phrasebook::class.java.getResourceAsStream("/phrasebook.tsv") ?: return emptyMap()
+        val out = HashMap<String, Array<String>>(2048)
+        stream.bufferedReader(Charsets.UTF_8).useLines { lines ->
+            for (line in lines) {
+                if (line.isBlank() || line.startsWith("#")) continue
+                val cols = line.split('\t')
+                if (cols.size < 4) continue
+                val translations = arrayOf(cols[1].trim(), cols[2].trim(), cols[3].trim())
+                for (variant in cols[0].split('|')) {
+                    val key = ChatText.normalize(variant).core.replace(" ", "")
+                    if (key.isNotEmpty()) out.putIfAbsent(key, translations)
+                }
+            }
+        }
+        return out
+    }
+
+    /** 자원 파일의 모든 열쇠. 시험이 겹침·글자 종류를 훑는 데 쓴다. */
+    internal fun bigKeys(): Set<String> = big.keys
+
+    /** 자원 파일 한 줄들(주석 제외)의 원본. 시험이 형식을 훑는 데 쓴다. */
+    internal fun bigLines(): List<List<String>> {
+        val stream = Phrasebook::class.java.getResourceAsStream("/phrasebook.tsv") ?: return emptyList()
+        return stream.bufferedReader(Charsets.UTF_8).readLines()
+            .filter { it.isNotBlank() && !it.startsWith("#") }
+            .map { it.split('\t') }
     }
 
     /**
@@ -62,7 +108,7 @@ object Phrasebook {
     }
 
     /** 표에 든 문장 수. 테스트와 진단용. */
-    fun size(code: String): Int = table(code).size
+    fun size(code: String): Int = (big.keys + table(code).keys).size
 
     private fun table(code: String): Map<String, String> = when (code) {
         JAPANESE -> JA

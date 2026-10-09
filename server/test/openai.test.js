@@ -332,3 +332,47 @@ test('번역은 길이가 달라도 안 버린다', () => {
   assert.equal(asTranslation.status, 200);
   assert.match(asTranslation.text, /went out for a walk/);
 });
+
+// ── 번역문 정리·검사 (2026-10-09) ──────────────────────────────────────────────────────────────────
+
+import { cleanTranslation, translationProblem, translatePromptV2 } from '../src/openai.js';
+
+test('cleanTranslation: 머리말·코드 울타리·통째로 감싼 따옴표를 뗀다', () => {
+  assert.equal(cleanTranslation('Translation: Hello there.'), 'Hello there.');
+  assert.equal(cleanTranslation('번역: 안녕'), '안녕');
+  assert.equal(cleanTranslation('```\nHello\n```'), 'Hello');
+  assert.equal(cleanTranslation('"Did you eat?"'), 'Did you eat?');
+  assert.equal(cleanTranslation('「ご飯食べた？」'), 'ご飯食べた？');
+  // 원문에 있던 인용은 건드리지 않는다
+  assert.equal(cleanTranslation('He said "hi" to me.'), 'He said "hi" to me.');
+  assert.equal(cleanTranslation('"Yes," she said, "I know."'), '"Yes," she said, "I know."');
+  assert.equal(cleanTranslation('  Hello  '), 'Hello');
+});
+
+test('translationProblem: 엉뚱한 언어를 가려낸다', () => {
+  // 맞는 것
+  assert.equal(translationProblem('I\'m on my way home.', 'en'), null);
+  assert.equal(translationProblem('今、家に帰ってるところ。', 'ja'), null);
+  assert.equal(translationProblem('我现在正在回家的路上。', 'zh'), null);
+  assert.equal(translationProblem('はい', 'ja'), null);
+  assert.equal(translationProblem('😂', 'en'), null);
+  assert.equal(translationProblem('010-1234-5678', 'zh'), null);
+  // 고유명사 몇 글자가 한글로 남은 것은 괜찮다
+  assert.equal(translationProblem('Please call 김민수 at 3 p.m. tomorrow, thank you very much.', 'en'), null);
+  // 틀린 것
+  assert.equal(translationProblem('안녕하세요 저는 건우입니다', 'en'), 'untranslated');
+  assert.equal(translationProblem('我现在正在回家的路上。', 'ja'), 'wrong_language');
+  assert.equal(translationProblem('今、家に帰ってるところ。', 'zh'), 'wrong_language');
+  assert.equal(translationProblem('今日は天気がいいね', 'en'), 'wrong_language');
+});
+
+test('translatePromptV2: 언어마다 규칙과 보기가 들어 있다', () => {
+  for (const [code, mark] of [['en', 'won'], ['ja', 'ウォン'], ['zh', '韩元']]) {
+    const prompt = translatePromptV2(code);
+    assert.match(prompt, new RegExp(mark));
+    assert.match(prompt, /보기/);
+    assert.ok(prompt.length > 1500, `${code}: ${prompt.length}자`);
+  }
+  assert.match(translatePromptV2('ja'), /タメ口/);
+  assert.match(translatePromptV2('zh'), /您/);
+});

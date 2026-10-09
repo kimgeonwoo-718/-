@@ -27,9 +27,9 @@ class PhrasebookTest {
 
     @Test
     fun `세 언어를 모두 안다`() {
-        assertEquals("Thank you", Phrasebook.lookup("감사합니다", Phrasebook.ENGLISH))
-        assertEquals("ありがとうございます", Phrasebook.lookup("감사합니다", Phrasebook.JAPANESE))
-        assertEquals("谢谢您", Phrasebook.lookup("감사합니다", Phrasebook.CHINESE))
+        assertEquals("Thank you very much.", Phrasebook.lookup("감사합니다", Phrasebook.ENGLISH))
+        assertEquals("ありがとうございます。", Phrasebook.lookup("감사합니다", Phrasebook.JAPANESE))
+        assertEquals("非常感谢。", Phrasebook.lookup("감사합니다", Phrasebook.CHINESE))
         assertTrue(Phrasebook.size(Phrasebook.ENGLISH) > 100)
         assertTrue(Phrasebook.size(Phrasebook.JAPANESE) > 50)
         assertTrue(Phrasebook.size(Phrasebook.CHINESE) > 50)
@@ -89,5 +89,54 @@ class PhrasebookTest {
             "도착했어", "늦었어", "잘자", "잘가", "또봐", "내일봐", "맛있어", "밥먹자",
             "대박", "진짜", "오늘기분이어떠세요", "어떻게지내", "ㅇㅇ", "ㄴㄴ", "ㄱㅅ"
         )
+    }
+
+    // ── 자원 파일 phrasebook.tsv ─────────────────────────────────────────────────────────────────────
+
+    private val kana = Regex("[\u3040-\u30ff]")
+    private val han = Regex("[\u4e00-\u9fff]")
+    private val hangul = Regex("[\uac00-\ud7a3]")
+
+    @Test
+    fun `자원 표의 모든 줄이 형식을 지킨다`() {
+        val rows = Phrasebook.bigLines()
+        assertTrue(rows.size > 100, "표가 너무 짧다: ${rows.size}줄")
+        for (cols in rows) {
+            assertEquals(4, cols.size, "열이 넷이 아니다: $cols")
+            val (ko, en, ja, zh) = cols
+            assertTrue(ko.isNotBlank() && en.isNotBlank() && ja.isNotBlank() && zh.isNotBlank(), "빈 칸이 있다: $cols")
+            // 언어 글자가 맞나. 일본어는 가나가 있어야 하고 중국어는 한자만(가나 없음), 영어는 한글·한자·가나가 없다.
+            assertTrue(kana.containsMatchIn(ja) || han.containsMatchIn(ja), "일본어에 일본 글자가 없다: $cols")
+            assertTrue(han.containsMatchIn(zh) && !kana.containsMatchIn(zh), "중국어 글자가 틀렸다: $cols")
+            assertTrue(!hangul.containsMatchIn(en) && !han.containsMatchIn(en) && !kana.containsMatchIn(en), "영어에 다른 글자가 섞였다: $cols")
+            assertTrue(!hangul.containsMatchIn(ja) && !hangul.containsMatchIn(zh), "번역에 한글이 남았다: $cols")
+        }
+    }
+
+    @Test
+    fun `자원 표에 같은 열쇠가 두 번 나오지 않는다`() {
+        val seen = HashMap<String, String>()
+        for (cols in Phrasebook.bigLines()) {
+            for (variant in cols[0].split('|')) {
+                val key = ChatText.normalize(variant).core.replace(" ", "")
+                assertTrue(key.isNotEmpty(), "열쇠가 비었다: '$variant'")
+                val before = seen.put(key, cols[1])
+                assertTrue(before == null, "열쇠 '$key' 가 두 번 나온다 ('$before' 와 '${cols[1]}')")
+            }
+        }
+    }
+
+    @Test
+    fun `자원 표가 코드 안의 표보다 먼저다`() {
+        // 코드 안 표에는 '안녕하세요' 가 'Hello' 로 있다. 자원 표는 'Hello!' 다.
+        assertEquals("Hello!", Phrasebook.lookup("안녕하세요", Phrasebook.ENGLISH))
+        assertEquals("こんにちは。", Phrasebook.lookup("안녕하세요", Phrasebook.JAPANESE))
+    }
+
+    @Test
+    fun `변형들이 한 번역으로 모인다`() {
+        for (key in listOf("뭐해", "뭐하냐", "뭐 하니", "뭐 하고 있어")) {
+            assertEquals("What are you doing?", Phrasebook.lookup(key, Phrasebook.ENGLISH), key)
+        }
     }
 }

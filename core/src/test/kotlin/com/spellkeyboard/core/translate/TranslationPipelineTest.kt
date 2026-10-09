@@ -27,7 +27,7 @@ class TranslationPipelineTest {
     @Test
     fun `문장마다 따로 옮겨 이어 붙인다`() {
         val engine = FakeEngine()
-        val result = run("회의가 길어졌어. 저녁 먹고 연락할게", engine)
+        val result = run("고양이가 소파 위에서 자고 있어. 내일 날씨가 흐릴 것 같아", engine)
         assertEquals(2, engine.calls.size)
         assertTrue(result.text.startsWith("<"), result.text)
         assertEquals(0, result.failed)
@@ -44,19 +44,19 @@ class TranslationPipelineTest {
     @Test
     fun `이미 옮긴 문장은 다시 옮기지 않는다`() {
         val engine = FakeEngine()
-        run("회의가 길어졌어.", engine)
+        run("고양이가 소파 위에서 자고 있어.", engine)
         val first = engine.calls.size
-        run("회의가 길어졌어. 저녁 먹고 연락할게", engine)
+        run("고양이가 소파 위에서 자고 있어. 내일 날씨가 흐릴 것 같아", engine)
         // 두 번째 문장 하나만 새로 불렸다
         assertEquals(first + 1, engine.calls.size)
     }
 
     @Test
     fun `못 옮긴 문장은 원문을 남기고 센다`() {
-        val engine = FakeEngine { if (it.contains("저녁")) null else "ok" }
-        val result = run("회의가 길어졌어. 저녁 먹고 연락할게.", engine)
+        val engine = FakeEngine { if (it.contains("날씨")) null else "ok" }
+        val result = run("고양이가 소파 위에서 자고 있어. 내일 날씨가 흐릴 것 같아.", engine)
         assertEquals(1, result.failed)
-        assertTrue("저녁 먹고 연락할게." in result.text, result.text)
+        assertTrue("내일 날씨가 흐릴 것 같아." in result.text, result.text)
     }
 
     @Test
@@ -73,7 +73,7 @@ class TranslationPipelineTest {
         val engine = TranslationPipeline.Engine { text, onResult, _ -> pending += { onResult("[$text]") } }
         var done = 0
         var text = ""
-        pipeline.translate("회의가 길어졌어. 저녁 먹고 연락할게.", Phrasebook.ENGLISH, engine) { done++; text = it.text }
+        pipeline.translate("고양이가 소파 위에서 자고 있어. 내일 날씨가 흐릴 것 같아.", Phrasebook.ENGLISH, engine) { done++; text = it.text }
         assertEquals(0, done)
         pending[0](); assertEquals(0, done)
         pending[1](); assertEquals(1, done)

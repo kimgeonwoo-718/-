@@ -88,6 +88,10 @@ jobs:
           # 'cost' 면 겨루기 대신 한 번 값을 잰다(bench/cost.mjs, 약 20원).
           if [ "$models" = "cost" ]; then
             node bench/cost.mjs | tee bench.txt
+          elif [ "$models" = "translate" ]; then
+            # 'translate 모델… [--prompt=v1] [--prompt=v2] [--show] [--maxWon=N]' 이면 번역 겨루기(bench/translate.mjs).
+            # 한국어 121문장 × 영·일·중. 모델 하나·지시문 하나에 363번. --maxWon 이 상한이다(기본 300원).
+            node bench/translate.mjs $extra | tee bench.txt
           elif [ "$models" = "cases" ]; then
             # 'cases 모델' 이면 사례 하나하나를 보여 준다(bench/cases.mjs, 약 80번, solar-pro4 로 약 9원).
             node bench/cases.mjs $extra | tee bench.txt
@@ -98,7 +102,7 @@ jobs:
             echo '## 모델 겨루기'
             echo
             echo '```'
-            cat bench.txt
+            grep -v -P '^(OUT|ERR)\t' bench.txt | head -c 200000
             echo '```'
             echo
             echo '되살림만 보고 고르지 마라. **멀쩡한 글 건드림**이 낮아야 쓸 수 있는 모델이다.'

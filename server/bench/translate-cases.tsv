@@ -1,0 +1,122 @@
+id	cat	ko	en	ja	zh
+g01	인사	안녕하세요 처음 뵙겠습니다	Hello, nice to meet you.	こんにちは、初めまして。	你好，初次见面。
+g02	인사	오랜만이야 잘 지냈어?	Long time no see! How have you been?	久しぶり！元気だった？	好久不见！你过得好吗？
+g03	인사	좋은 아침이에요 오늘도 힘내세요	Good morning! Hang in there today too.	おはようございます。今日も頑張ってください。	早上好！今天也加油哦。
+g04	인사	먼저 갈게 내일 보자	I'm heading out first. See you tomorrow!	先に行くね。また明日！	我先走了，明天见！
+g05	인사	새해 복 많이 받으세요	Happy New Year!	あけましておめでとうございます。	新年快乐！
+g06	인사	생일 축하해 올해도 행복하길 바라	Happy birthday! I hope you have a happy year again.	誕生日おめでとう！今年も幸せな一年になりますように。	生日快乐！希望你今年也幸福。
+g07	인사	들어가세요 조심히 가요	Take care and get home safe.	お気をつけて。帰り道に気をつけてくださいね。	路上小心，慢走哦。
+g08	인사	감사합니다 정말 도움이 많이 됐어요	Thank you so much. It really helped a lot.	ありがとうございます。本当に助かりました。	非常感谢，真的帮了我很大的忙。
+g09	인사	미안해 내가 너무 늦었지	Sorry, I'm really late, aren't I?	ごめん、遅くなっちゃったよね。	对不起，我来得太晚了吧。
+g10	인사	잘 자 좋은 꿈 꿔	Good night. Sweet dreams.	おやすみ。いい夢見てね。	晚安，做个好梦。
+c01	일상	지금 뭐해?	What are you doing right now?	今何してる？	你现在在干嘛？
+c02	일상	밥 먹었어?	Did you eat?	ご飯食べた？	吃饭了吗？
+c03	일상	나 지금 집 가는 중이야	I'm on my way home right now.	今、家に帰ってるところ。	我现在正在回家的路上。
+c04	일상	오늘 너무 피곤해서 일찍 잘래	I'm so tired today, so I'm going to bed early.	今日はすごく疲れたから、早めに寝る。	今天太累了，我想早点睡。
+c05	일상	비 오는데 우산 챙겼어?	It's raining. Did you bring an umbrella?	雨が降ってるけど、傘持った？	下雨了，你带伞了吗？
+c06	일상	주말에 뭐 할 거야?	What are you going to do this weekend?	週末は何するの？	周末你打算做什么？
+c07	일상	배고파 죽겠다 뭐 시켜 먹을까	I'm starving. Should we order something?	お腹すいて死にそう。何か出前取る？	我饿死了，要不要点点什么吃？
+c08	일상	방금 일어났어 아직 정신이 없어	I just woke up and I'm still out of it.	今起きたところ。まだ頭がぼーっとしてる。	我刚起床，还没完全清醒。
+c09	일상	요즘 너무 바빠서 연락 못 했어	I've been so busy lately that I couldn't get in touch.	最近すごく忙しくて連絡できなかった。	最近太忙了，没能联系你。
+c10	일상	커피 한 잔 할래?	Want to grab a coffee?	コーヒーでも飲む？	要不要一起喝杯咖啡？
+c11	일상	이따가 전화해도 돼?	Is it okay if I call you later?	あとで電話してもいい？	我待会儿可以给你打电话吗？
+c12	일상	집에 도착하면 톡 줘	Text me when you get home.	家に着いたらメッセージ送ってね。	到家了发消息给我。
+c13	일상	오늘 날씨 진짜 좋다	The weather is really nice today.	今日は本当にいい天気だね。	今天天气真好。
+c14	일상	청소하다가 옛날 사진 발견했어	I found some old photos while cleaning.	掃除してたら昔の写真を見つけたよ。	打扫的时候发现了以前的照片。
+c15	일상	차 막혀서 좀 늦을 것 같아	There's a lot of traffic, so I'll probably be a bit late.	渋滞してるから、ちょっと遅れそう。	路上堵车，我可能会晚一点。
+e01	감정	와 대박 진짜 축하해	Wow, that's amazing. Congratulations!	わあ、すごい！本当におめでとう！	哇，太棒了，真的恭喜你！
+e02	감정	너무 속상하다 어떡하지	I'm so upset. What should I do?	すごく悲しい。どうしよう。	好难过啊，怎么办呢。
+e03	감정	그 얘기 들으니까 소름 돋았어	I got goosebumps when I heard that.	その話を聞いて鳥肌が立ったよ。	听到那件事我起了一身鸡皮疙瘩。
+e04	감정	진짜 웃겨서 배꼽 빠지는 줄 알았어	It was so funny I thought I'd die laughing.	おかしすぎてお腹がよじれるかと思った。	太好笑了，我笑得肚子都疼了。
+e05	감정	걱정 마 다 잘 될 거야	Don't worry, everything will work out.	心配しないで。きっとうまくいくよ。	别担心，一切都会好起来的。
+e06	감정	네가 없으니까 너무 허전해	It feels so empty without you.	あなたがいないと本当に寂しい。	你不在身边，我觉得好空虚。
+e07	감정	솔직히 좀 실망했어	Honestly, I was a little disappointed.	正直、ちょっとがっかりした。	说实话，我有点失望。
+e08	감정	고마워서 눈물 날 뻔했어	I was so grateful I almost cried.	ありがたくて泣きそうになった。	我感动得差点哭了。
+e09	감정	아 진짜 짜증나 되는 일이 없네	Ugh, this is so annoying. Nothing is going right.	もう本当にイライラする。何もうまくいかない。	真的好烦，什么事都不顺利。
+e10	감정	보고 싶다 빨리 만나고 싶어	I miss you. I want to see you soon.	会いたいな。早く会いたい。	好想你，想快点见到你。
+q01	질문	어디야? 거의 다 왔어?	Where are you? Are you almost here?	どこ？もうすぐ着く？	你在哪儿？快到了吗？
+q02	질문	이거 얼마예요?	How much is this?	これはいくらですか？	这个多少钱？
+q03	질문	화장실이 어디에 있나요?	Where is the restroom?	お手洗いはどこにありますか？	请问洗手间在哪里？
+q04	질문	혹시 영어 할 줄 아세요?	Do you happen to speak English?	もしかして英語は話せますか？	请问您会说英语吗？
+q05	질문	몇 시에 시작해요?	What time does it start?	何時に始まりますか？	几点开始？
+q06	질문	왜 아직 안 자?	Why aren't you asleep yet?	どうしてまだ寝ないの？	你怎么还不睡？
+q07	질문	그거 누구한테 들었어?	Who did you hear that from?	それ、誰から聞いたの？	那个你是听谁说的？
+q08	질문	내일 시간 괜찮으세요?	Are you free tomorrow?	明日お時間は大丈夫ですか？	您明天有时间吗？
+q09	질문	이거 먹어도 돼?	Can I eat this?	これ食べてもいい？	这个我可以吃吗？
+q10	질문	무슨 일 있어? 표정이 안 좋아 보여	Is something wrong? You don't look well.	何かあった？顔色が悪そうだけど。	出什么事了吗？你看起来脸色不太好。
+p01	약속	내일 저녁 7시에 강남역에서 만나자	Let's meet at Gangnam Station at 7 p.m. tomorrow.	明日の夜7時に江南駅で会おう。	明天晚上7点在江南站见面吧。
+p02	약속	일정이 바뀌어서 다음 주로 미룰게요	The schedule changed, so I'll push it to next week.	予定が変わったので、来週に延期しますね。	日程有变，我想推迟到下周。
+p03	약속	10분만 기다려 줄래? 금방 갈게	Can you wait ten minutes? I'll be right there.	10分だけ待ってくれる？すぐ行くから。	你能等我十分钟吗？我马上到。
+p04	약속	다 같이 모일 수 있는 날 정하자	Let's pick a day when everyone can get together.	みんなで集まれる日を決めよう。	我们定一个大家都能聚在一起的日子吧。
+p05	약속	예약은 내가 해 놓을게	I'll make the reservation.	予約は私がしておくね。	预约我来订。
+p06	약속	금요일은 선약이 있어서 어려울 것 같아요	I already have plans on Friday, so I don't think I can make it.	金曜日は先約があるので難しそうです。	周五我已经有约了，恐怕不太方便。
+p07	약속	공항에서 호텔까지 어떻게 가면 돼요?	How do I get from the airport to the hotel?	空港からホテルまではどう行けばいいですか？	从机场到酒店怎么走？
+p08	약속	체크인은 몇 시부터 가능한가요?	From what time can I check in?	チェックインは何時からできますか？	几点可以办理入住？
+w01	업무	회의 자료 보내 주셔서 감사합니다 확인 후 회신드리겠습니다	Thank you for sending the meeting materials. I will review them and get back to you.	会議資料をお送りいただきありがとうございます。確認の上、返信いたします。	感谢您发来会议资料，我确认后会回复您。
+w02	업무	죄송하지만 마감 기한을 하루만 연장할 수 있을까요?	I'm sorry, but would it be possible to extend the deadline by one day?	申し訳ありませんが、締め切りを一日延ばしていただけないでしょうか。	很抱歉，请问截止日期可以延长一天吗？
+w03	업무	오늘 안에 처리하겠습니다	I will take care of it by the end of today.	本日中に対応いたします。	我会在今天之内处理好。
+w04	업무	첨부 파일 확인 부탁드립니다	Please check the attached file.	添付ファイルをご確認ください。	请查看附件。
+w05	업무	제가 담당자에게 전달해 두겠습니다	I will pass this on to the person in charge.	担当者に伝えておきます。	我会转告负责人的。
+w06	업무	내일 오전 회의는 취소되었습니다	Tomorrow morning's meeting has been canceled.	明日午前の会議はキャンセルになりました。	明天上午的会议取消了。
+w07	업무	견적서를 다시 한번 검토해 주시겠어요?	Could you review the quote once more?	見積書をもう一度ご確認いただけますか？	您能再审核一下报价单吗？
+w08	업무	불편을 드려 죄송합니다 빠르게 해결해 드리겠습니다	We apologize for the inconvenience. We will resolve it quickly.	ご不便をおかけして申し訳ございません。迅速に解決いたします。	给您带来不便，我们深表歉意，会尽快为您解决。
+s01	학교	시험 공부 하나도 못 했어 큰일 났다	I haven't studied for the exam at all. I'm in trouble.	試験勉強が全然できてない。やばい。	我一点都没复习考试，糟了。
+s02	학교	과제 제출 기한이 언제까지예요?	When is the assignment due?	課題の提出期限はいつですか？	作业什么时候截止？
+s03	학교	오늘 수업 필기한 거 좀 보내 줄 수 있어?	Could you send me your notes from today's class?	今日の授業のノート、送ってくれる？	你能把今天课堂的笔记发给我吗？
+s04	학교	교수님이 발표 순서를 바꾸셨대	I heard the professor changed the presentation order.	教授が発表の順番を変えたんだって。	听说教授改了发表的顺序。
+s05	학교	동아리 모임이 이번 주 목요일로 정해졌어	The club meeting has been set for this Thursday.	サークルの集まりは今週の木曜日に決まったよ。	社团聚会定在这周四了。
+f01	음식	여기 김치찌개 하나랑 공기밥 두 개 주세요	One kimchi stew and two bowls of rice, please.	キムチチゲを一つとご飯を二つください。	请给我一份泡菜汤和两碗米饭。
+f02	음식	너무 매운 건 잘 못 먹어요	I can't handle very spicy food.	辛すぎるものはあまり食べられません。	我不太能吃太辣的东西。
+f03	음식	이 집 진짜 맛집이다 줄 서서 먹을 만해	This place is really good. It's worth waiting in line.	このお店、本当に美味しい。並ぶ価値あるよ。	这家店真的很好吃，值得排队。
+f04	음식	계산은 따로 해 주세요	Separate checks, please.	お会計は別々でお願いします。	请分开结账。
+f05	음식	포장해 갈 수 있나요?	Can I get this to go?	持ち帰りはできますか？	可以打包带走吗？
+f06	음식	다이어트 중이라 오늘은 샐러드만 먹을래	I'm on a diet, so I'll just have a salad today.	ダイエット中だから、今日はサラダだけにする。	我在减肥，今天只吃沙拉。
+f07	음식	이거 너무 짜서 물 좀 더 주세요	This is too salty. Could I have more water?	これはしょっぱすぎるので、お水をもう少しください。	这个太咸了，请再给我一点水。
+f08	음식	맥주 한잔 하러 갈래?	Do you want to go for a beer?	ビールでも一杯飲みに行く？	要不要去喝杯啤酒？
+r01	연애	너 오늘 따라 왜 이렇게 예뻐 보여?	Why do you look so pretty today?	今日はなんでそんなにきれいに見えるの？	你今天怎么看起来这么漂亮？
+r02	연애	우리 이번 주말에 영화 보러 갈래?	Do you want to go see a movie this weekend?	今週末、映画を見に行かない？	我们这个周末去看电影好吗？
+r03	연애	나 너 좋아하는 것 같아	I think I like you.	私、あなたのことが好きみたい。	我好像喜欢上你了。
+r04	연애	화 풀어 내가 잘못했어	Don't be mad anymore. It was my fault.	機嫌直して。私が悪かったよ。	别生气了，是我不对。
+r05	연애	오늘 데이트 너무 즐거웠어 조심히 들어가	Today's date was so much fun. Get home safe.	今日のデートすごく楽しかった。気をつけて帰ってね。	今天的约会太开心了，路上小心。
+r06	연애	부모님께 인사드리러 가기로 했어	I decided to go and meet your parents.	ご両親にご挨拶に行くことにした。	我决定去拜见你的父母。
+r07	연애	헤어지자는 말은 하지 말아 줘	Please don't say we should break up.	別れようなんて言わないで。	请不要说分手的话。
+n01	인터넷	ㅇㅈ 이건 진짜 레전드다	Agreed, this is truly legendary.	それな、これはマジで伝説級だわ。	没错，这个真的是传奇。
+n02	인터넷	헐 대박 실화냐	Whoa, no way. Is this for real?	えっ、マジで？これ本当の話？	天哪，不会吧，这是真的吗？
+n03	인터넷	오늘 갓생 살았다 운동도 하고 공부도 했어	I lived a productive day today. I worked out and studied too.	今日は充実した一日だった。運動も勉強もしたよ。	今天过得很充实，既运动又学习了。
+n04	인터넷	이 노래 계속 듣게 되네 중독성 미쳤다	I can't stop listening to this song. It's insanely addictive.	この曲、ずっと聴いちゃう。中毒性やばい。	这首歌一直听停不下来，太洗脑了。
+n05	인터넷	팩트로 때리지 마 아프잖아	Don't hit me with facts. It hurts.	正論で殴らないでよ、痛いじゃん。	别拿大实话扎我，会心痛的。
+n06	인터넷	존맛탱이다 이 집 또 가고 싶어	This place is insanely good. I want to go again.	めちゃくちゃうまい。このお店にまた行きたい。	超级好吃，还想再去这家店。
+n07	인터넷	그냥 쉬고 싶다 아무것도 하기 싫어	I just want to rest. I don't feel like doing anything.	ただ休みたい。何もしたくない。	就想休息，什么都不想做。
+n08	인터넷	월요일이 또 오다니 믿을 수 없어	I can't believe Monday is here again.	また月曜日が来るなんて信じられない。	居然又到周一了，真不敢相信。
+n09	인터넷	게임 하다가 밤새웠어 눈이 따가워	I stayed up all night playing games. My eyes hurt.	ゲームしてて徹夜しちゃった。目がしょぼしょぼする。	我玩游戏通宵了，眼睛好痛。
+n10	인터넷	이번 신곡 뮤비 봤어? 안무 미쳤더라	Did you see the new music video? The choreography was insane.	今回の新曲のMV見た？振り付けがやばかったよ。	你看了这次新歌的MV吗？编舞太绝了。
+d01	숫자	12월 25일 오후 3시 30분에 예약했어요	I made a reservation for December 25 at 3:30 p.m.	12月25日の午後3時30分に予約しました。	我预订了12月25日下午3点30分。
+d02	숫자	택배비는 3,500원이고 배송은 이틀 걸려요	Shipping is 3,500 won and delivery takes two days.	送料は3,500ウォンで、配送には二日かかります。	快递费是3500韩元，送货需要两天。
+d03	숫자	키 175에 몸무게 68 정도예요	I'm about 175 cm tall and weigh about 68 kg.	身長は175センチ、体重は68キロくらいです。	我身高175厘米，体重大概68公斤。
+d04	숫자	김민수 씨 전화번호가 010-1234-5678 맞죠?	Mr. Kim Minsu's phone number is 010-1234-5678, right?	キム・ミンスさんの電話番号は010-1234-5678で合っていますか？	金民秀先生的电话号码是010-1234-5678，对吗？
+d05	숫자	서울에서 부산까지 KTX로 2시간 반 걸려	It takes two and a half hours from Seoul to Busan by KTX.	ソウルから釜山までKTXで2時間半かかるよ。	从首尔到釜山坐KTX要两个半小时。
+d06	숫자	이번 달 월세가 50만 원이야	This month's rent is 500,000 won.	今月の家賃は50万ウォンだよ。	这个月的房租是50万韩元。
+d07	숫자	3월 2일에 입학식이 있대	I heard the entrance ceremony is on March 2.	3月2日に入学式があるんだって。	听说3月2日有开学典礼。
+m01	여러문장	안녕하세요 저는 김건우입니다 오늘 기분이 어떠세요? 저는 좋아요	Hello, I'm Kim Gunwoo. How are you feeling today? I'm good.	こんにちは、キム・ゴヌです。今日の気分はいかがですか？私は元気です。	你好，我是金建宇。你今天心情怎么样？我很好。
+m02	여러문장	오늘 회의 끝났어. 생각보다 오래 걸렸네. 저녁은 같이 먹자	The meeting is over. It took longer than I expected. Let's have dinner together.	今日の会議、終わったよ。思ったより長くかかったね。夕飯は一緒に食べよう。	今天的会开完了，比我想的要久。晚饭一起吃吧。
+m03	여러문장	죄송해요 제가 실수했어요 다음부터는 주의할게요	I'm sorry, I made a mistake. I'll be more careful from now on.	すみません、私のミスです。今後は気をつけます。	对不起，是我的失误，以后我会注意的。
+m04	여러문장	택배가 아직 안 왔어요. 주문한 지 일주일이 넘었는데 확인 부탁드려요	My package still hasn't arrived. It's been more than a week since I ordered it, so could you please check?	荷物がまだ届いていません。注文して一週間以上経つので、確認をお願いします。	我的包裹还没到。下单已经一个多星期了，麻烦您查一下。
+m05	여러문장	나 오늘 면접 봤어. 엄청 떨렸는데 생각보다 잘 본 것 같아	I had an interview today. I was really nervous, but I think it went better than I expected.	今日面接を受けたよ。すごく緊張したけど、思ったよりうまくいった気がする。	我今天面试了。特别紧张，但我觉得比想象中发挥得好。
+m06	여러문장	비행기 표 끊었어! 다음 달 5일에 출발해서 열흘 있다 올 거야	I booked my flight! I'm leaving on the 5th of next month and coming back ten days later.	航空券取ったよ！来月5日に出発して、十日後に帰ってくる予定。	我订好机票了！下个月5号出发，十天后回来。
+m07	여러문장	엄마 아빠 건강하시죠? 저는 잘 지내고 있어요. 주말에 내려갈게요	Mom, Dad, you're doing well, right? I'm doing fine. I'll come down this weekend.	お母さん、お父さん、お元気ですか？私は元気にしています。週末に帰りますね。	爸爸妈妈身体都好吧？我过得很好。周末我回去看你们。
+m08	여러문장	이 제품 환불하고 싶은데요 포장은 뜯지 않았고 영수증도 있어요	I'd like to return this product. I haven't opened the package and I have the receipt.	この商品を返品したいのですが。梱包は開けていませんし、レシートもあります。	我想退这个商品，包装没拆，也有收据。
+x01	혼합	오늘 meeting 몇 시야? 나 zoom 링크 못 찾겠어	What time is today's meeting? I can't find the Zoom link.	今日のミーティング何時？Zoomのリンクが見つからないんだけど。	今天的会议几点？我找不到Zoom链接。
+x02	혼합	이 영상 유튜브에서 조회수 100만 넘었대 😂	I heard this video passed a million views on YouTube 😂	この動画、YouTubeで100万回再生を超えたんだって😂	听说这个视频在YouTube上播放量超过100万了😂
+x03	혼합	카톡 보냈는데 읽씹이야ㅠㅠ	I sent you a message on KakaoTalk but you left me on read 😭	カカオトークを送ったのに既読スルーされた😭	我发了KakaoTalk消息，结果被已读不回了😭
+x04	혼합	와이파이 비밀번호 좀 알려 주세요	Could you tell me the Wi-Fi password?	Wi-Fiのパスワードを教えていただけますか？	请告诉我Wi-Fi密码。
+x05	혼합	인스타 스토리 올렸으니까 확인해 봐~	I posted it on my Instagram story, so check it out~	インスタのストーリーに上げたから見てみて〜	我发在Instagram快拍上了，你去看看吧~
+t01	요청	조금만 천천히 말씀해 주시겠어요?	Could you speak a little more slowly?	もう少しゆっくり話していただけますか？	您能说慢一点吗？
+t02	요청	사진 한 장만 찍어 주실 수 있나요?	Could you take a photo for me?	写真を一枚撮っていただけますか？	可以请您帮我拍一张照片吗？
+t03	요청	길을 잃어버렸는데 도와주실 수 있나요?	I'm lost. Could you help me?	道に迷ってしまったのですが、助けていただけますか？	我迷路了，您能帮帮我吗？
+t04	요청	이 근처에 약국이 있나요?	Is there a pharmacy near here?	この近くに薬局はありますか？	这附近有药店吗？
+t05	요청	카드로 결제할게요	I'll pay by card.	カードで支払います。	我用刷卡支付。
+t06	요청	영수증 좀 받을 수 있을까요?	Could I get a receipt, please?	レシートをいただけますか？	可以给我一张收据吗？
+l01	긴글	어제는 하루 종일 비가 와서 집에만 있었는데, 오늘은 날씨가 맑아서 오랜만에 친구들이랑 한강에 가서 치킨도 먹고 이야기도 많이 했어. 정말 즐거운 하루였어	It rained all day yesterday so I stayed home, but today the weather was clear, so I went to the Han River with my friends for the first time in a while, had fried chicken, and talked a lot. It was a really fun day.	昨日は一日中雨で家にいたけど、今日は天気が良かったので、久しぶりに友達と漢江に行ってチキンを食べたり、たくさん話したりした。本当に楽しい一日だったよ。	昨天下了一整天雨，我一直待在家里，今天天气晴朗，我和朋友们时隔很久去了汉江，吃了炸鸡，也聊了很多。真是开心的一天。
+l02	긴글	안녕하세요 지난주에 주문한 상품이 아직 도착하지 않아서 문의드립니다. 주문 번호는 20241105입니다. 확인 후 연락 부탁드립니다. 감사합니다	Hello, I'm contacting you because the item I ordered last week has not arrived yet. The order number is 20241105. Please check and get back to me. Thank you.	こんにちは。先週注文した商品がまだ届いていないため、お問い合わせいたします。注文番号は20241105です。ご確認の上、ご連絡をお願いいたします。よろしくお願いいたします。	您好，我上周订购的商品还没有送到，所以来咨询。订单号是20241105。请核实后与我联系，谢谢。
+l03	긴글	요즘 회사 일이 너무 많아서 주말에도 쉬지 못하고 있어. 그래도 이번 프로젝트만 끝나면 휴가를 낼 수 있을 것 같아서 조금만 더 버텨 보려고	Work has been so heavy lately that I can't even rest on weekends. Still, I think I can take a vacation once this project is done, so I'm trying to hang on a little longer.	最近仕事が忙しすぎて、週末も休めていない。それでも、このプロジェクトさえ終われば休暇が取れそうなので、もう少し頑張ってみるつもり。	最近公司的工作太多了，周末也没法休息。不过这个项目一结束好像就能请假了，所以我打算再坚持一下。
+l04	긴글	다음 주 월요일부터 새로운 팀원이 합류합니다. 모두 따뜻하게 맞이해 주시고, 업무 인수인계를 도와주시면 감사하겠습니다	A new team member will be joining us from next Monday. Please give them a warm welcome, and we would appreciate your help with the handover.	来週月曜日から新しいチームメンバーが加わります。皆さん温かく迎えていただき、業務の引き継ぎもお手伝いいただけると幸いです。	下周一起会有一位新同事加入。请大家热情欢迎，并协助进行工作交接，不胜感激。
