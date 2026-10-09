@@ -30,6 +30,7 @@ import com.spellkeyboard.core.translate.SentenceSplitter
 import com.spellkeyboard.core.translate.TranslationMemory
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.Speller
+import android.util.Log
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -201,6 +202,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onCreate() {
         super.onCreate()
+        // 파일 풀기는 [EngineFiles.warmUp] 이 따로 두 갈래(사전·언어모델 / Kiwi)로 먼저 시작한다. 이미 앱 첫 화면이
+        // 시작해 뒀으면 아무 일도 안 한다. 아래 스레드는 풀린 파일을 열어 엔진에 끼운다.
+        EngineFiles.warmUp(this)
         loadSpacingDictionary()
     }
 
@@ -229,52 +233,82 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     @Volatile
     private var destroyed = false
 
+    /**
+     * 교정 엔진(사전·언어모델·Kiwi)을 다 올려 봤는가(성공이든 실패든). 아직이면 도구 줄 LIVE 가 '…' 로 보인다.
+     * 사용자가 "LIVE 가 켜져 있는데 교정이 안 된다" 고 한 것은 이 동안이었다 — 엔진이 올라오기 전에는 규칙 교정밖에 없어서
+     * '날시가'·'갓다왓어요' 같은 오타를 하나도 못 고친다(사전 없이 돌려 확인).
+     */
+    @Volatile
+    private var engineReady = false
+
+    /**
+     * 교정 엔진을 백그라운드에서 올린다. 끝나면(성공이든 실패든) [engineReady] 를 켜고 LIVE 의 '…' 를 거둔다.
+     *
+     * **우선순위를 낮추지 않는다.** 예전에는 `MIN_PRIORITY` 였다. 안드로이드는 낮은 우선순위 스레드를 백그라운드
+     * 그룹(CPU 몫이 아주 작다)에 넣는데, 막 깔거나 갱신한 직후에는 시스템이 앱을 컴파일하느라 CPU 를 쓰고 있어서
+     * 이 스레드가 굶는다. 사용자는 그동안 "LIVE 가 켜져 있는데 안 된다" 를 보고 있으니, 바로 이 일이 제일 급하다.
+     */
     private fun loadSpacingDictionary() {
         val target = File(filesDir, DICTIONARY_DIR)
+        val startedAt = android.os.SystemClock.elapsedRealtime()
         Thread {
-            // **푸는 일은 [EngineFiles] 자물쇠를 거친다.** 처음 깔고 입력기를 바꿨다 돌아오면 키보드가 한 번 더
-            // 뜨는데, 둘이 같은 폴더에 동시에 풀면 진 쪽이 NoSuchFileException 으로 죽고, 그 키보드는 사전도
-            // 언어모델도 없이 떠서 교정이 거의 안 됐다("설치하고 한참 안 되다가 만지면 된다" 의 한 원인).
-            // 그래도 못 열면 몇 번 더 해 본다. 키보드가 이미 닫혔으면 무거운 일은 더 하지 않는다.
-            val spacer = EngineFiles.openWithRetry({ destroyed }) { Spacer(EngineFiles.openSpacing(target)) }
-                ?.also {
-                    session.engine.spacer = it
-                    session.engine.speller = Speller(it)
-                }
-            if (destroyed) return@Thread
-            // 언어모델은 형태소 사전 뒤에 연다. 이게 올라오면 어절 하나씩 보던 교정 대신
-            // 창 전체를 앞뒤 문맥으로 푸는 교정이 된다. 못 열면 위의 둘로 계속 간다.
-            val lm = EngineFiles.openWithRetry({ destroyed }) { EngineFiles.openLanguageModel(target) }
-                ?.also { session.engine.context = ContextCorrector(it, spacer) }
-            if (destroyed) return@Thread
-            // Kiwi 는 맨 끝에 올린다. 105MB 를 꺼내고 읽느라 수 초가 걸려서, 앞의 둘이
-            // 먼저 준비돼야 그 동안에도 교정이 된다. 32비트 폰에서는 안 올라오고,
-            // 그때는 형태소 사전이 그대로 이 일을 한다.
-            //
-            // **부르는 것 자체를 감싼다.** KiwiSpacer 안에도 runCatching 이 있지만, 그건
-            // 이미 클래스가 올라온 뒤의 이야기다. 네이티브 라이브러리가 없는 기기에서는
-            // `KiwiSpacer` 를 **처음 건드리는 순간** NoClassDefFoundError 가 나서
-            // 그 안으로 들어가지도 못한다. arm64 가 아닌 폰이 정확히 그 경우다.
-            // 오타 교정기는 "말뭉치가 아는 낱말은 안 건드린다" 를 마지막 문지방으로 쓴다.
-            // 언어모델을 못 열었으면 그 문지방이 없는 셈이라 **아무것도 안 고치는 쪽**으로 둔다 —
-            // 문지방 없이 돌리면 멀쩡한 낱말을 다른 멀쩡한 낱말로 바꾸는 일이 두 배가 된다.
-            // 학교 줄임말('서울체고')은 말뭉치에 없어도 아는 말로 친다 — Kiwi 가 '서울최고' 로 바꾸지 않게.
-            val known: (String) -> Boolean =
-                if (lm == null) { { true } } else { { lm.lnCount(it) != null || ProtectedWords.isProtected(it) } }
-            val opened = runCatching { KiwiSpacer.open(this, known) }.getOrNull()
-            if (opened != null) {
-                if (destroyed) {
-                    runCatching { opened.close() }
-                } else {
-                    kiwi = opened
-                    session.engine.longSpacer = opened
-                    session.engine.typoFixer = opened
+            try {
+                loadEngine(target)
+            } finally {
+                // 키보드가 이미 닫혔으면 알릴 곳이 없다.
+                if (!destroyed) {
+                    engineReady = true
+                    mainHandler.post { keyboard?.setEngineLoading(false) }
+                    Log.i(TAG, "교정 엔진 준비 끝 ${android.os.SystemClock.elapsedRealtime() - startedAt}ms " +
+                        "(사전 ${session.engine.spacer != null}, 언어모델 ${session.engine.context != null}, " +
+                        "Kiwi ${session.engine.typoFixer != null})")
                 }
             }
         }.apply {
             isDaemon = true
-            priority = Thread.MIN_PRIORITY
             start()
+        }
+    }
+
+    private fun loadEngine(target: File) {
+        // **푸는 일은 [EngineFiles] 자물쇠를 거친다.** 처음 깔고 입력기를 바꿨다 돌아오면 키보드가 한 번 더
+        // 뜨는데, 둘이 같은 폴더에 동시에 풀면 진 쪽이 NoSuchFileException 으로 죽고, 그 키보드는 사전도
+        // 언어모델도 없이 떠서 교정이 거의 안 됐다("설치하고 한참 안 되다가 만지면 된다" 의 한 원인).
+        // 그래도 못 열면 몇 번 더 해 본다. 키보드가 이미 닫혔으면 무거운 일은 더 하지 않는다.
+        val spacer = EngineFiles.openWithRetry({ destroyed }) { Spacer(EngineFiles.openSpacing(target)) }
+            ?.also {
+                session.engine.spacer = it
+                session.engine.speller = Speller(it)
+            }
+        if (destroyed) return
+        // 언어모델은 형태소 사전 뒤에 연다. 이게 올라오면 어절 하나씩 보던 교정 대신
+        // 창 전체를 앞뒤 문맥으로 푸는 교정이 된다. 못 열면 위의 둘로 계속 간다.
+        val lm = EngineFiles.openWithRetry({ destroyed }) { EngineFiles.openLanguageModel(target) }
+            ?.also { session.engine.context = ContextCorrector(it, spacer) }
+        if (destroyed) return
+        // Kiwi 는 맨 끝에 올린다. 105MB 를 꺼내고 읽느라 수 초가 걸려서, 앞의 둘이
+        // 먼저 준비돼야 그 동안에도 교정이 된다. 32비트 폰에서는 안 올라오고,
+        // 그때는 형태소 사전이 그대로 이 일을 한다.
+        //
+        // **부르는 것 자체를 감싼다.** KiwiSpacer 안에도 runCatching 이 있지만, 그건
+        // 이미 클래스가 올라온 뒤의 이야기다. 네이티브 라이브러리가 없는 기기에서는
+        // `KiwiSpacer` 를 **처음 건드리는 순간** NoClassDefFoundError 가 나서
+        // 그 안으로 들어가지도 못한다. arm64 가 아닌 폰이 정확히 그 경우다.
+        // 오타 교정기는 "말뭉치가 아는 낱말은 안 건드린다" 를 마지막 문지방으로 쓴다.
+        // 언어모델을 못 열었으면 그 문지방이 없는 셈이라 **아무것도 안 고치는 쪽**으로 둔다 —
+        // 문지방 없이 돌리면 멀쩡한 낱말을 다른 멀쩡한 낱말로 바꾸는 일이 두 배가 된다.
+        // 학교 줄임말('서울체고')은 말뭉치에 없어도 아는 말로 친다 — Kiwi 가 '서울최고' 로 바꾸지 않게.
+        val known: (String) -> Boolean =
+            if (lm == null) { { true } } else { { lm.lnCount(it) != null || ProtectedWords.isProtected(it) } }
+        val opened = runCatching { KiwiSpacer.open(this, known) }.getOrNull()
+        if (opened != null) {
+            if (destroyed) {
+                runCatching { opened.close() }
+            } else {
+                kiwi = opened
+                session.engine.longSpacer = opened
+                session.engine.typoFixer = opened
+            }
         }
     }
 
@@ -282,6 +316,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         KeyboardView(this).also {
             it.listener = this
             it.keySound = { kind -> keySounds.play(kind) }
+            // 엔진이 아직 올라오는 중이면 LIVE 자리에 '…' 를 보인다. 다 올라오면 [loadSpacingDictionary] 가 거둔다.
+            it.setEngineLoading(!engineReady)
             keyboard = it
         }
 
@@ -1326,6 +1362,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         private const val SUBSCRIBER_PLAN = "subscriber"
 
         const val DICTIONARY_DIR = "spacing"
+
+        private const val TAG = "SpellKeyboard"
 
         /**
          * 편집 직후 이 시간 안에 온 커서 알림은 우리가 일으킨 것으로 본다.

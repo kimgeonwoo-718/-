@@ -13,6 +13,9 @@
     <!-- 실시간 교정 켬/끔. 28dp 동그라미에 네 글자라 10sp 가 한계다. -->
     <string name="toolbar_correction">LIVE</string>
     <string name="toolbar_correction_desc">실시간 교정 켜고 끄기</string>
+    <!-- 교정 엔진(사전·언어모델)이 올라오는 동안 LIVE 자리에 보인다. 켜져 있어도 이때는 교정이 일부만 됩니다. -->
+    <string name="toolbar_correction_loading">…</string>
+    <string name="toolbar_correction_loading_desc">교정 준비 중입니다. 잠시 뒤 실시간 교정이 모두 켜집니다</string>
     <!-- 자판 위 'ALL' 단추. 짧게 누르면 기기 안 전체교정, 길게 누르면 서버 AI. -->
     <string name="toolbar_correct_all">ALL</string>
     <string name="toolbar_correct_all_desc">글 전체 교정. 꾹 누르면 AI 가 봅니다</string>

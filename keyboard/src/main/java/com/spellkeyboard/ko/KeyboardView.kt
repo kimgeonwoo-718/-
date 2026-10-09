@@ -143,6 +143,14 @@ class KeyboardView @JvmOverloads constructor(
     private val clipboardButton: TextView
     private val correctionButton: TextView
     private var autoCorrectOn = true
+
+    /**
+     * 교정 엔진(사전·언어모델·Kiwi)이 아직 올라오는 중인가.
+     *
+     * 처음 깔거나 갱신한 직후에는 엔진이 올라오는 동안(수 초~십수 초) LIVE 가 파랗게 켜져 있어도 교정이 일부만
+     * 되거나 안 된다 — 사용자는 "켜져 있는데 안 된다" 로 본다. 그래서 그동안은 LIVE 자리에 '…' 를 보인다.
+     */
+    private var engineLoading = false
     private val translateButton: TextView
     private var translateOn = false
     private val translatePanel: LinearLayout
@@ -390,6 +398,13 @@ class KeyboardView @JvmOverloads constructor(
         styleCorrectionButton()
     }
 
+    /** 교정 엔진이 올라오는 중이면 true. 올라오는 동안 LIVE 자리에 '…' 가 보인다. */
+    fun setEngineLoading(loading: Boolean) {
+        if (engineLoading == loading) return
+        engineLoading = loading
+        styleCorrectionButton()
+    }
+
     private fun toggleToolbar() {
         toolbarCollapsed = !toolbarCollapsed
         Prefs.setToolbarCollapsed(context, toolbarCollapsed)
@@ -595,7 +610,17 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     private fun styleCorrectionButton() {
-        if (autoCorrectOn) {
+        // 올라오는 중에는 켜짐·꺼짐과 상관없이 '…' 를 흐리게 보인다. 눌러서 켜고 끄는 것은 그대로 된다.
+        correctionButton.text = context.getString(
+            if (engineLoading) R.string.toolbar_correction_loading else R.string.toolbar_correction
+        )
+        correctionButton.contentDescription = context.getString(
+            if (engineLoading) R.string.toolbar_correction_loading_desc else R.string.toolbar_correction_desc
+        )
+        if (engineLoading) {
+            correctionButton.setTextColor(theme.hint)
+            correctionButton.background = circle(toolbarFill(theme.toolbarButton))
+        } else if (autoCorrectOn) {
             correctionButton.setTextColor(theme.onAccent)
             correctionButton.background = circle(theme.accent)
         } else {
