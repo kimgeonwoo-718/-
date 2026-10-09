@@ -28,9 +28,7 @@ import com.spellkeyboard.core.translate.ChatText
 import com.spellkeyboard.core.translate.Phrasebook
 import com.spellkeyboard.core.translate.SentenceSplitter
 import com.spellkeyboard.core.translate.TranslationMemory
-import com.spellkeyboard.core.lm.LanguageModel
 import com.spellkeyboard.core.spacing.Spacer
-import com.spellkeyboard.core.spacing.SpacingDictionary
 import com.spellkeyboard.core.spacing.Speller
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
@@ -234,17 +232,21 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private fun loadSpacingDictionary() {
         val target = File(filesDir, DICTIONARY_DIR)
         Thread {
-            val spacer = runCatching { Spacer(SpacingDictionary.open(target)) }
-                .onSuccess {
+            // **푸는 일은 [EngineFiles] 자물쇠를 거친다.** 처음 깔고 입력기를 바꿨다 돌아오면 키보드가 한 번 더
+            // 뜨는데, 둘이 같은 폴더에 동시에 풀면 진 쪽이 NoSuchFileException 으로 죽고, 그 키보드는 사전도
+            // 언어모델도 없이 떠서 교정이 거의 안 됐다("설치하고 한참 안 되다가 만지면 된다" 의 한 원인).
+            // 그래도 못 열면 몇 번 더 해 본다. 키보드가 이미 닫혔으면 무거운 일은 더 하지 않는다.
+            val spacer = EngineFiles.openWithRetry({ destroyed }) { Spacer(EngineFiles.openSpacing(target)) }
+                ?.also {
                     session.engine.spacer = it
                     session.engine.speller = Speller(it)
                 }
-                .getOrNull()
+            if (destroyed) return@Thread
             // 언어모델은 형태소 사전 뒤에 연다. 이게 올라오면 어절 하나씩 보던 교정 대신
             // 창 전체를 앞뒤 문맥으로 푸는 교정이 된다. 못 열면 위의 둘로 계속 간다.
-            val lm = runCatching { LanguageModel.open(target) }
-                .onSuccess { session.engine.context = ContextCorrector(it, spacer) }
-                .getOrNull()
+            val lm = EngineFiles.openWithRetry({ destroyed }) { EngineFiles.openLanguageModel(target) }
+                ?.also { session.engine.context = ContextCorrector(it, spacer) }
+            if (destroyed) return@Thread
             // Kiwi 는 맨 끝에 올린다. 105MB 를 꺼내고 읽느라 수 초가 걸려서, 앞의 둘이
             // 먼저 준비돼야 그 동안에도 교정이 된다. 32비트 폰에서는 안 올라오고,
             // 그때는 형태소 사전이 그대로 이 일을 한다.

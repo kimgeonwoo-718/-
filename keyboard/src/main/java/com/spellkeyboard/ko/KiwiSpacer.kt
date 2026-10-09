@@ -325,9 +325,11 @@ class KiwiSpacer private constructor(
          *
          * 105MB 라 한 번만 한다. 꺼내다 끊기면 [DONE_MARK] 가 없으니 다음에 다시 꺼낸다.
          */
-        private fun unpack(context: Context): File {
+        private fun unpack(context: Context): File = EngineFiles.exclusiveKiwi {
             val target = File(context.filesDir, LOCAL_DIR)
-            if (File(target, DONE_MARK).exists()) return target
+            // 자물쇠 안에서 본다 — 두 곳이 동시에 오면 늦은 쪽은 앞선 쪽이 다 푼 뒤에 이 줄에서 끝난다.
+            // 자물쇠가 없으면 늦은 쪽이 아래 deleteRecursively 로 앞선 쪽이 풀던 파일을 지워 버린다.
+            if (File(target, DONE_MARK).exists()) return@exclusiveKiwi target
 
             target.deleteRecursively()
             target.mkdirs()
@@ -340,7 +342,16 @@ class KiwiSpacer private constructor(
                 }
             }
             File(target, DONE_MARK).writeText("")
-            return target
+            target
+        }
+
+        /**
+         * 모델 파일만 미리 꺼내 둔다. 올리지는 않는다([open] 이 한다) — 100MB 를 메모리에 잡는 것은 키보드 몫이다.
+         * 앱을 처음 열 때 부른다([EngineFiles.warmUp]). 못 꺼내도 키보드가 뜰 때 다시 한다.
+         */
+        fun prepare(context: Context) {
+            runCatching { unpack(context) }
+                .onFailure { Log.w(TAG, "Kiwi 모델을 미리 꺼내지 못했다. 키보드가 뜰 때 다시 한다.", it) }
         }
     }
 }

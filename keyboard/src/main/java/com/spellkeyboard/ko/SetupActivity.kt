@@ -36,6 +36,9 @@ class SetupActivity : AppCompatActivity() {
         AppCompatDelegate.setDefaultNightMode(Prefs.themeMode(this).nightMode())
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_setup)
+        // 사용자가 여기서 키보드 켜는 법을 읽는 동안 교정 사전 파일을 미리 푼다. 처음 키보드를 띄울 때는
+        // 이미 풀려 있어서 교정이 바로 된다(EngineFiles.warmUp). 프로세스당 한 번이라 다시 불러도 싸다.
+        EngineFiles.warmUp(this)
         onBackPressedDispatcher.addCallback(this, backHandler)
         // 키보드 맞춤설정에서 테마를 바꾸고 돌아오면 이 화면도 통째로 다시 만들어진다. 스크롤
         // 위치를 살려 놓지 않으면 맨 위로 튄다. 레이아웃이 끝난 뒤에 옮겨야 한다.

@@ -3236,3 +3236,29 @@ Solar 는 학교 줄임말 12문장을 다 그대로 뒀다(`cases.mjs --only=�
 - `SpellKeyboardService`: Kiwi 오타 교정의 '아는 말' 문지방에 같이 넣었다.
 - 실시간 시험지 843문장 전·후 같음, 띄어쓰기 측정 같음, 코어 시험 291개.
 - 사례 보기는 `cases solar-pro4 --only=갈래` 로 갈래 하나만 돌릴 수 있다(갈래 이름에 띄어쓰기 금지 — RUN 이 공백으로 자른다).
+
+## 설치 직후 실시간 교정이 안 되던 것 (2026-10-09)
+
+제보: 깔고 나면 LIVE 가 켜져 있는데 교정이 안 되다가, 몇 번 만져야 된다. LIVE 스위치 자체는 무관하다 —
+`Prefs.autoCorrectEnabled` 기본값 true, `onToggleAutoCorrect` 는 깃발과 단추 색만 바꾼다. 원인은 **사전을 처음 푸는 곳**이다.
+
+- 처음 깔면 사전(`spacing/`, 약 20MB)·언어모델·Kiwi 모델(105MB, `kiwi-model/`)이 파일로 안 풀려 있다. 키보드가 뜨면서
+  백그라운드 스레드가 푼다(폰에서 수 초~십수 초). 그 사이 입력기를 바꿨다 돌아오면(처음 설정할 때 흔하다) 키보드가 한
+  번 더 떠서 **같은 폴더에 두 곳이 동시에 푼다.**
+- core `SpacingDictionary.open`·`LanguageModel.open` 은 `.tmp` 로 풀고 `renameTo` 하는데, 진 쪽은 이긴 쪽이 이미 옮긴
+  뒤라 `NoSuchFileException` 을 던진다. **로컬 재현: 두 스레드가 빈 폴더에 동시에 열면 30판 중 30판, 8스레드도 매번.**
+  파일은 안 깨진다(해시 같음) — 죽는 것은 진 스레드뿐이다.
+- 서비스는 그 실패를 삼켰다(`runCatching…getOrNull()`). 그 키보드는 사전 없음 → 언어모델 없음 → 오타 교정기 문지방이
+  `{ true }`("아무것도 안 고침") 로 떠서 **키보드가 다시 뜰 때까지 교정이 거의 안 된다.** Kiwi 쪽 `unpack` 도 늦게 온
+  쪽이 `deleteRecursively` 로 앞선 쪽이 풀던 파일을 지우는 같은 꼴이었다.
+
+고친 것(`keyboard/` 만, core 안 건드림):
+- `EngineFiles`(새): 푸는 곳을 자물쇠 둘(사전 / Kiwi)로 직렬화. 폴더가 달라 둘로 나눴다 — 하나면 105MB 복사 동안 가벼운
+  사전 열기까지 줄을 선다. `openWithRetry`: 못 열면 1.5초 간격으로 세 번까지, 키보드가 닫혔으면 멈춘다.
+- `loadSpacingDictionary`: 위를 거치고, 키보드가 이미 닫혔으면(`destroyed`) 무거운 일(언어모델·Kiwi)을 더 안 한다.
+- `SetupActivity.onCreate` → `EngineFiles.warmUp`: 앱 첫 화면에서 키보드 켜는 법을 읽는 동안 파일만 미리 푼다(올리지는
+  않는다). 첫 키보드는 이미 풀린 파일을 바로 연다.
+- 시험(`tools/localcheck` 밖, 일회용): 컴파일된 `EngineFiles` 로 2·8 스레드 동시 열기 50판 전부 예외 0·해시 같음.
+  재시도: 두 번 실패 뒤 성공 / 끝내 실패→null / 닫힌 뒤 시도 안 함. 타입 검사·코어 시험 291개 통과.
+- **실기기에서 확인된 것은 아니다.** 원인은 코드와 재현으로 좁혔지만 폰 로그는 못 봤다. 깔고 첫 입력부터 교정이 되는지
+  실기기에서 확인할 것. 안 되면 `adb logcat -s KiwiSpacer` 와 사전 폴더(`files/spacing`) 파일 크기부터 본다.
