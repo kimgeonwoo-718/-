@@ -1,0 +1,1 @@
+translate solar-pro4 claude-haiku-5-5 --prompt=v1 --prompt=v2 --maxWon=900 --show
