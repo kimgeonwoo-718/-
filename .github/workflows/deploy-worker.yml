@@ -97,8 +97,11 @@ jobs:
           set -euo pipefail
           # 토큰이 거절되면 wrangler 가 JSON 대신 오류 글을 내서 jq 가 알아보기 힘든 말로 죽는다. 먼저 받아 보고,
           # 실패하면 무엇을 고칠지 바로 적는다(2026-10-08 에 토큰이 지워져 이렇게 막혔다).
-          if ! list=$(npx --yes wrangler@3.114.17 d1 list --json 2>&1); then
-            printf '%s\n' "$list" | grep -v '^[[:space:]]*$' | head -n 30
+          # 오류 글은 따로 받는다 — 섞어 받으면 npx 가 늘 내는 "npm warn deprecated" 가 JSON 앞에 붙어
+          # 토큰이 멀쩡해도 아래 jq 가 죽는다(2026-10-09 에 그렇게 막혔다).
+          err=$(mktemp)
+          if ! list=$(npx --yes wrangler@3.114.17 d1 list --json 2>"$err"); then
+            { cat "$err"; printf '%s\n' "$list"; } | grep -v '^[[:space:]]*$' | head -n 30
             # wrangler 는 "권한을 확인하라" 고만 해서, 토큰이 죽은 것인지·계정 ID 가 틀린 것인지·D1 권한만 빠진
             # 것인지 가릴 수 없다(셋 다 고치는 법이 다르다). 클라우드플레어에 차례로 물어 하나로 좁힌다.
             # 토큰과 계정 ID 는 찍지 않는다 — 길이와 맞고 틀림만 남긴다(깃허브도 가려 주지만 기대지 않는다).
