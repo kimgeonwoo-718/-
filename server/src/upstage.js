@@ -69,7 +69,7 @@ export function toUpstageRequest(body, model, options = {}) {
 
   const appPrompt = capPrompt(partsText(parsed.system_instruction ?? parsed.systemInstruction));
   const system = options.translateTo
-    ? translatePromptFor(options.translateTo, options.translatePrompt)
+    ? translatePromptFor(options.translateTo, options.translatePrompt, options.translateHint)
     : options.prompt === 'server'
       ? KO_SYSTEM_PROMPT
       : appPrompt && options.extraRules !== false

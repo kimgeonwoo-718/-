@@ -28,7 +28,7 @@ function env(overrides = {}) {
 }
 
 /** 구글 흉내. 어디로 무엇을 보냈는지 붙잡아 둔다. */
-function upstream({ status = 200, activeToken = null, echo = false } = {}) {
+function upstream({ status = 200, activeToken = null, echo = false, fixed = null } = {}) {
   const calls = [];
   const fetchImpl = async (url, init) => {
     calls.push({ url, init });
@@ -47,7 +47,7 @@ function upstream({ status = 200, activeToken = null, echo = false } = {}) {
       if (status !== 200) return new Response(JSON.stringify({ error: { message: 'boom' } }), { status });
       // echo: 원문을 그대로 돌려준다. 서버에 길이 검사가 있어서(교정문이 원문의 60~160%),
       // 긴 글을 보내는 시험은 답도 그만큼 길어야 본론까지 간다. '안녕하세요' 두 글자로는 막힌다.
-      const text = echo ? JSON.parse(init.body).contents[0].parts[0].text : '안녕하세요';
+      const text = fixed ?? (echo ? JSON.parse(init.body).contents[0].parts[0].text : '안녕하세요');
       return new Response(JSON.stringify({
         candidates: [{ content: { parts: [{ text }] } }],
         usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 30, thoughtsTokenCount: 7 },
@@ -630,7 +630,9 @@ test('번역도 교정과 같은 통에서 깎인다 — 한도는 하나다', a
     headers: { 'content-type': 'application/json', 'x-install-id': INSTALL },
     body,
   });
-  const two = await handle(req, e, { fetch: up.fetchImpl, now: () => NOON_KST });
+  // 번역 답은 영어여야 한다 — 한글이 남은 번역은 서버가 막는다.
+  const english = upstream({ fixed: 'The weather is really nice today, so where shall we meet tomorrow? Around seven in the evening would work for me, how about you?' });
+  const two = await handle(req, e, { fetch: english.fetchImpl, now: () => NOON_KST });
   assert.equal(two.status, 200);
   assert.equal(
     Number(two.headers.get('x-quota-remaining')),

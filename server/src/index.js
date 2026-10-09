@@ -57,6 +57,8 @@ import {
   rejectsReasoning,
   utf8Bytes,
   TRANSLATE_TARGETS,
+  hangulFragments,
+  billedError,
 } from './openai.js';
 import {
   ANTHROPIC_URL,
@@ -682,39 +684,49 @@ async function buildAiCall(env, fetchImpl, body, translateTo, nowMs) {
   const geminiModelName = which === 'gemini' ? modelOverride || (await resolveGeminiModel(env, fetchImpl, nowMs)) : null;
   let target;
   let request;
+  let build; // (translateHint) => 보낼 본문. 번역에 한글이 남았을 때 힌트를 얹어 한 번 다시 짓는다.
   let maxTokens;
   let finish;
   try {
     const user = userTextOf(body);
     if (which === 'upstage') {
       target = UPSTAGE_URL;
-      request = toUpstageRequest(body, upstageModel(env, modelOverride), {
-        prompt: (env.UPSTAGE_PROMPT ?? '').trim(),
-        reasoning: (env.UPSTAGE_REASONING ?? '').trim(),
-        extraRules: (env.UPSTAGE_EXTRA_RULES ?? '').trim().toLowerCase() !== 'off',
-        translateTo,
-        translatePrompt,
-      });
+      build = (translateHint) =>
+        toUpstageRequest(body, upstageModel(env, modelOverride), {
+          prompt: (env.UPSTAGE_PROMPT ?? '').trim(),
+          reasoning: (env.UPSTAGE_REASONING ?? '').trim(),
+          extraRules: (env.UPSTAGE_EXTRA_RULES ?? '').trim().toLowerCase() !== 'off',
+          translateTo,
+          translatePrompt,
+          translateHint,
+        });
+      request = build('');
       maxTokens = JSON.parse(request).max_tokens;
       finish = (raw) => toGeminiReply(raw.status, raw.text, user, { translateTo });
     } else if (which === 'anthropic') {
       target = ANTHROPIC_URL;
-      request = toClaudeRequest(body, claudeModel(env, modelOverride), { prompt: (env.CLAUDE_PROMPT ?? '').trim(), translateTo, translatePrompt });
+      build = (translateHint) =>
+        toClaudeRequest(body, claudeModel(env, modelOverride), { prompt: (env.CLAUDE_PROMPT ?? '').trim(), translateTo, translatePrompt, translateHint });
+      request = build('');
       maxTokens = JSON.parse(request).max_tokens;
       finish = (raw) => fromClaudeReply(raw.status, raw.text, user, { translateTo });
     } else if (which === 'openai') {
       target = OPENAI_URL;
-      request = toOpenAiRequest(body, openAiModel(env, modelOverride), {
-        reasoning: (env.OPENAI_REASONING ?? '').trim(),
-        prompt: (env.OPENAI_PROMPT ?? '').trim(),
-        translateTo,
-        translatePrompt,
-      });
+      build = (translateHint) =>
+        toOpenAiRequest(body, openAiModel(env, modelOverride), {
+          reasoning: (env.OPENAI_REASONING ?? '').trim(),
+          prompt: (env.OPENAI_PROMPT ?? '').trim(),
+          translateTo,
+          translatePrompt,
+          translateHint,
+        });
+      request = build('');
       maxTokens = JSON.parse(request).max_completion_tokens;
       finish = (raw) => toGeminiReply(raw.status, raw.text, user, { translateTo });
     } else {
       target = geminiUrl(geminiModelName);
-      request = toGeminiRequest(body, { translateTo, translatePrompt });
+      build = (translateHint) => toGeminiRequest(body, { translateTo, translatePrompt, translateHint });
+      request = build('');
       maxTokens = JSON.parse(request).generationConfig.maxOutputTokens;
       finish = (raw) => fromGeminiReply(raw.status, raw.text, user, { translateTo });
     }
@@ -725,13 +737,51 @@ async function buildAiCall(env, fetchImpl, body, translateTo, nowMs) {
     bytes: utf8Bytes(request),
     maxTokens,
     async send() {
-      let raw = await relayTo(fetchImpl, env, target, 'POST', request);
-      // OpenAI 만: 숙고 항목을 안 받는 모델이면 빼고 한 번 더(첫 번은 거절이라 값이 안 나갔다).
-      if (which === 'openai' && rejectsReasoning(raw.status, raw.text)) {
-        raw = await relayTo(fetchImpl, env, target, 'POST', withoutReasoning(request));
+      const once = async (requestBody) => {
+        let raw = await relayTo(fetchImpl, env, target, 'POST', requestBody);
+        // OpenAI 만: 숙고 항목을 안 받는 모델이면 빼고 한 번 더(첫 번은 거절이라 값이 안 나갔다).
+        if (which === 'openai' && rejectsReasoning(raw.status, raw.text)) {
+          raw = await relayTo(fetchImpl, env, target, 'POST', withoutReasoning(requestBody));
+        }
+        return billedBy(finish(raw), raw.status);
+      };
+      const reply = await once(request);
+      if (!translateTo) return reply;
+
+      // **번역에 한글이 남았으면 한 번 다시 옮기게 한다.** 작은 모델은 가끔 낯선 말 하나를 못 옮기고 둔다 — 쓰는 사람은 번역문을 그대로
+      // 보내므로 상대에게 한글이 섞여 간다. 같은 요청을 다시 보내면 temperature 0 이라 같은 답이 나오니, 남은 말을 짚어 준 지시문으로 다시 짓는다.
+      // 다시 해도 남으면 502 로 막는다(앱이 기기 번역으로 대신한다). 두 번 값이 나갔으니 토큰은 합쳐서 정산한다.
+      let hint = '';
+      if (reply.status === 200) hint = hangulFragments(translationOf(reply)).join(' · ');
+      // 한글이 글자의 3분의 1 을 넘게 남아 이미 502 로 막힌 답([translationProblem])도 한 번은 다시 옮겨 본다.
+      else if (reply.billed && reply.status === 502 && /\(untranslated\)/.test(reply.text)) hint = '문장 거의 전부';
+      if (!hint) return reply;
+      const retry = await once(build(hint));
+      const usage = sumUsage(usageOf(reply), usageOf(retry));
+      if (retry.status === 200 && !hangulFragments(translationOf(retry)).length) {
+        retry.usage = usage;
+        return retry;
       }
-      return billedBy(finish(raw), raw.status);
+      return billedBy(billedError(502, '번역에 한글이 남았다', usage), 200);
     },
+  };
+}
+
+/** 구글 모양 답에서 번역문 한 줄. 깨졌으면 빈 문자열. */
+function translationOf(reply) {
+  try {
+    return JSON.parse(reply.text)?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** [usageOf] 두 개를 구글 모양 `usageMetadata` 하나로 합친다. */
+function sumUsage(a, b) {
+  return {
+    promptTokenCount: a.prompt + b.prompt,
+    candidatesTokenCount: a.output + b.output,
+    thoughtsTokenCount: a.thoughts + b.thoughts,
   };
 }
 

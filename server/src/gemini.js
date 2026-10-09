@@ -57,7 +57,7 @@ export function toGeminiRequest(body, options = {}) {
   if (!user) throw new Error('empty_request');
 
   const system = options.translateTo
-    ? translatePromptFor(options.translateTo, options.translatePrompt)
+    ? translatePromptFor(options.translateTo, options.translatePrompt, options.translateHint)
     : capPrompt(partsText(parsed.system_instruction ?? parsed.systemInstruction)) || KO_SYSTEM_PROMPT;
 
   return JSON.stringify({

@@ -26,7 +26,7 @@
  * 넘으면 그 자리에서 멈춘다.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { translatePrompt, translatePromptV2, translatePromptV3, TRANSLATE_TARGETS } from '../src/openai.js';
+import { translatePrompt, translatePromptV2, translatePromptV3, translatePromptV4, TRANSLATE_TARGETS } from '../src/openai.js';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback = '') => {
@@ -49,13 +49,14 @@ if (!models.length) {
   process.exit(2);
 }
 
-/** `v1`, `v2`, `v3`, `v2-shots5`(보기 5개만), `v2-shots0`(보기 없음), 또는 지시문 파일 경로. */
+/** `v1`, `v2`, `v3`, `v4`, `v2-shots5`(보기 5개만), `v2-shots0`(보기 없음), 또는 지시문 파일 경로. */
 const promptFor = (name, lang) => {
   if (name === 'v1') return translatePrompt(lang);
-  const m = /^(v2|v3)(?:-shots(\d+))?$/.exec(name);
+  const m = /^(v2|v3|v4)(?:-shots(\d+))?$/.exec(name);
   if (m) {
     const options = m[2] == null ? {} : { shots: Number(m[2]) };
-    return m[1] === 'v3' ? translatePromptV3(lang, options) : translatePromptV2(lang, options);
+    const build = { v2: translatePromptV2, v3: translatePromptV3, v4: translatePromptV4 }[m[1]];
+    return build(lang, options);
   }
   return readFileSync(name, 'utf8');
 };

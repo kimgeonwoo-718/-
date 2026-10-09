@@ -506,3 +506,86 @@ test('개인정보 처리방침: 번역을 다른 업체로 보내면 두 곳을
   assert.ok(two.includes('주식회사 업스테이지 (대한민국)'));
   assert.ok(two.includes('업스테이지·OpenAI의 처리에는 각 회사의 개인정보 처리방침이 적용됩니다'));
 });
+
+// ── 번역에 한글이 남으면 한 번 다시 옮긴다 ───────────────────────────────────────────────────
+test('hangulFragments: 한글 음절 덩어리만 센다 (자모·로마자·일본어는 아니다)', async () => {
+  const { hangulFragments } = await import('../src/openai.js');
+  assert.deepEqual(hangulFragments('本当に 축하해！'), ['축하해']);
+  assert.deepEqual(hangulFragments('ありがとうㅠㅠ KakaoTalk 😭'), []);
+  assert.deepEqual(hangulFragments('같이 갈래? → 一緒に行く？ 같이'), ['같이', '갈래']);
+  assert.equal(hangulFragments('가나다라마바사아자차카타'.repeat(3), { maxLength: 4 })[0], '가나다라');
+  assert.equal(hangulFragments('a가 b나 c다 d라 e마 f바 g사 h아').length, 6);
+});
+
+test('translatePromptFor: 다시 옮길 때는 남은 말을 짚어 준다', async () => {
+  const { translatePromptFor } = await import('../src/openai.js');
+  const plain = translatePromptFor('ja', 'v2');
+  const hinted = translatePromptFor('ja', 'v2', '축하해 · 어떡하지');
+  assert.ok(hinted.startsWith(plain));
+  assert.match(hinted, /축하해 · 어떡하지/);
+  assert.match(hinted, /한글을 한 글자도 남기지 말고/);
+});
+
+function residueCalls(replies) {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    const text = replies[Math.min(calls.length - 1, replies.length - 1)];
+    return new Response(chat(text), { status: 200 });
+  };
+  return { calls, fetchImpl };
+}
+
+test('번역에 한글이 남으면 힌트를 얹어 한 번 다시 옮기고, 토큰은 합쳐 정산한다', async () => {
+  const { calls, fetchImpl } = residueCalls(['わぁ、すごい！本当に축하해！', 'わぁ、すごい！本当におめでとう！']);
+  const e = splitEnv();
+  const res = await handle(splitRequest('?translate=ja'), e, { fetch: fetchImpl });
+  assert.equal(res.status, 200);
+  assert.match(JSON.parse(await res.text()).candidates[0].content.parts[0].text, /おめでとう/);
+  assert.equal(calls.length, 2);
+  assert.ok(!calls[0].body.messages[0].content.includes('다시 번역하는 중이다'));
+  assert.match(calls[1].body.messages[0].content, /다시 번역하는 중이다.*축하해/s);
+});
+
+test('다시 옮겨도 한글이 남으면 502 로 막는다 (앱이 기기 번역으로 대신한다)', async () => {
+  const { calls, fetchImpl } = residueCalls(['本当におめでとうございます。축하해']);
+  const res = await handle(splitRequest('?translate=ja'), splitEnv(), { fetch: fetchImpl });
+  assert.equal(res.status, 502);
+  assert.equal(calls.length, 2, '두 번까지만');
+});
+
+test('한글이 안 남았으면 한 번만 부른다 / 교정은 다시 부르지 않는다', async () => {
+  const clean = residueCalls(['本当におめでとう！']);
+  assert.equal((await handle(splitRequest('?translate=ja'), splitEnv(), { fetch: clean.fetchImpl })).status, 200);
+  assert.equal(clean.calls.length, 1);
+  // 교정 결과에는 한글이 당연히 있다.
+  const fix = residueCalls(['내일 저녁 같이 먹자']);
+  assert.equal((await handle(splitRequest(), splitEnv(), { fetch: fix.fetchImpl })).status, 200);
+  assert.equal(fix.calls.length, 1);
+});
+
+test('한글이 절반 넘게 남아 이미 막힌 번역도 한 번은 다시 옮긴다', async () => {
+  const { calls, fetchImpl } = residueCalls(['本当に축하해！', '本当におめでとう！']);
+  const res = await handle(splitRequest('?translate=ja'), splitEnv(), { fetch: fetchImpl });
+  assert.equal(res.status, 200);
+  assert.equal(calls.length, 2);
+  assert.match(calls[1].body.messages[0].content, /문장 거의 전부/);
+});
+
+test('translatePromptV4: 규칙은 영어, 보기 열네 개, 한글 금지와 풀이가 들어 있다', async () => {
+  const { translatePromptV4, translatePromptV3, translatePromptFor } = await import('../src/openai.js');
+  for (const code of ['en', 'ja', 'zh']) {
+    const prompt = translatePromptV4(code);
+    assert.match(prompt, /Leave NO Hangul/);
+    assert.match(prompt, /Often mistranslated/);
+    assert.equal(prompt.split('Examples')[1].split('\n- ').length - 1, 14, `${code}: 보기는 열네 개`);
+    assert.equal(translatePromptFor(code, 'v4'), prompt);
+    assert.ok(prompt.length < translatePromptV3(code).length * 1.2);
+  }
+  assert.match(translatePromptV4('ja'), /Japanese/);
+  assert.match(translatePromptV4('zh'), /Simplified Chinese/);
+  // 시험지 B 의 문장이 보기에 들어가면 시험이 아니게 된다.
+  const { readFileSync } = await import('node:fs');
+  const sheetB = readFileSync(new URL('../bench/translate-cases-b.tsv', import.meta.url), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t')[2]);
+  for (const code of ['en', 'ja', 'zh']) for (const ko of sheetB) assert.ok(!translatePromptV4(code).includes(ko));
+});
