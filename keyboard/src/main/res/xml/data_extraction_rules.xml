@@ -6,13 +6,20 @@
   allowBackup="false" 는 클라우드 백업만 막고, 안드로이드 12+ 의 **기기 간 이전(device transfer)** 은
   따로라 이 규칙으로 막아야 한다. 둘 다에서 이 prefs 를 뺀다.
 
+  기기 안 번역 모델(filesDir/llm, 약 3GB)도 뺀다. 새 폰으로 옮길 때 3GB 가 딸려 가면 안 된다 — 새 폰에서 필요하면 새로 받는다(해시 확인과
+  기기 사양 확인을 거치므로 그쪽이 안전하다). 받는 중에 남은 .part 도 같은 폴더라 함께 빠진다.
+
   (API 31 미만은 이 파일을 안 보고 allowBackup="false" 로 백업이 꺼진다. fullBackupContent 는 안 쓴다.)
 -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="spell_keyboard.xml" />
+        <exclude domain="sharedpref" path="llm_model.xml" />
+        <exclude domain="file" path="llm" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="spell_keyboard.xml" />
+        <exclude domain="sharedpref" path="llm_model.xml" />
+        <exclude domain="file" path="llm" />
     </device-transfer>
 </data-extraction-rules>

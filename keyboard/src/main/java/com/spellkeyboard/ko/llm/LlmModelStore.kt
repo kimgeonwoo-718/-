@@ -4,11 +4,9 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.StatFs
+import com.spellkeyboard.core.net.ResumableDownload
 import java.io.File
 import java.io.IOException
-import java.io.RandomAccessFile
-import java.net.HttpURLConnection
-import java.net.URL
 import java.security.MessageDigest
 
 /**
@@ -116,11 +114,12 @@ object LlmModelStore {
         doneBytes = partBytes(app)
         worker = Thread({
             try {
+                var base = 0L // 이미 끝난 조각들의 크기 합 — 진행률의 시작점
                 for (shard in LlmModelFiles.SHARDS) {
-                    if (finalFile(app, shard).let { it.exists() && it.length() == shard.bytes && sha256Of(it) == shard.sha256 }) {
-                        continue
-                    }
-                    download(app, shard, allowMetered)
+                    val ready = finalFile(app, shard).let { it.exists() && it.length() == shard.bytes && sha256Of(it) == shard.sha256 }
+                    if (!ready) download(app, shard, allowMetered, base)
+                    base += shard.bytes
+                    doneBytes = base
                 }
                 phase = State.VERIFYING
                 markVerified(app)
@@ -152,25 +151,21 @@ object LlmModelStore {
 
     // --- 받기 ------------------------------------------------------------------------------------
 
-    private fun download(context: Context, shard: LlmModelFiles.Shard, allowMetered: Boolean) {
+    /**
+     * 조각 하나를 받는다. 이어 받기·리다이렉트·재시도는 [ResumableDownload] 가 한다(컨테이너에서 가짜 서버로 시험했다).
+     * 다 받으면 SHA-256 을 확인한 뒤 이름을 바꾼다.
+     * @param base 이미 끝난 조각들의 크기 합(진행률 계산용)
+     */
+    private fun download(context: Context, shard: LlmModelFiles.Shard, allowMetered: Boolean, base: Long) {
         val part = partFile(context, shard)
-        var failures = 0
-        while (part.length() < shard.bytes) {
-            if (cancelRequested) throw IOException("받기를 멈췄습니다")
-            if (!allowMetered && onMeteredNetwork(context)) throw IOException("와이파이에 연결되어 있지 않습니다")
-            try {
-                val before = part.length()
-                fetchRange(context, shard, part)
-                // 서버가 오류 없이 빈 응답만 주는 경우에 같은 자리를 무한히 도는 것을 막는다.
-                if (part.length() <= before && part.length() < shard.bytes) throw IOException("받은 것이 없습니다")
-                failures = 0
-            } catch (e: IOException) {
-                if (cancelRequested) throw e
-                // 끊기면 잠깐 쉬고 .part 크기부터 이어 받는다. 연달아 다섯 번 실패하면 그만둔다.
-                if (++failures >= 5) throw IOException("받다가 끊겼습니다: ${e.message}")
-                Thread.sleep(2000L * failures)
-            }
-        }
+        if (!allowMetered && onMeteredNetwork(context)) throw IOException("와이파이에 연결되어 있지 않습니다")
+        ResumableDownload().download(
+            url = shard.url,
+            part = part,
+            expectedBytes = shard.bytes,
+            cancelled = { cancelRequested },
+            onProgress = { doneBytes = base + it }
+        )
         val got = sha256Of(part)
         if (part.length() != shard.bytes || got != shard.sha256) {
             part.delete()
@@ -179,58 +174,6 @@ object LlmModelStore {
         val target = finalFile(context, shard)
         target.delete()
         if (!part.renameTo(target)) throw IOException("파일 이름을 바꾸지 못했습니다")
-    }
-
-    /** `.part` 의 끝에서부터 한 번 이어 받는다. 리다이렉트는 직접 따라간다. */
-    private fun fetchRange(context: Context, shard: LlmModelFiles.Shard, part: File) {
-        var offset = part.length()
-        var url = URL(shard.url)
-        var conn: HttpURLConnection? = null
-        try {
-            for (hop in 0..MAX_REDIRECTS) {
-                conn = (url.openConnection() as HttpURLConnection).apply {
-                    instanceFollowRedirects = false
-                    connectTimeout = 20_000
-                    readTimeout = 30_000
-                    setRequestProperty("User-Agent", "SpellKeyboard")
-                    if (offset > 0) setRequestProperty("Range", "bytes=$offset-")
-                }
-                val code = conn.responseCode
-                if (code in 300..399) {
-                    val next = conn.getHeaderField("Location") ?: throw IOException("넘김 주소가 없습니다")
-                    url = URL(url, next)
-                    conn.disconnect()
-                    continue
-                }
-                if (code == 416) { // 이미 다 받았다(크기가 맞지 않으면 아래 확인에서 걸린다)
-                    return
-                }
-                if (code != 200 && code != 206) throw IOException("서버가 $code 를 돌려줬습니다")
-                // 서버가 Range 를 무시하고 처음부터 보내면 처음부터 다시 쓴다.
-                if (code == 200 && offset > 0) {
-                    part.delete()
-                    offset = 0
-                    doneBytes = partBytes(context)
-                }
-                RandomAccessFile(part, "rw").use { out ->
-                    out.seek(offset)
-                    conn.inputStream.use { input ->
-                        val buf = ByteArray(1 shl 16)
-                        while (true) {
-                            if (cancelRequested) throw IOException("받기를 멈췄습니다")
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            out.write(buf, 0, n)
-                            doneBytes += n
-                        }
-                    }
-                }
-                return
-            }
-            throw IOException("넘김이 너무 많습니다")
-        } finally {
-            conn?.disconnect()
-        }
     }
 
     // --- 확인 ------------------------------------------------------------------------------------
@@ -261,5 +204,4 @@ object LlmModelStore {
     }
 
     private const val KEY_VERIFIED = "verified"
-    private const val MAX_REDIRECTS = 6
 }

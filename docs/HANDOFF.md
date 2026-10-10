@@ -3521,6 +3521,9 @@ Qwen3 4B 는 시간 때문에 안 쟀다. 시험 환경은 4코어 x86 이다.
 - `llm/LlmTranslator`: 키보드 쪽 창구. 한 번에 하나씩 보내고(시간 초과가 줄 선 시간을 안 세게), 낡은 요청은 **콜백 없이** 거둔다(실패로 알리면 파이프라인이 그 문장을 '못 옮겼다' 고 기억한다). 일하다 세 번 죽으면 이번 실행에서는 안 쓴다.
 - `llm/LlmModelStore`: 앱 안쪽 저장소(`filesDir/llm`)에 조각을 이어 받고(Range) SHA-256 을 확인한다. 바깥 저장소(DownloadManager)는 FUSE 라 mmap 이 느려서 직접 받는다. 와이파이 기본, 데이터는 묻고 받는다.
 - `llm/LlmSupport`: 64비트 ARM, 안드로이드 10+, 메모리 5.5GB+, dotprod·fp16 CPU 가 아니면 받기 전에 이유를 말한다(네이티브 코드가 그 명령을 쓴다).
+- 실시간 번역 진행은 core 의 `LiveTranslation` 이 쥔다(시계·번역기를 가짜로 끼워 시험한다 — `LiveTranslationTest`). 서비스(`SpellKeyboardService.LiveEnv`)는 화면·번역기만 만진다.
+  "글이 계속 바뀌고, 번역이 늦게 오고, 번역기가 둘이고, 그 사이에 엔터가 들어오는" 곳이라 눈으로 맞추기 어렵다. 이 흐름을 고칠 때는 서비스가 아니라 `LiveTranslation` 과 그 시험을 고친다.
+  모델 파일 이어받기도 core 의 `net/ResumableDownload` 로 뺐다(`LlmModelStore` 는 얇은 겉). 진짜 로컬 HTTP 서버로 시험했다 — 끊김·리다이렉트·Range 무시·짧은 파일·취소(해시 확인은 `LlmModelStore` 몫).
 - 실시간 번역(`SpellKeyboardService`): ML Kit 이 **바로** 초안을 보이고(흐리게 + '…'), 치기를 멈추고 0.7초 뒤 큰 모델이 옮긴 확정본으로 갈아 끼운다. 못 옮긴 문장은 ML Kit 이 대신한다(`FallbackEngine`).
   엔터는 확정본을 기다리고 9초가 지나면 초안을 보낸다. '전체번역'도 400자 이하면 큰 모델로. 번역 모드를 닫아도 연결은 둔다(다시 열 때 모델을 새로 안 올리게) — 쉬면 스스로 끝난다.
 - core: `LlmPrompt`(지시문 자원 `llm_prompt_{en,ja,zh}.txt`, 약 350토큰 — 긴 지시문과 점수가 같고 첫 계산이 15초→5초), `LlmOutput`(한글 남음·엉뚱한 언어·되풀이 거름), `FallbackEngine`. **윈도우도 같은 core 를 쓴다.**
