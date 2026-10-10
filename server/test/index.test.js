@@ -777,32 +777,35 @@ test('개인정보 처리방침은 PC 프로그램·IP·국외 이전·백업·1
   assert.match(body, /윈도우 PC 프로그램/);
   assert.match(body, /다른 프로그램에 입력한 글은 읽지 않습니다/);
   assert.match(body, /키의 <strong>종류<\/strong>/);
-  assert.match(body, /로그아웃하면 기기 토큰·이메일·구독 상태를 PC에서 지웁니다/);
-  assert.match(body, /Win\+V/);
+  assert.match(body, /로그아웃하면 기기 토큰·이메일·구독 상태를 지웁니다/);
   // 서버가 세는 IP 는 해시로, 이틀 뒤 삭제.
   assert.match(body, /접속 IP 주소/);
   // 국외 이전: 거부 방법까지.
   assert.match(body, /거부 방법과 그 결과/);
-  assert.match(body, /Mozilla/);
-  assert.match(body, /GitHub, Inc\..*고성능 번역/s); // 휴대폰이 모델 파일을 받는 곳
   // 파기: "되살릴 수 없게" 대신 복구용 기록 최대 30일.
   assert.ok(!body.includes('되살릴 수 없게'), '자동 백업이 있는데 되살릴 수 없게 지운다고 적으면 안 된다');
   assert.match(body, /최대 30일/);
   // 만 14세 미만: 법정대리인 동의.
   assert.match(body, /법정대리인의 동의를 받은 경우에만/);
   assert.match(body, /시행일: 2026-10-10/);
-  // 2026-10-10 윈도우 세션이 알려 준 PC 동작: 탈퇴 경로, DPAPI 로 암호화하는 항목.
-  assert.match(body, /계정 창의 <strong>회원 탈퇴<\/strong>/);
-  assert.match(body, /기기 토큰·로그아웃 기록·이메일은 윈도우 자체 암호화\(DPAPI\)/);
-  // 휴대폰 번역 창: AI정밀번역만 보내고 전체번역·실시간은 기기 안.
-  assert.match(body, /"AI정밀번역"을 누를 때/);
-  assert.match(body, /"전체번역"과 실시간 번역은 휴대폰 안에서만/);
-  // PC 단추 이름이 폰과 같아졌고(AI정밀번역), PC 도 같은 번역 모델(AI 킷)을 GitHub 에서 받을 수 있다 — 받을 때만, 옮기기는 PC 안에서만.
-  assert.match(body, /"AI 교정" 또는 "AI정밀번역"을 직접 누를 때/);
-  assert.ok(!body.includes('"AI 번역"을'), 'PC 옛 단추 이름이 남았다');
-  assert.match(body, /PC 프로그램에서 ‘AI 킷’ 받기를/);
-  assert.match(body, /AI 킷\(번역 모델\) 내려받기\(사용자가 받기를 누를 때만, GitHub\)/);
-  assert.match(body, /%LOCALAPPDATA%\\SpellDesktop\\llm/);
+  // 탈퇴 경로는 휴대폰·PC 둘 다(Play·법이 요구).
+  assert.match(body, /더보기 → <strong>회원 탈퇴<\/strong>/);
+  assert.match(body, /PC 프로그램의 계정 창 → <strong>회원 탈퇴<\/strong>/);
+});
+
+test('개인정보 처리방침은 화면 세부를 적지 않고, 공개 파일 받기를 국외 이전에 넣지 않는다 (2026-10-10 정리)', async () => {
+  const body = await (await handle(new Request('https://spell.test/privacy'), env({ AI_PROVIDER: 'upstage', UPSTAGE_API_KEY: 'k' }))).text();
+  // 단추 이름·파일 경로·암호화 방식 이름은 바뀔 때마다 방침이 틀린 말이 된다.
+  for (const detail of ['AI정밀번역', '%LOCALAPPDATA%', 'DPAPI', 'Win+V', '최대 5개', '2,000자', '3,000자']) {
+    assert.ok(!body.includes(detail), `화면 세부가 들어 있다: ${detail}`);
+  }
+  // 번역 파일 받기는 1번에 — 사용자가 누를 때만, 글은 안 보낸다.
+  assert.match(body, /사용자가 받기를 누를 때만 그 파일이 있는 곳\(Google·Mozilla·GitHub\)에서 내려받습니다/);
+  // 국외 이전 칸에는 우리가 정보를 넘기는 곳만.
+  const transfer = body.slice(body.indexOf('5. 국외 이전'), body.indexOf('id="delete"'));
+  assert.ok(!/GitHub|Mozilla/.test(transfer), '공개 파일을 내려받는 곳이 국외 이전 칸에 들어 있다');
+  assert.match(transfer, /Cloudflare/);
+  assert.match(transfer, /업스테이지/);
 });
 
 test('이용약관의 시행일은 방침과 따로 간다', async () => {
