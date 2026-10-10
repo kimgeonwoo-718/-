@@ -20,8 +20,10 @@ object LlmPrompt {
     fun system(code: String): String? {
         if (code !in SUPPORTED) return null
         synchronized(cache) { cache[code]?.let { return it } }
+        // 윈도우에서 core.autocrlf 로 받으면 자원이 \r\n 으로 풀린다. 모델에 주는 글이 폰과 한 글자도 달라지지 않게 \n 으로 맞춘다
+        // (다르면 지시문 앞부분 재사용도 깨진다). 저장소에서는 .gitattributes 가 LF 로 고정한다.
         val text = LlmPrompt::class.java.getResourceAsStream("/llm_prompt_$code.txt")
-            ?.use { it.readBytes().toString(Charsets.UTF_8) }
+            ?.use { it.readBytes().toString(Charsets.UTF_8).replace("\r\n", "\n") }
             ?: return null
         synchronized(cache) { cache[code] = text }
         return text

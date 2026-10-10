@@ -2,6 +2,7 @@ package com.spellkeyboard.core.translate
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -9,6 +10,12 @@ import kotlin.test.assertTrue
 class LlmTranslateTest {
 
     // --- 지시문 -------------------------------------------------------------------------------
+
+    @Test
+    fun `지시문은 어느 OS 에서 받아도 줄바꿈이 LF 다`() {
+        // 윈도우(core.autocrlf=true)에서 자원이 CRLF 로 풀려도 모델에 주는 글은 폰과 같아야 한다.
+        for (code in LlmPrompt.SUPPORTED) assertFalse(LlmPrompt.system(code)!!.contains('\r'), code)
+    }
 
     @Test
     fun `세 언어 지시문이 다 있고 목표 언어 이름과 보기 여섯 개를 담는다`() {

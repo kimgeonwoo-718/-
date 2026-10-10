@@ -721,4 +721,72 @@ class GeminiCorrectorTest {
         assertEquals(98000, quota.remaining)
         assertTrue(quota.countsChars)
     }
+
+    // --- 다시 보내기: 값이 두 번 나가면 안 된다 (2026-10-10 윈도우 세션 보고) ------------------------
+
+    /** 중계 서버로 보내는 번역기. [replies] 를 차례로 돌려주고(예외면 던지고) 몇 번 불렸는지 센다. */
+    private class Counting(vararg val replies: Any) : GeminiCorrector.Transport {
+        var calls = 0
+        override fun send(method: String, url: String, apiKey: String, body: String?): GeminiCorrector.HttpResponse {
+            val reply = replies[minOf(calls, replies.size - 1)]
+            calls++
+            if (reply is Throwable) throw reply
+            return reply as GeminiCorrector.HttpResponse
+        }
+    }
+
+    private fun proxied(transport: GeminiCorrector.Transport) =
+        GeminiCorrector(apiKey = "", transport = transport, sleep = {}, baseUrl = PROXY)
+
+    private fun error(code: Int, message: String) =
+        GeminiCorrector.HttpResponse(code, "{\"error\":{\"code\":$code,\"message\":\"$message\"}}")
+
+    @Test
+    fun `번역을 보낸 뒤 시간이 지나 끊기면 다시 보내지 않는다`() {
+        // 서버는 이미 AI 를 불렀을 수 있다(한글이 남으면 서버가 한 번 더 옮겨 오래 걸린다). 다시 보내면 값이 두 번 나간다.
+        val transport = Counting(java.net.SocketTimeoutException("Read timed out"), ok("Hello"))
+        assertTrue(proxied(transport).translate("안녕", "en").isFailure)
+        assertEquals(1, transport.calls)
+    }
+
+    @Test
+    fun `값이 나간 502 번역은 다시 보내지 않는다`() {
+        val transport = Counting(error(502, "번역이 맞는 언어가 아니다 (kana)"), ok("Hello"))
+        assertTrue(proxied(transport).translate("안녕", "ja").isFailure)
+        assertEquals(1, transport.calls)
+    }
+
+    @Test
+    fun `결제 확인 장애 503 은 다시 보내지 않는다`() {
+        val transport = Counting(error(503, "subscription_check_unavailable"), ok("Hello"))
+        assertTrue(proxied(transport).translate("안녕", "en").isFailure)
+        assertEquals(1, transport.calls)
+    }
+
+    @Test
+    fun `바깥 모델이 거절한 번역은 한 번 더 보낸다`() {
+        // 바깥이 5xx 를 주면 서버가 한도를 돌려주고 값도 안 나갔다.
+        val transport = Counting(error(503, "upstream_unavailable"), ok("Hello"))
+        assertEquals("Hello", proxied(transport).translate("안녕", "en").getOrThrow())
+        assertEquals(2, transport.calls)
+    }
+
+    @Test
+    fun `서버에 닿지도 못한 번역은 한 번 더 보낸다`() {
+        val transport = Counting(java.net.ConnectException("Connection refused"), ok("Hello"))
+        assertEquals("Hello", proxied(transport).translate("안녕", "en").getOrThrow())
+        assertEquals(2, transport.calls)
+
+        val wrapped = Counting(NotSentException(java.net.SocketTimeoutException("connect timed out")), ok("Hello"))
+        assertEquals("Hello", proxied(wrapped).translate("안녕", "en").getOrThrow())
+        assertEquals(2, wrapped.calls)
+    }
+
+    @Test
+    fun `중계 서버 교정도 보낸 뒤 끊기면 다시 보내지 않는다`() {
+        // 중계 서버는 모델을 제가 고른다 — '다른 모델로 옮겨 보기' 는 같은 요청을 또 보내 값만 두 번 낸다.
+        val transport = Counting(java.net.SocketTimeoutException("Read timed out"), ok("고침"))
+        assertTrue(proxied(transport).correct("원문").isFailure)
+        assertEquals(1, transport.calls)
+    }
 }

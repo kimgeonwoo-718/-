@@ -122,7 +122,7 @@ class GeminiCorrector(
         }
 
         // 쓸 만한 모델이 전부 붐빌 때만 그제야 한 번 쉬었다 다시 본다.
-        if (isTransient(response)) {
+        if (worthResending(response)) {
             sleep(RETRY_MS)
             response = attempt(buildRequest(text))
         }
@@ -150,7 +150,8 @@ class GeminiCorrector(
 
         val body = buildRequest(text, withPrompt = false)
         var response = attempt(body, target)
-        if (isTransient(response)) {
+        // 번역은 늘 중계 서버로 간다. 값이 안 나간 게 확실할 때만 한 번 더 보낸다([safeToResend]).
+        if (safeToResend(response)) {
             sleep(RETRY_MS)
             response = attempt(body, target)
         }
@@ -189,10 +190,41 @@ class GeminiCorrector(
         runCatching { transport.send("POST", endpoint(translateTo), apiKey, body) }
             .getOrElse { error ->
                 HttpResponse(
-                    NETWORK_FAILURE,
+                    // 서버에 닿지도 못했으면 다시 보내도 된다. 보낸 뒤에 끊겼으면(읽기 시간 초과 등) 서버는 이미 AI 를 불러
+                    // 값이 나갔을 수 있다 — 중계 서버로는 다시 보내지 않는다([safeToResend]).
+                    if (neverSent(error)) NETWORK_FAILURE else RESPONSE_LOST,
                     """{"error":{"message":${Json.quote(describe(error))}}}"""
                 )
             }
+
+    /** 요청이 서버에 닿지도 못한 실패인가. 모르면 닿았다고 본다(값이 두 번 나가는 쪽이 더 나쁘다). */
+    private fun neverSent(error: Throwable): Boolean =
+        error is NotSentException ||
+            error is java.net.ConnectException ||
+            error is java.net.UnknownHostException ||
+            error is java.net.NoRouteToHostException
+
+    /**
+     * 중계 서버로 보낸 요청을 한 번 더 보내도 되는가 — **값이 두 번 나가지 않는 경우만.**
+     *
+     * - 서버에 닿지도 못했다(연결 실패).
+     * - 바깥 모델이 거절했다(`upstream_unavailable`·`rate_limited`). 서버가 한도를 돌려주고, 바깥도 청구하지 않았다.
+     *
+     * 안 되는 것: 값이 나간 502(잘렸다·비었다·엉뚱한 언어·한글이 남았다 — 서버가 번역은 이미 한 번 더 옮겨 봤다),
+     * 보낸 뒤 답을 못 받은 것(읽기 시간 초과), 우리 서버의 분당 상한(429), 결제 확인 장애(503 `subscription_check_unavailable`
+     * — 다시 보내면 Play 만 또 두드린다). 예전에는 5xx·429·통신 실패를 전부 한 번 더 보내서, 서버의 두 번째 번역이 오래 걸려
+     * 읽기 시간이 지나면 값이 두 번 나갈 수 있었다(2026-10-10 윈도우 세션 보고).
+     */
+    internal fun safeToResend(response: HttpResponse): Boolean = when (response.code) {
+        NETWORK_FAILURE -> true
+        429, 500, 502, 503, 504 ->
+            response.body.contains("upstream_unavailable") || response.body.contains("rate_limited")
+        else -> false
+    }
+
+    /** 한 번 더 보내 볼 만한가. 구글 직통(자기 키)이면 붐빔·시간 초과 모두, 중계 서버면 값이 안 나간 것만. */
+    private fun worthResending(response: HttpResponse): Boolean =
+        if (viaProxy) safeToResend(response) else isTransient(response)
 
     /**
      * 옮겨 갈 만한 모델을 좋은 순서로.
@@ -244,7 +276,7 @@ class GeminiCorrector(
      * 없는 이름일 때뿐 아니라 **그 모델만 붐빌 때도** 갈아 끼운다.
      */
     private fun worthSwitchingModel(response: HttpResponse): Boolean =
-        looksLikeBadModel(response) || isTransient(response)
+        looksLikeBadModel(response) || worthResending(response)
 
     /**
      * 이 키로 쓸 수 있는 모델 이름들.
@@ -457,6 +489,13 @@ class GeminiCorrector(
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 extraHeaders.forEach { (name, value) -> setRequestProperty(name, value) }
             }
+            // 연결을 먼저 맺는다. 여기서 실패하면 요청은 서버에 닿지 않았다 — 다시 보내도 값이 두 번 나가지 않는다.
+            try {
+                connection.connect()
+            } catch (e: java.io.IOException) {
+                connection.disconnect()
+                throw NotSentException(e)
+            }
             try {
                 body?.let { payload ->
                     connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
@@ -562,7 +601,10 @@ class GeminiCorrector(
         /** 전송 자체가 실패했을 때 붙이는 자리 코드. 타임아웃도 옮겨 볼 이유가 된다. */
         const val NETWORK_FAILURE = 599
 
-        private val TRANSIENT_CODES = setOf(408, 429, 500, 502, 503, 504, NETWORK_FAILURE)
+        /** 보낸 뒤에 끊겨 답을 못 받았을 때 붙이는 자리 코드(읽기 시간 초과 등). 서버는 이미 일했을 수 있다. */
+        const val RESPONSE_LOST = 598
+
+        private val TRANSIENT_CODES = setOf(408, 429, 500, 502, 503, 504, NETWORK_FAILURE, RESPONSE_LOST)
 
         /** 다른 모델로 옮겨 볼 최대 횟수. 늘릴수록 대기 시간이 길어진다. */
         private const val MAX_MODEL_HOPS = 2
@@ -666,3 +708,6 @@ class GeminiCorrector(
         """.trimIndent()
     }
 }
+
+/** 연결부터 실패해 요청이 서버에 닿지 않았다. 통신부([GeminiCorrector.Transport])가 이걸 던지면 다시 보내도 안전하다고 본다. */
+class NotSentException(cause: Throwable) : java.io.IOException(cause.message ?: cause.javaClass.simpleName, cause)

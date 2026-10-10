@@ -1,0 +1,4 @@
+# 자원·시험 자료는 어느 OS 에서 받아도 LF 로 풀리게 한다.
+# 윈도우(core.autocrlf=true)에서 CRLF 로 풀리면 llm_prompt_*.txt 를 "\n" 으로 자르는 코드·시험이 어긋난다(2026-10-10 윈도우 세션 보고).
+*.txt text eol=lf
+*.tsv text eol=lf
