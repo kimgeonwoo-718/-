@@ -258,10 +258,17 @@ async function signIn(request, env, fetchImpl, now) {
   if ((await deviceCount(env.DB, accountId)) >= MAX_DEVICES) return fail(409, 'too_many_devices');
 
   const deviceToken = await issueDevice(env.DB, accountId, labelOf(body?.label), nowMs);
-  // 기기 토큰은 이미 발급했다 — 여기서 503 을 주면 그 토큰을 잃는다. 장애면 일단 무료로 알리고,
-  // 기기가 나중에 /subscription 으로 다시 묻는다.
-  const active = await isSubscriberOrFalse(env, await purchaseOfAccount(env.DB, accountId), fetchImpl, nowMs);
-  return json(200, { deviceToken, plan: active ? 'subscriber' : 'free' });
+  // 기기 토큰은 이미 발급했다 — 여기서 503 을 주면 그 토큰을 잃는다. Play 가 고장이고 기댈 기록도 없으면 'unknown' 으로
+  // 알린다. 'free' 라고 하면 장애 중에 처음 로그인한 PC 가 다음 확인까지 '구독 없음' 으로 보였다(2026-10-10 윈도우 세션 보고).
+  // 기기는 나중에 /subscription 으로 다시 묻는다. 안드로이드는 'subscriber' 만 구독자로 보므로 'unknown' 도 무료와 같이 다룬다.
+  let plan;
+  try {
+    plan = (await isSubscriber(env, await purchaseOfAccount(env.DB, accountId), fetchImpl, nowMs)) ? 'subscriber' : 'free';
+  } catch (err) {
+    if (!(err instanceof PlayUnavailable)) throw err;
+    plan = 'unknown';
+  }
+  return json(200, { deviceToken, plan });
 }
 
 /** 기기가 스스로 연결을 끊는다. 사용자가 "이 기기 빼기" 를 눌렀을 때. */
@@ -453,7 +460,8 @@ async function correct(request, env, url, fetchImpl, now) {
     subscriber = viaTestList || (await isSubscriber(env, purchaseToken, fetchImpl, nowMs));
   } catch (err) {
     // Play 가 고장 났고 예전에 확인한 기록도 없다. "구독자 전용" 이라고 하면 돈 낸 사람에게 거짓말이
-    // 된다(윈도우 점검 ⑦④). 잠깐 뒤 다시 하라고 503 — 앱은 503 을 잠깐 붐빔으로 보고 조금 뒤 다시 보낸다.
+    // 된다(윈도우 점검 ⑦④). 잠깐 뒤 다시 하라고 503. **앱은 이 503 을 스스로 다시 보내지 않는다**(PC·폰 core 둘 다,
+    // 2026-10-10) — 다시 보내면 Play 만 또 두드린다. 사용자가 다시 누르면 그때 다시 묻는다.
     if (err instanceof PlayUnavailable) return fail(503, 'subscription_check_unavailable');
     throw err;
   }
@@ -470,8 +478,8 @@ async function correct(request, env, url, fetchImpl, now) {
   // 낮춰도 방향은 그대로고, 서버 주소는 APK 안에 있어 누구나 두드릴 수 있다. 유일하게
   // 확실한 천장은 "돈 낸 사람만" 이다.
   //
-  // 402 를 쓰는 이유: 앱은 429 와 5xx 를 "붐빔" 으로 보고 다른 모델로 옮겨 다시 보낸다.
-  // 한도 초과에 그러면 헛요청 세 번이다. 402 는 그 목록에 없어 바로 멈춘다.
+  // 402 를 쓰는 이유: 한도 초과는 다시 보내도 소용이 없다. 앱(core GeminiCorrector)은 바깥 모델이 거절한
+  // 것(upstream_unavailable·rate_limited)과 연결 실패만 한 번 더 보내고, 402 는 바로 멈춘다.
   if (!subscriber) {
     return withQuota(fail(402, 'subscribers_only'), { remaining: 0 }, limit, plan, unit);
   }
@@ -1189,10 +1197,10 @@ function privacyPage(env) {
 <h2>2. AI 교정·번역 (프리미엄)</h2>
 <p>다음 경우에만 글이 서비스 서버를 거쳐 ${providerApi} 로 전송되고 결과가 돌아옵니다.</p>
 <ul>
-<li><strong>휴대폰</strong>: 자판 위 전체 교정이나 번역 버튼을 <strong>직접 꾹 누를 때</strong> — 그 입력란의 글(커서 앞뒤 최대 2,000자). 프리미엄 구독자가 번역 입력줄에서 <strong>보내기(엔터)를 누를 때</strong> — 그 입력줄에 쓴 글.</li>
+<li><strong>휴대폰</strong>: 자판 위 전체 교정 버튼을 <strong>직접 꾹 누를 때</strong>, 또는 번역 창의 <strong>"AI정밀번역"을 누를 때</strong> — 그 입력란의 글(커서 앞뒤 최대 2,000자). 프리미엄 구독자가 번역 입력줄에서 <strong>보내기(엔터)를 누를 때</strong> — 그 입력줄에 쓴 글. 번역 창의 "전체번역"과 실시간 번역은 휴대폰 안에서만 처리되며 전송하지 않습니다.</li>
 <li><strong>PC 프로그램</strong>: 사용자가 <strong>"AI 교정" 또는 "AI 번역"을 직접 누를 때</strong> — PC 프로그램 창에 입력된 글(교정 최대 3,000자, 번역 최대 2,000자). 로그인하지 않았으면 보내지 않습니다.</li>
 </ul>
-<p>치는 동안 저절로 보내는 일은 없습니다. 휴대폰에서는 비밀번호·이메일·URL 입력란의 글을 보내지 않습니다. PC 프로그램 창에 직접 입력한 글은 걸러 내지 않고 그대로 보내므로, 비밀번호 같은 민감한 내용은 넣지 마십시오. 글과 함께 설치 식별자(그리고 로그인한 경우 기기 토큰)가 전송되며, 이름·이메일은 전송되지 않습니다. 서버는 글을 저장하지 않으며, 하루 사용량(글자 수)만 셉니다. ${split ? `${providerNames}의 처리에는 각 회사의 개인정보 처리방침이 적용됩니다.` : `${providerName}의 처리에는 ${providerName}의 개인정보 처리방침이 적용됩니다.`}</p>
+<p>치는 동안 저절로 보내는 일은 없습니다. AI 처리가 실패하면 휴대폰·PC 안의 번역기로 대신하며, 이때는 글을 다시 보내지 않습니다. 휴대폰에서는 비밀번호·이메일·URL 입력란의 글을 보내지 않습니다. PC 프로그램 창에 직접 입력한 글은 걸러 내지 않고 그대로 보내므로, 비밀번호 같은 민감한 내용은 넣지 마십시오. 글과 함께 설치 식별자(그리고 로그인한 경우 기기 토큰)가 전송되며, 이름·이메일은 전송되지 않습니다. 서버는 글을 저장하지 않으며, 하루 사용량(글자 수)만 셉니다. ${split ? `${providerNames}의 처리에는 각 회사의 개인정보 처리방침이 적용됩니다.` : `${providerName}의 처리에는 ${providerName}의 개인정보 처리방침이 적용됩니다.`}</p>
 
 <h2>3. 서버가 보관하는 것</h2>
 <ul>
@@ -1210,7 +1218,7 @@ function privacyPage(env) {
 <ul>
 <li><strong>로그인</strong>: 브라우저에 열리는 구글 로그인 화면에서 이루어지므로 PC 프로그램은 비밀번호를 볼 수 없습니다. 구글에는 계정 확인과 이메일만 요청하며, 이름과 사진은 요청하지 않아 받지 않습니다.</li>
 <li><strong>설정</strong>(윈도우 레지스트리): 단축키, 키 소리 종류·크기·범위, 창 위치, 자동 시작 여부.</li>
-<li><strong>계정 정보</strong>(윈도우 레지스트리): 설치 식별자, 서버가 발급한 기기 토큰, 로그인한 구글 이메일(어느 계정으로 로그인했는지 화면에 보여 주는 용도), 구독 상태와 마지막 확인 시각, 서버에 아직 알리지 못한 로그아웃 기록(최대 5개). 기기 토큰과 이메일은 윈도우 자체 암호화로 보호해 저장합니다. <strong>로그아웃하면 기기 토큰·이메일·구독 상태를 PC에서 지웁니다.</strong></li>
+<li><strong>계정 정보</strong>(윈도우 레지스트리): 설치 식별자, 서버가 발급한 기기 토큰, 로그인한 구글 이메일(어느 계정으로 로그인했는지 화면에 보여 주는 용도), 구독 상태와 마지막 확인 시각, 서버에 아직 알리지 못한 로그아웃 기록(최대 5개). 기기 토큰·로그아웃 기록·이메일은 윈도우 자체 암호화(DPAPI)로 보호해 저장하며, 그 PC 의 같은 윈도우 사용자만 풀 수 있습니다. <strong>로그아웃하면 기기 토큰·이메일·구독 상태를 PC에서 지웁니다.</strong></li>
 <li><strong>그 밖의 파일</strong>: 맞춤법 사전 파일, 프로그램이 두 번 켜지는 것을 막는 작은 파일, 사용자가 받기를 눌렀을 때만 저장하는 번역 언어 묶음. 윈도우 시작 시 자동 실행은 그 설정을 켰을 때만 등록합니다.</li>
 <li><strong>저장하지 않는 것</strong>: 입력한 글, 고친 글, 클립보드 기록, 배경 사진, 비밀번호는 PC에 저장하지 않습니다.</li>
 <li><strong>키 소리 "모든 프로그램에서"</strong>: 기본으로 꺼져 있습니다. 켜면 다른 프로그램에서 누른 키의 <strong>종류</strong>(글자·띄어쓰기·지우기·엔터)만 받아 소리를 내고 바로 버립니다. 입력한 글자는 읽지 않으며 저장하거나 전송하지 않습니다.</li>
@@ -1231,7 +1239,7 @@ ${aiAbroad}${aiProcessor}
 <h2 id="delete">7. 이용자의 권리와 행사 방법</h2>
 <p>이용자(만 14세 미만이면 법정대리인)는 언제든 자기 개인정보의 <strong>열람, 정정, 삭제, 처리 정지</strong>를 요구할 수 있습니다.</p>
 <ul>
-<li><strong>계정 삭제(회원 탈퇴)</strong>: 앱 → 오른쪽 위 ☰ → 더보기 → <strong>회원 탈퇴</strong>, 또는 PC 프로그램의 계정 화면에서 계정 삭제를 누르면 서버의 계정 정보(3번의 계정 항목)가 즉시 삭제됩니다.</li>
+<li><strong>계정 삭제(회원 탈퇴)</strong>: 앱 → 오른쪽 위 ☰ → 더보기 → <strong>회원 탈퇴</strong>, 또는 PC 프로그램에서 교정 창의 <strong>계정</strong> 단추(또는 알림 영역 아이콘 우클릭 → 계정) → 계정 창의 <strong>회원 탈퇴</strong>(로그인했을 때만 보입니다)를 누르면 서버의 계정 정보(3번의 계정 항목)가 즉시 삭제됩니다.</li>
 <li><strong>그 밖의 요구</strong>: 앱의 더보기 → 고객센터로 메일을 보내 주십시오. 메일 밑에 붙는 설치 식별자로 해당 기기의 기록을 찾아 <strong>10일 안에</strong> 처리하고 결과를 알려 드립니다. 앱을 쓸 수 없으면 아래 문의처로 직접 보내셔도 됩니다.</li>
 <li><strong>AI 전송을 멈추려면</strong>: AI 교정·번역 버튼을 누르지 않으면 글은 전송되지 않습니다. 기기 안 교정만으로도 쓸 수 있습니다.</li>
 </ul>
@@ -1246,7 +1254,7 @@ ${aiAbroad}${aiProcessor}
 <li>앱·PC 프로그램과 서버 사이의 모든 통신은 암호화(HTTPS)됩니다.</li>
 <li>AI 로 보낸 글은 서버에 저장하지 않습니다.</li>
 <li>구글 계정 고유 번호는 되돌릴 수 없는 값(해시)으로 바꿔 저장하고, 기기 토큰도 서버에는 바꾼 값으로만 둡니다.</li>
-<li>PC 프로그램은 기기 토큰과 이메일을 윈도우 암호화로 보호해 저장하고, 휴대폰의 토큰은 백업·기기 이전으로 복사되지 않습니다.</li>
+<li>PC 프로그램은 기기 토큰·로그아웃 기록·이메일을 윈도우 암호화로 보호해 저장하고, 휴대폰의 토큰은 백업·기기 이전으로 복사되지 않습니다.</li>
 <li>휴대폰의 클립보드 기록은 기기의 키 저장소 열쇠로 암호화해 저장하고, 하루가 지나면 지웁니다.</li>
 <li>짧은 시간에 요청이 몰리는 남용은 요청 횟수 제한으로 막습니다.</li>
 <li>서버의 비밀 키와 데이터베이스에는 운영자만 접근할 수 있습니다.</li>
@@ -1279,6 +1287,7 @@ ${env.CONTACT_EMAIL ? `<li>연락처: ${escapeHtml(env.CONTACT_EMAIL)}</li>` : '
 <h2>13. 변경</h2>
 <p>이 방침이 바뀌면 이 페이지에 갱신하고 시행일을 고칩니다.</p>
 <ul>
+<li>2026-10-10: 휴대폰의 ‘고성능 번역’ 모델 받기(GitHub)와 권한, 번역 창의 "AI정밀번역"(누를 때만 전송)과 "전체번역"(휴대폰 안에서만), PC 프로그램의 회원 탈퇴 경로와 암호화해 저장하는 항목을 적었습니다.</li>
 <li>2026-10-08: PC 프로그램 내용, 접속 IP 주소 처리, 국외 이전 세부(목적·항목·시기·거부 방법), 파기와 복구용 기록, 만 14세 미만 동의 절차를 보완하고, 휴대폰 클립보드 기록의 암호화·하루 뒤 삭제를 적었습니다.</li>
 <li>2026-09-26: 처음 시행.</li>
 </ul>`, PRIVACY_EFFECTIVE);

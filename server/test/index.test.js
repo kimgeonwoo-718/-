@@ -791,6 +791,12 @@ test('개인정보 처리방침은 PC 프로그램·IP·국외 이전·백업·1
   // 만 14세 미만: 법정대리인 동의.
   assert.match(body, /법정대리인의 동의를 받은 경우에만/);
   assert.match(body, /시행일: 2026-10-10/);
+  // 2026-10-10 윈도우 세션이 알려 준 PC 동작: 탈퇴 경로, DPAPI 로 암호화하는 항목.
+  assert.match(body, /계정 창의 <strong>회원 탈퇴<\/strong>/);
+  assert.match(body, /기기 토큰·로그아웃 기록·이메일은 윈도우 자체 암호화\(DPAPI\)/);
+  // 휴대폰 번역 창: AI정밀번역만 보내고 전체번역·실시간은 기기 안.
+  assert.match(body, /"AI정밀번역"을 누를 때/);
+  assert.match(body, /"전체번역"과 실시간 번역은 휴대폰 안에서만/);
 });
 
 test('이용약관의 시행일은 방침과 따로 간다', async () => {

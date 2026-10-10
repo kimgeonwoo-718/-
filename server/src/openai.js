@@ -85,9 +85,11 @@ export function billedError(status, message, usageMetadata) {
 /**
  * 바깥 모델이 준 오류를 **그대로 앱에 넘기지 않는다.**
  *
- * 저쪽 오류 문구에는 키 조각(대개 가려져 오지만)·내부 주소·계정 사정이 섞여 올 수 있다. 앱이
- * 쓰는 것은 상태 코드(429·5xx 면 잠깐 쉬었다 다시 보냄)뿐이라, 코드는 그대로 두고 문구만
- * 짧은 표시로 바꾼다. 어디서 막혔는지는 서버 /stats 와 배포 로그로 본다.
+ * 저쪽 오류 문구에는 키 조각(대개 가려져 오지만)·내부 주소·계정 사정이 섞여 올 수 있다. 코드는 그대로 두고
+ * 문구만 짧은 표시로 바꾼다. 어디서 막혔는지는 서버 /stats 와 배포 로그로 본다.
+ *
+ * **이 표시를 바꾸지 마라.** 앱(core GeminiCorrector.safeToResend)은 `upstream_unavailable`·`rate_limited` 일 때만
+ * 한 번 더 보낸다 — 바깥이 거절해 값이 안 나간 경우다. 이름이 바뀌면 앱이 다시 안 보내거나, 반대로 값이 나간 실패를 다시 보낸다.
  */
 export function upstreamErrorMessage(status) {
   if (status === 429) return 'rate_limited';

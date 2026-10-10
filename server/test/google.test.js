@@ -111,6 +111,37 @@ test('같은 구글 계정이면 다른 기기도 같은 구독을 받는다', a
   assert.deepEqual(await state.json(), { plan: 'subscriber' });
 });
 
+test('Play 가 고장이고 기댈 기록도 없으면 로그인은 되고 plan 은 unknown (2026-10-10 윈도우 보고)', async () => {
+  // 'free' 라고 하면 장애 중에 처음 로그인한 PC 가 다음 확인까지 '구독 없음' 으로 보인다.
+  const e = await paidEnv();
+  const longLived = NOW_SEC + 10 * 24 * 3600;
+  const phone = await googleIdToken({ sub: 'user-1', exp: longLived });
+  const base = upstream([phone.jwk]);
+  let playDown = false;
+  let now = NOW;
+  const deps = {
+    fetch: async (url, init) =>
+      playDown && url.includes('androidpublisher') ? new Response('', { status: 503 }) : base(url, init),
+    now: () => now,
+  };
+  await handle(post(SIGNIN, { idToken: phone.token, purchaseToken: 'paid-token' }), e, deps);
+
+  // 나흘 뒤 — 사흘 안의 마지막 확인 결과도 없다 — Play 가 고장 난 채 PC 가 처음 로그인한다.
+  now = NOW + 4 * 24 * 3600 * 1000;
+  playDown = true;
+  const pc = await googleIdToken({ sub: 'user-1', exp: longLived });
+  const res = await handle(post(SIGNIN, { idToken: pc.token, label: '윈도우' }), e, deps);
+  assert.equal(res.status, 200, '로그인 자체는 막지 않는다');
+  const body = await res.json();
+  assert.ok(body.deviceToken, '기기 토큰은 받아야 한다');
+  assert.equal(body.plan, 'unknown');
+
+  // Play 가 돌아오면 /subscription 이 제대로 답한다.
+  playDown = false;
+  const state = await handle(new Request(SUBSCRIPTION, { method: 'POST', headers: { 'x-device-token': body.deviceToken } }), e, deps);
+  assert.deepEqual(await state.json(), { plan: 'subscriber' });
+});
+
 test('다른 구글 계정은 남의 구독을 못 받는다', async () => {
   const e = await paidEnv();
   const mine = await googleIdToken({ sub: 'user-1' });
