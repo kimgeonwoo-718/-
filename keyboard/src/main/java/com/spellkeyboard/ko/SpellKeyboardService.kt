@@ -998,23 +998,37 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     /**
-     * '전체번역'. 입력란에 이미 써 둔 글을 통째로 옮긴다.
+     * 입력란에 이미 써 둔 글을 통째로 옮긴다. 두 가지다.
      *
-     * 번역 패널의 '전체번역' 단추와 번역 동그라미를 길게 누르는 것이 둘 다 여기로 온다.
-     *
-     * - **구독자**: 서버 AI. 실패하면 기기 번역으로 대신한다(아무것도 못 받는 것보다 낫다).
-     * - **무료**: 기기 번역. 서버도 한도도 쓰지 않는다.
+     * - **'전체번역'**(번역 패널 단추, 번역 동그라미 길게 누르기): **누구나** 기기 안 번역. 서버도 한도도 쓰지 않는다.
+     * - **'AI정밀번역'**(번역 패널 단추): 구독자는 서버 AI. 실패하면 기기 번역으로 대신한다(아무것도 못 받는 것보다 낫다).
+     *   구독자가 아니면 결제 화면으로 보낸다.
      *
      * 입력줄이 열려 있어 한국어를 쓰는 중이었다면 그 글도 같이 옮긴다. 입력란 끝에 미리보기로 들어가 있던
-     * 번역문은 원문이 아니므로 뺀다. 방금 한 전체번역은 [fullUndo] 로 되돌릴 수 있다 —
-     * 단추가 '되돌리기' 로 바뀐다.
+     * 번역문은 원문이 아니므로 뺀다. 방금 한 번역은 [fullUndo] 로 되돌릴 수 있다 — '전체번역' 단추가 '되돌리기' 로 바뀐다.
+     * 되돌리기가 떠 있을 때 AI정밀번역을 누르면 되돌리지 않고, 쥐고 있던 **원문**을 AI 로 다시 옮겨 방금 번역을 갈아 끼운다.
      */
-    override fun onTranslateAll() = translateAll()
+    override fun onTranslateAll() = translateAll(ai = false)
 
-    override fun onTranslateField() = translateAll()
+    override fun onTranslateField() = translateAll(ai = false)
 
-    private fun translateAll() {
-        if (fullUndo != null) {
+    override fun onTranslateAi() {
+        // 구독자인지는 폰이 아는 만큼만 본다(Play 구매 토큰 또는 서버가 마지막으로 알려 준 요금제). 진짜 한도 판단은 서버가 한다.
+        if (!Premium.active(this)) {
+            startActivity(Intent(this, PaywallActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        }
+        translateAll(ai = true)
+    }
+
+    private fun translateAll(ai: Boolean) {
+        val pending = fullUndo
+        if (pending != null && !ai) {
+            // AI 가 같은 자리를 갈아 끼우는 중에 되돌리면, AI 결과가 와서 엉뚱한 글자를 지운다.
+            if (polishing) {
+                notify(getString(R.string.ai_busy))
+                return
+            }
             undoFullTranslate()
             return
         }
@@ -1032,23 +1046,37 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             return
         }
 
-        val useAi = Prefs.aiAvailable() && isSubscriber()
-        val editor = ConnectionEditor(connection)
-        val inserted = if (translating) translateOutput.inserted else 0
-        val beforeAll = session.readBeforeCursor(editor, (if (useAi) AI_BEFORE_CHARS else FULL_BEFORE_CHARS) + inserted)
-        // 입력란 끝에 미리보기로 들어가 있는 번역문은 원문이 아니다.
-        val prefix = if (inserted in 1..beforeAll.length) beforeAll.dropLast(inserted) else beforeAll
-        val after = connection.getTextAfterCursor(if (useAi) AI_AFTER_CHARS else FULL_AFTER_CHARS, 0)?.toString().orEmpty()
-        val typed = if (translating) translateBuffer.text.trim() else ""
-        val joiner = if (typed.isNotEmpty() && prefix.isNotEmpty() && !prefix.last().isWhitespace()) " " else ""
-        val original = prefix + joiner + typed + after
+        if (ai && !Prefs.aiAvailable()) {
+            notify(getString(R.string.translate_ai_unavailable))
+            return
+        }
+        val useAi = ai
+        val original: String
+        val deleteBefore: Int
+        val deleteAfter: Int
+        if (pending != null) {
+            // 방금 전체번역한 글을 AI 로 다시 옮긴다. 입력란을 다시 읽지 않고 쥐고 있던 원문을 쓴다 — 되돌리기와 같은 가정(커서가 번역문 끝)이다.
+            original = pending.original
+            deleteBefore = pending.translatedLength
+            deleteAfter = 0
+        } else {
+            val editor = ConnectionEditor(connection)
+            val inserted = if (translating) translateOutput.inserted else 0
+            val beforeAll = session.readBeforeCursor(editor, (if (useAi) AI_BEFORE_CHARS else FULL_BEFORE_CHARS) + inserted)
+            // 입력란 끝에 미리보기로 들어가 있는 번역문은 원문이 아니다.
+            val prefix = if (inserted in 1..beforeAll.length) beforeAll.dropLast(inserted) else beforeAll
+            val after = connection.getTextAfterCursor(if (useAi) AI_AFTER_CHARS else FULL_AFTER_CHARS, 0)?.toString().orEmpty()
+            val typed = if (translating) translateBuffer.text.trim() else ""
+            val joiner = if (typed.isNotEmpty() && prefix.isNotEmpty() && !prefix.last().isWhitespace()) " " else ""
+            original = prefix + joiner + typed + after
+            // 지울 범위: 커서 앞은 (원문 + 미리보기 번역문), 커서 뒤는 전부.
+            deleteBefore = prefix.length + inserted
+            deleteAfter = after.length
+        }
         if (original.isBlank()) {
             notify(getString(R.string.ai_empty))
             return
         }
-        // 지울 범위: 커서 앞은 (원문 + 미리보기 번역문), 커서 뒤는 전부.
-        val deleteBefore = prefix.length + inserted
-        val deleteAfter = after.length
         val target = Prefs.translateTarget(this)
 
         polishing = true

@@ -89,6 +89,9 @@ class KeyboardView @JvmOverloads constructor(
         /** 번역 동그라미를 길게 눌렀다. 입력란에 이미 쓴 글을 통째로 옮긴다. */
         fun onTranslateField()
 
+        /** 번역 패널의 'AI정밀번역'을 눌렀다. 구독자는 서버 AI 로 옮기고, 아니면 결제 화면으로 간다. */
+        fun onTranslateAi()
+
         /** 번역 입력줄의 글자를 눌러 커서를 [index] 로 옮기려 한다. */
         fun onTranslateCaret(index: Int)
 
@@ -164,6 +167,9 @@ class KeyboardView @JvmOverloads constructor(
     private val translateNote: TextView
     private val translateChips = ArrayList<TextView>()
     private val translateAllButton: TextView
+    private val translateAiButton: TextView
+    /** 패널 폭이 좁아 머리 줄(칩·단추)의 글자와 여백을 줄여야 하는 상태. */
+    private var translateCompact = false
     private val translateClose: TextView
     private var translateSelected = 0
     private var translateUndo = false
@@ -303,7 +309,7 @@ class KeyboardView @JvmOverloads constructor(
         applyToolbarCollapsed()
 
         // 번역 패널. 자판 바로 위에 열린다:
-        //   1) 언어 칩(영어·일본어·중국어)과 '전체번역'·닫기
+        //   1) 언어 칩(영어·일본어·중국어)과 'AI정밀번역'·'전체번역'·닫기
         //   2) 한국어를 쓰는 줄 — 깜빡이는 커서가 있다. 한 줄 높이로 시작해 글이 길어지면 두 줄까지 자란다
         //   3) 안내 줄 — **할 말이 있을 때만** 나타난다(언어팩 받는 중, 받기 실패 등). 평소에는 없다
         // 번역 결과는 앱 입력란에 바로 들어가므로 따로 미리보기 줄을 두지 않는다.
@@ -328,6 +334,16 @@ class KeyboardView @JvmOverloads constructor(
             text = context.getString(R.string.translate_all)
             attachKeyTouch(this, onPress = { listener?.onTranslateAll() })
         }
+        // 구독자 전용 서버 AI 번역. 구독자가 아니면 눌렀을 때 결제 화면으로 간다(서비스가 가른다).
+        translateAiButton = TextView(context).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(dp(12), 0, dp(12), 0)
+            maxLines = 1
+            text = context.getString(R.string.translate_ai)
+            attachKeyTouch(this, onPress = { listener?.onTranslateAi() })
+        }
         translateClose = toolbarButton("✕") { listener?.onToggleTranslate() }
         val translateHeader = LinearLayout(context).apply {
             orientation = HORIZONTAL
@@ -335,9 +351,21 @@ class KeyboardView @JvmOverloads constructor(
             setPadding(dp(4), 0, dp(4), 0)
             // 언어 칩은 목록이 정해진 뒤([setTranslateMode])에 이 줄 앞쪽에 끼운다. 자리만 잡아 둔다.
             addView(View(context), LayoutParams(0, 1, 1f))
+            addView(translateAiButton, LayoutParams(LayoutParams.WRAP_CONTENT, dp(TRANSLATE_CHIP_DP)).apply {
+                rightMargin = dp(4)
+            })
             addView(translateAllButton, LayoutParams(LayoutParams.WRAP_CONTENT, dp(TRANSLATE_CHIP_DP)))
             addView(View(context), LayoutParams(dp(6), 1))
             addView(translateClose, toolbarParams())
+            // 칩 셋 + 단추 둘 + 닫기가 한 줄에 다 들어가야 한다. 좁은 폰(360dp 대)에서는 안 들어가서, 폭을 보고 글자·여백을 줄인다.
+            // 레이아웃 도중에 크기를 바꾸면 안 되므로 post 로 미룬다.
+            addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
+                val compact = right - left < dp(TRANSLATE_COMPACT_BELOW_DP)
+                if (compact != translateCompact) {
+                    translateCompact = compact
+                    post { styleTranslateHeaderSizes() }
+                }
+            }
         }
         translatePanel = LinearLayout(context).apply {
             orientation = VERTICAL
@@ -490,6 +518,7 @@ class KeyboardView @JvmOverloads constructor(
         translateBusy = busy
         translateButton.alpha = if (busy) 0.35f else 1f
         translateAllButton.alpha = if (busy) 0.35f else 1f
+        translateAiButton.alpha = if (busy) 0.35f else 1f
     }
 
     /**
@@ -530,6 +559,22 @@ class KeyboardView @JvmOverloads constructor(
             header.addView(chip, index, LayoutParams(LayoutParams.WRAP_CONTENT, dp(TRANSLATE_CHIP_DP)).apply {
                 rightMargin = dp(4)
             })
+        }
+        styleTranslateHeaderSizes()
+    }
+
+    /** 머리 줄의 칩·단추 글자 크기와 가로 여백. 폭이 좁으면([translateCompact]) 줄인다. */
+    private fun styleTranslateHeaderSizes() {
+        val size = if (translateCompact) 11f else 12f
+        val chipPad = dp(if (translateCompact) 7 else 11)
+        val buttonPad = dp(if (translateCompact) 7 else 12)
+        translateChips.forEach {
+            it.setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
+            it.setPadding(chipPad, 0, chipPad, 0)
+        }
+        listOf(translateAiButton, translateAllButton).forEach {
+            it.setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
+            it.setPadding(buttonPad, 0, buttonPad, 0)
         }
     }
 
@@ -591,6 +636,9 @@ class KeyboardView @JvmOverloads constructor(
         }
         translateAllButton.setTextColor(if (translateUndo) theme.onAccent else theme.text)
         translateAllButton.background = roundRect(if (translateUndo) theme.accent else toolbarFill(theme.toolbarButton))
+        // AI정밀번역은 글자색만 강조색으로 해서 다른 단추와 구분한다.
+        translateAiButton.setTextColor(theme.accent)
+        translateAiButton.background = roundRect(toolbarFill(theme.toolbarButton))
         styleToolbarButton(translateClose)
     }
 
@@ -1957,6 +2005,9 @@ class KeyboardView @JvmOverloads constructor(
         const val TRANSLATE_CHIP_DP = 26
         const val TRANSLATE_SOURCE_MAX_ROWS = 2
         const val TRANSLATE_NOTE_DP = 22
+
+        /** 번역 패널 머리 줄이 이보다 좁으면 글자와 여백을 줄인다(dp). */
+        const val TRANSLATE_COMPACT_BELOW_DP = 400
         const val TOOLBAR_BUTTON_DP = 28
 
         /**
