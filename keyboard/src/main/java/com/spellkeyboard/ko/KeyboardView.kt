@@ -92,6 +92,12 @@ class KeyboardView @JvmOverloads constructor(
         /** 번역 패널의 'AI정밀번역'을 눌렀다. 구독자는 서버 AI 로 옮기고, 아니면 결제 화면으로 간다. */
         fun onTranslateAi()
 
+        /**
+         * 번역 패널의 지우기 키. 앱 입력란에 들어가 있는 글을 **한 글자** 지운다(꾹 누르면 반복).
+         * 자판의 ⌫ 는 번역 중에 한국어 입력줄을 지우므로 입력줄이 비면 이미 들어간 번역문에 손이 안 닿는다 — 그 길이다.
+         */
+        fun onTranslateErase()
+
         /** 번역 입력줄의 글자를 눌러 커서를 [index] 로 옮기려 한다. */
         fun onTranslateCaret(index: Int)
 
@@ -168,6 +174,7 @@ class KeyboardView @JvmOverloads constructor(
     private val translateChips = ArrayList<TextView>()
     private val translateAllButton: TextView
     private val translateAiButton: TextView
+    private val translateErase: TextView
     /** 패널 폭이 좁아 머리 줄(칩·단추)의 글자와 여백을 줄여야 하는 상태. */
     private var translateCompact = false
     private val translateClose: TextView
@@ -222,6 +229,14 @@ class KeyboardView @JvmOverloads constructor(
     private val repeatBackspace = object : Runnable {
         override fun run() {
             listener?.onAction(KeyAction.BACKSPACE)
+            repeatHandler.postDelayed(this, REPEAT_INTERVAL_MS)
+        }
+    }
+
+    /** 번역 패널 지우기 키를 꾹 누를 때의 반복. */
+    private val repeatErase = object : Runnable {
+        override fun run() {
+            listener?.onTranslateErase()
             repeatHandler.postDelayed(this, REPEAT_INTERVAL_MS)
         }
     }
@@ -310,7 +325,7 @@ class KeyboardView @JvmOverloads constructor(
 
         // 번역 패널. 자판 바로 위에 열린다:
         //   1) 언어 칩(영어·일본어·중국어)과 'AI정밀번역'·'전체번역'·닫기
-        //   2) 한국어를 쓰는 줄 — 깜빡이는 커서가 있다. 한 줄 높이로 시작해 글이 길어지면 두 줄까지 자란다
+        //   2) 한국어를 쓰는 줄 — 깜빡이는 커서가 있다. 한 줄 높이로 시작해 글이 길어지면 두 줄까지 자란다. 오른쪽에 지우기 키
         //   3) 안내 줄 — **할 말이 있을 때만** 나타난다(언어팩 받는 중, 받기 실패 등). 평소에는 없다
         // 번역 결과는 앱 입력란에 바로 들어가므로 따로 미리보기 줄을 두지 않는다.
         translateSource = TranslateSourceView(context).apply {
@@ -344,6 +359,15 @@ class KeyboardView @JvmOverloads constructor(
             text = context.getString(R.string.translate_ai)
             attachKeyTouch(this, onPress = { listener?.onTranslateAi() })
         }
+        // 입력줄 오른쪽 지우기 키. 앱 입력란에 이미 들어간 번역문을 한 글자씩 지운다.
+        translateErase = TextView(context).apply {
+            text = "⌫"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            contentDescription = context.getString(R.string.translate_erase_desc)
+            attachRepeatingKeyTouch(this, repeatErase, KeySound.DELETE) { listener?.onTranslateErase() }
+        }
         translateClose = toolbarButton("✕") { listener?.onToggleTranslate() }
         val translateHeader = LinearLayout(context).apply {
             orientation = HORIZONTAL
@@ -372,7 +396,14 @@ class KeyboardView @JvmOverloads constructor(
             isVisible = false
             setPadding(dp(4), dp(2), dp(4), dp(2))
             addView(translateHeader, LayoutParams(LayoutParams.MATCH_PARENT, dp(TRANSLATE_HEADER_DP)))
-            addView(translateSource, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+            addView(LinearLayout(context).apply {
+                orientation = HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(translateSource, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+                addView(translateErase, LayoutParams(dp(TRANSLATE_ERASE_WIDTH_DP), dp(TRANSLATE_CHIP_DP)).apply {
+                    leftMargin = dp(4)
+                })
+            }, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
             addView(translateNote, LayoutParams(LayoutParams.MATCH_PARENT, dp(TRANSLATE_NOTE_DP)))
         }
         addView(translatePanel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
@@ -639,6 +670,8 @@ class KeyboardView @JvmOverloads constructor(
         // AI정밀번역은 글자색만 강조색으로 해서 다른 단추와 구분한다.
         translateAiButton.setTextColor(theme.accent)
         translateAiButton.background = roundRect(toolbarFill(theme.toolbarButton))
+        translateErase.setTextColor(theme.text)
+        translateErase.background = roundRect(toolbarFill(theme.toolbarButton))
         styleToolbarButton(translateClose)
     }
 
@@ -1609,7 +1642,9 @@ class KeyboardView @JvmOverloads constructor(
         alternate: Char? = null,
         repeatable: Boolean = false,
         /** null 이면 소리를 안 낸다 — 자판 밖 도구 줄 단추가 그렇다. */
-        sound: KeySound? = KeySound.LETTER
+        sound: KeySound? = KeySound.LETTER,
+        /** [repeatable] 일 때 꾹 누르는 동안 되풀이할 것. 기본은 ⌫ 반복이다. */
+        repeat: Runnable = repeatBackspace
     ): KeyTouch = object : KeyTouch {
         // **이 상태는 키마다 따로 있어야 한다.** 빠르게 치면 앞 손가락이 떨어지기 전에
         // 다음 손가락이 닿아서 두 키가 동시에 눌린 상태가 된다. 상태를 하나로 공유하면
@@ -1635,7 +1670,7 @@ class KeyboardView @JvmOverloads constructor(
             sound?.let { keySound?.invoke(it) }
             onPress()
             showPreview?.let { repeatHandler.postDelayed(it, LONG_PRESS_MS) }
-            if (repeatable) repeatHandler.postDelayed(repeatBackspace, REPEAT_DELAY_MS)
+            if (repeatable) repeatHandler.postDelayed(repeat, REPEAT_DELAY_MS)
         }
 
         override fun move(x: Float, y: Float, inside: Boolean) {
@@ -1651,7 +1686,7 @@ class KeyboardView @JvmOverloads constructor(
         override fun up() {
             key.isPressed = false
             showPreview?.let { repeatHandler.removeCallbacks(it) }
-            repeatHandler.removeCallbacks(repeatBackspace)
+            repeatHandler.removeCallbacks(repeat)
             // 미리보기를 띄운 것이 **이 키** 일 때만 갈아 끼운다.
             if (previewing && alternate != null) listener?.onLongPressChar(alternate)
             if (previewing) dismissAlternate()
@@ -1661,7 +1696,7 @@ class KeyboardView @JvmOverloads constructor(
         override fun cancel() {
             key.isPressed = false
             showPreview?.let { repeatHandler.removeCallbacks(it) }
-            repeatHandler.removeCallbacks(repeatBackspace)
+            repeatHandler.removeCallbacks(repeat)
             if (previewing) dismissAlternate()
             previewing = false
         }
@@ -1734,6 +1769,21 @@ class KeyboardView @JvmOverloads constructor(
     @SuppressLint("ClickableViewAccessibility")
     private fun attachKeyTouch(view: View, onPress: () -> Unit) {
         val touch = charTouch(view, onPress, sound = null)
+        view.setOnTouchListener { target, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> touch.down(event.x, event.y)
+                MotionEvent.ACTION_MOVE -> touch.move(event.x, event.y, insideView(target, event))
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> touch.up()
+                MotionEvent.ACTION_CANCEL -> touch.cancel()
+            }
+            true
+        }
+    }
+
+    /** [attachKeyTouch] 와 같지만 꾹 누르면 [repeat] 가 되풀이된다(⌫ 처럼). */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun attachRepeatingKeyTouch(view: View, repeat: Runnable, sound: KeySound?, onPress: () -> Unit) {
+        val touch = charTouch(view, onPress, repeatable = true, sound = sound, repeat = repeat)
         view.setOnTouchListener { target, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> touch.down(event.x, event.y)
@@ -2005,6 +2055,7 @@ class KeyboardView @JvmOverloads constructor(
         const val TRANSLATE_CHIP_DP = 26
         const val TRANSLATE_SOURCE_MAX_ROWS = 2
         const val TRANSLATE_NOTE_DP = 22
+        const val TRANSLATE_ERASE_WIDTH_DP = 40
 
         /** 번역 패널 머리 줄이 이보다 좁으면 글자와 여백을 줄인다(dp). */
         const val TRANSLATE_COMPACT_BELOW_DP = 400

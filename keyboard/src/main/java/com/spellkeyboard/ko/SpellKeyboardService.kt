@@ -181,6 +181,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      */
     private val live = LiveTranslation(LiveEnv())
 
+    /** 지금 입력란에 들어가 있는 번역문(실시간). 지우기 키가 이 끝에서 한 글자씩 줄이려고 쥔다. 길이는 [translateOutput].inserted 와 같다. */
+    private var liveShown = ""
+
     /**
      * '전체번역' 직후에만 있다. 입력란을 통째로 갈아 끼웠으니 원문을 쥐고 있다가 '되돌리기' 에 돌려준다.
      * 입력줄에 글자를 더 치거나 패널을 닫으면 버린다 — 그 뒤에는 되돌릴 자리가 어긋난다.
@@ -768,7 +771,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         session.commitPending(ConnectionEditor(connection))
         session.reset()
         translateBuffer.clear()
-        translateOutput.detach()
+        forgetTranslation()
         live.reset()
         clearFullUndo()
         translating = true
@@ -807,7 +810,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 첫 글자가 앞 글자를 덮어쓴다.
         translateBuffer.finishComposing()
         translateBuffer.clear()
-        translateOutput.detach()
+        forgetTranslation()
         clearFullUndo()
         session.reset()
         keyboard?.setTranslateMode(false, targetLabels(), Prefs.translateTarget(this).ordinal)
@@ -854,6 +857,45 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         live.changed()
     }
 
+    /** 번역문을 입력란에 넣고(앞서 넣은 것은 갈아 끼운다) 무엇을 넣었는지 기억한다. */
+    private fun putTranslation(editor: Editor, text: String) {
+        translateOutput.replace(editor, text)
+        liveShown = text
+    }
+
+    /** 입력란에 넣은 번역문을 거기 남겨 둔 채 잊는다(입력줄을 비우거나 닫을 때). */
+    private fun forgetTranslation() {
+        translateOutput.detach()
+        liveShown = ""
+    }
+
+    /**
+     * 번역 패널의 지우기 키. 앱 입력란의 글을 **한 글자** 지운다(꾹 누르면 반복 — 키가 부른다).
+     *
+     * 자판의 ⌫ 는 번역 중에 한국어 입력줄을 지운다. 그래서 '전체번역'·'AI정밀번역' 으로 입력란에 들어간 글처럼 입력줄이 이미 비어 있는
+     * 것은 자판으로 지울 길이 없었다. 이 키는 입력줄을 건드리지 않고 입력란만 지운다.
+     *
+     * - 실시간 번역문이 들어가 있으면 그 끝에서 줄인다. 입력줄의 한국어는 그대로라, 글을 더 치면 번역문이 다시 통째로 들어온다.
+     * - 아니면 커서 앞 한 글자(이모지는 통째로)를 입력란에서 지운다.
+     */
+    override fun onTranslateErase() {
+        if (!translating) return
+        val connection = currentInputConnection ?: return
+        lastEditAt = android.os.SystemClock.uptimeMillis()
+        // 지운 뒤에는 '되돌리기' 가 가리키는 자리가 어긋난다.
+        clearFullUndo()
+        if (translateOutput.inserted > 0) {
+            val shown = liveShown
+            if (shown.length == translateOutput.inserted) {
+                putTranslation(ConnectionEditor(connection), shown.substring(0, shown.offsetByCodePoints(shown.length, -1)))
+                return
+            }
+            // 기억이 어긋났다. 어긋난 채 줄이면 다음 번역이 엉뚱한 글자를 지우므로 기억을 버리고 입력란에서 직접 지운다.
+            forgetTranslation()
+        }
+        connection.deleteSurroundingTextInCodePoints(1, 0)
+    }
+
     /** 기기 번역기를 [TranslationPipeline] 이 쓰는 모양으로. */
     private fun deviceEngine(translator: OnDeviceTranslator, target: TargetLanguage) =
         TranslationPipeline.Engine { text, onResult, onFailed -> translator.translate(text, target, onResult, onFailed) }
@@ -898,14 +940,14 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             val connection = currentInputConnection ?: return
             // 이 편집으로 올 커서 알림도 우리 것이다.
             lastEditAt = android.os.SystemClock.uptimeMillis()
-            translateOutput.replace(ConnectionEditor(connection), result.text)
+            putTranslation(ConnectionEditor(connection), result.text)
             keyboard?.setTranslateNote("")
         }
 
         override fun showEmpty() {
             if (!translating) return
             val connection = currentInputConnection ?: return
-            translateOutput.replace(ConnectionEditor(connection), "")
+            putTranslation(ConnectionEditor(connection), "")
             keyboard?.setTranslateNote("")
         }
 
@@ -982,7 +1024,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 result
                     .onSuccess { polished ->
                         currentInputConnection?.let {
-                            translateOutput.replace(ConnectionEditor(it), polished)
+                            putTranslation(ConnectionEditor(it), polished)
                         }
                         finishEnter()
                     }
@@ -1165,7 +1207,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             llm?.cancelAll()
             translateBuffer.finishComposing()
             translateBuffer.clear()
-            translateOutput.detach()
+            forgetTranslation()
             showTranslateSource()
             keyboard?.setTranslateNote("")
         }
