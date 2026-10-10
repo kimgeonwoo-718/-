@@ -1,6 +1,9 @@
 package com.spellkeyboard.ko
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.format.Formatter
 import android.view.View
 import android.widget.SeekBar
 import android.widget.TextView
@@ -8,7 +11,10 @@ import android.widget.Toast
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import android.app.AlertDialog
 import androidx.appcompat.app.AppCompatDelegate
+import com.spellkeyboard.ko.llm.LlmModelStore
+import com.spellkeyboard.ko.llm.LlmSupport
 
 /**
  * 키보드 맞춤설정.
@@ -51,7 +57,13 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.back_button).setOnClickListener { finish() }
         bindKeyboard()
+        bindLlm()
         bindSound()
+    }
+
+    override fun onDestroy() {
+        llmHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -129,6 +141,132 @@ class SettingsActivity : AppCompatActivity() {
         AppCompatDelegate.setDefaultNightMode(mode.nightMode())
         // 밝기가 같은 테마끼리(밝게 ↔ 바다사자)는 화면이 다시 안 만들어져서 선택 표시가 그대로다.
         if (before.nightMode() == mode.nightMode()) recreate()
+    }
+
+    // --- 고성능 번역 (기기 안 AI 모델) ---------------------------------------------
+
+    private val llmHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * 모델을 받고 지우고 켜고 끄는 카드. 상태는 [LlmModelStore] 가 쥐고 있고, 받는 동안은 1초마다 다시 그린다.
+     * 기기가 못 돌리면 이유만 보이고 받기 단추는 숨는다 — 못 쓸 파일을 3GB 받게 하지 않는다.
+     */
+    private fun bindLlm() {
+        val status = findViewById<TextView>(R.id.llm_status)
+        val action = findViewById<TextView>(R.id.llm_action)
+        val delete = findViewById<TextView>(R.id.llm_delete)
+        val progress = findViewById<android.widget.ProgressBar>(R.id.llm_progress)
+        val useRow = findViewById<View>(R.id.llm_use_row)
+        val on = findViewById<TextView>(R.id.llm_on)
+        val off = findViewById<TextView>(R.id.llm_off)
+
+        fun showUse() {
+            val enabled = Prefs.llmEnabled(this)
+            on.isSelected = enabled
+            off.isSelected = !enabled
+        }
+
+        fun render() {
+            val reason = LlmSupport.check(this)
+            if (reason != LlmSupport.Reason.OK) {
+                status.setText(
+                    when (reason) {
+                        LlmSupport.Reason.NOT_ARM64 -> R.string.setting_llm_reason_not_arm64
+                        LlmSupport.Reason.OLD_ANDROID -> R.string.setting_llm_reason_old_android
+                        LlmSupport.Reason.LOW_MEMORY -> R.string.setting_llm_reason_low_memory
+                        else -> R.string.setting_llm_reason_old_cpu
+                    }
+                )
+                action.visibility = View.GONE
+                delete.visibility = View.GONE
+                progress.visibility = View.GONE
+                useRow.visibility = View.GONE
+                return
+            }
+            val now = LlmModelStore.status(this)
+            val running = now.state == LlmModelStore.State.DOWNLOADING || now.state == LlmModelStore.State.VERIFYING
+            progress.visibility = if (now.state == LlmModelStore.State.DOWNLOADING) View.VISIBLE else View.GONE
+            progress.progress = (now.fraction * 1000).toInt()
+            useRow.visibility = if (now.state == LlmModelStore.State.READY) View.VISIBLE else View.GONE
+            delete.visibility = if (now.state == LlmModelStore.State.READY || (now.doneBytes > 0 && !running)) View.VISIBLE else View.GONE
+            action.visibility = View.VISIBLE
+            when (now.state) {
+                LlmModelStore.State.NOT_INSTALLED -> {
+                    status.setText(R.string.setting_llm_status_none)
+                    action.setText(R.string.setting_llm_get)
+                }
+                LlmModelStore.State.DOWNLOADING -> {
+                    status.text = getString(
+                        R.string.setting_llm_status_downloading,
+                        (now.fraction * 100).toInt(),
+                        Formatter.formatShortFileSize(this, now.doneBytes),
+                        Formatter.formatShortFileSize(this, now.totalBytes)
+                    )
+                    action.setText(R.string.setting_llm_cancel)
+                }
+                LlmModelStore.State.VERIFYING -> {
+                    status.setText(R.string.setting_llm_status_verifying)
+                    action.visibility = View.GONE
+                }
+                LlmModelStore.State.READY -> {
+                    status.setText(R.string.setting_llm_status_ready)
+                    action.visibility = View.GONE
+                }
+                LlmModelStore.State.FAILED -> {
+                    status.text = getString(R.string.setting_llm_status_failed, now.message.orEmpty())
+                    action.setText(R.string.setting_llm_get)
+                }
+            }
+            if (running) llmHandler.postDelayed({ render() }, 1000)
+        }
+
+        fun begin(allowMetered: Boolean) {
+            LlmModelStore.start(this, allowMetered) { runOnUiThread { render() } }
+            render()
+        }
+
+        action.setOnClickListener {
+            val now = LlmModelStore.status(this)
+            when (now.state) {
+                LlmModelStore.State.DOWNLOADING -> {
+                    LlmModelStore.cancel()
+                    llmHandler.postDelayed({ render() }, 400)
+                }
+                LlmModelStore.State.NOT_INSTALLED, LlmModelStore.State.FAILED -> {
+                    if (!LlmModelStore.hasRoom(this)) {
+                        Toast.makeText(this, R.string.setting_llm_no_room, Toast.LENGTH_LONG).show()
+                    } else if (LlmModelStore.onMeteredNetwork(this)) {
+                        AlertDialog.Builder(this)
+                            .setTitle(R.string.setting_llm_metered_title)
+                            .setMessage(R.string.setting_llm_metered_message)
+                            .setPositiveButton(R.string.setting_llm_metered_data) { _, _ -> begin(true) }
+                            .setNegativeButton(R.string.setting_llm_metered_wifi, null)
+                            .show()
+                    } else {
+                        begin(false)
+                    }
+                }
+                else -> Unit
+            }
+        }
+        delete.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setMessage(R.string.setting_llm_delete_confirm)
+                .setPositiveButton(R.string.setting_llm_delete_yes) { _, _ ->
+                    // 3GB 를 지우고 받던 스레드를 기다리므로 화면 스레드에서 하지 않는다.
+                    Thread {
+                        LlmModelStore.delete(this)
+                        runOnUiThread { render() }
+                    }.start()
+                }
+                .setNegativeButton(R.string.setting_llm_delete_no, null)
+                .show()
+        }
+        on.setOnClickListener { Prefs.setLlmEnabled(this, true); showUse() }
+        off.setOnClickListener { Prefs.setLlmEnabled(this, false); showUse() }
+
+        showUse()
+        render()
     }
 
     // --- 소리 -----------------------------------------------------------------

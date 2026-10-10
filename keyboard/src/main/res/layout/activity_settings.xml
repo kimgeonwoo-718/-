@@ -137,6 +137,56 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- 고성능 번역: 휴대폰 안에서 도는 AI 모델(제마 4)을 받아 쓴다. 받기 전에는 ML Kit 번역 그대로다. -->
+        <LinearLayout style="@style/Card">
+            <TextView style="@style/CardTitle" android:text="@string/section_llm" />
+
+            <LinearLayout style="@style/Row">
+                <LinearLayout style="@style/RowText">
+                    <TextView style="@style/RowTitle" android:text="@string/setting_llm_title" />
+                    <TextView android:id="@+id/llm_status" style="@style/RowSub" />
+                </LinearLayout>
+                <TextView android:id="@+id/llm_action" style="@style/Pill" android:text="@string/setting_llm_get" />
+                <TextView
+                    android:id="@+id/llm_delete"
+                    style="@style/Pill"
+                    android:layout_marginStart="6dp"
+                    android:text="@string/setting_llm_delete" />
+            </LinearLayout>
+
+            <ProgressBar
+                android:id="@+id/llm_progress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="6dp"
+                android:layout_marginBottom="8dp"
+                android:max="1000"
+                android:visibility="gone" />
+
+            <View style="@style/Divider" />
+
+            <LinearLayout style="@style/Row" android:id="@+id/llm_use_row">
+                <LinearLayout style="@style/RowText">
+                    <TextView style="@style/RowTitle" android:text="@string/setting_llm_use" />
+                    <TextView style="@style/RowSub" android:text="@string/setting_llm_use_sub" />
+                </LinearLayout>
+                <LinearLayout style="@style/Segment">
+                    <TextView android:id="@+id/llm_on" style="@style/SegmentItem" android:text="@string/setting_llm_on" />
+                    <TextView android:id="@+id/llm_off" style="@style/SegmentItem" android:text="@string/setting_llm_off" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                style="@style/RowSub"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="10dp"
+                android:text="@string/setting_llm_intro" />
+            <TextView
+                style="@style/RowSub"
+                android:layout_marginBottom="12dp"
+                android:text="@string/setting_llm_size" />
+        </LinearLayout>
+
         <!-- 소리 (바다사자 소리팩은 구독자 전용) -->
         <LinearLayout style="@style/Card">
             <TextView style="@style/CardTitle" android:text="@string/section_sound" />

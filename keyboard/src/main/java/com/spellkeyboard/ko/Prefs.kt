@@ -13,6 +13,8 @@ object Prefs {
     private const val KEY_THEME = "theme_mode"
     private const val KEY_LAYOUT = "layout_type"
     private const val KEY_TRANSLATE_TARGET = "translate_target"
+    private const val KEY_LLM_ENABLED = "llm_enabled"
+    private const val KEY_LLM_HINT_SHOWN = "llm_hint_shown"
     private const val KEY_KEY_ALPHA = "key_alpha_percent"
     private const val KEY_TOOLBAR_COLLAPSED = "toolbar_collapsed"
     private const val KEY_INSTALL_ID = "install_id"
@@ -90,6 +92,23 @@ object Prefs {
 
     fun setTranslateTarget(context: Context, target: TargetLanguage) {
         prefs(context).edit().putString(KEY_TRANSLATE_TARGET, target.name).apply()
+    }
+
+    /**
+     * 기기 안 큰 모델(고성능 번역)을 쓰는가. 모델을 받아 두었을 때만 뜻이 있다 — 받지 않았으면 이 값과 상관없이 ML Kit 이다.
+     * 기본은 켬: 받았다는 것이 쓰겠다는 뜻이다.
+     */
+    fun llmEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_LLM_ENABLED, true)
+
+    fun setLlmEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_LLM_ENABLED, enabled).apply()
+    }
+
+    /** 번역 패널에서 '고성능 번역을 받으면 더 정확하다' 는 안내를 보인 횟수. 세 번까지만 보인다. */
+    fun llmHintShown(context: Context): Int = prefs(context).getInt(KEY_LLM_HINT_SHOWN, 0)
+
+    fun bumpLlmHintShown(context: Context) {
+        prefs(context).edit().putInt(KEY_LLM_HINT_SHOWN, llmHintShown(context) + 1).apply()
     }
 
     /**

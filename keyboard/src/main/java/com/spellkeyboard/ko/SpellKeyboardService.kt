@@ -24,11 +24,15 @@ import com.spellkeyboard.core.hangul.HangulAutomata
 import com.spellkeyboard.core.editor.TranslateBuffer
 import com.spellkeyboard.core.editor.TranslationOutput
 import com.spellkeyboard.core.lm.ContextCorrector
+import com.spellkeyboard.core.translate.FallbackEngine
 import com.spellkeyboard.core.translate.SentenceSplitter
 import com.spellkeyboard.core.translate.TranslationPipeline
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.Speller
 import android.util.Log
+import com.spellkeyboard.ko.llm.LlmModelStore
+import com.spellkeyboard.ko.llm.LlmSupport
+import com.spellkeyboard.ko.llm.LlmTranslator
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -160,6 +164,25 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      * '전체번역' 이 같이 쓴다. 문장별 결과를 기억하므로 끝에만 글자가 붙는 입력줄에서 앞 문장은 다시 옮기지 않는다.
      */
     private val translationPipeline = TranslationPipeline(sentenceSplitter)
+
+    /**
+     * 기기 안 큰 모델(고성능 번역, 제마 4). **모델을 받아 두었고 기기가 감당할 때만** 쓴다. 번역 모드를 닫으면 연결을 끊는다 —
+     * 끊으면 모델 프로세스가 끝나 메모리가 돌아온다. 못 옮기는 문장은 ML Kit 이 대신한다([FallbackEngine]).
+     */
+    private var llm: LlmTranslator? = null
+
+    /**
+     * 큰 모델용 파이프라인. [translationPipeline] 과 기억을 **따로** 둔다 — 같이 쓰면 ML Kit 초안이 문장별 기억에 먼저 들어가
+     * 큰 모델이 그 문장을 옮기지 않고 초안을 확정본으로 내놓는다.
+     */
+    private val llmPipeline = TranslationPipeline(sentenceSplitter)
+
+    /** 큰 모델이 지금 옮기고 있는(또는 방금 끝낸) 원문. 같은 글로 두 번 시작하지 않으려고 쥔다. */
+    private var llmSource = ""
+    private val llmNow = Runnable { startLlmTranslation() }
+
+    /** 엔터를 누르고 큰 모델을 기다리는 동안의 인내. 이 안에 확정본이 안 오면 입력란에 들어가 있는 ML Kit 초안을 보낸다. */
+    private val enterPatience = Runnable { onEnterPatienceOver() }
 
     /**
      * '전체번역' 직후에만 있다. 입력란을 통째로 갈아 끼웠으니 원문을 쥐고 있다가 '되돌리기' 에 돌려준다.
@@ -396,6 +419,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         destroyed = true
         translator?.close()
         translator = null
+        llm?.release()
+        llm = null
         // 네이티브 쪽이 잡고 있는 것을 놓아 준다. 키보드가 죽어도 모델이 남으면
         // 다음에 올릴 때 메모리가 모자란다.
         session.engine.longSpacer = null
@@ -733,12 +758,16 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         Prefs.setTranslateTarget(this, next)
         // 언어가 바뀌면 기억해 둔 번역은 전부 틀린 언어다.
         translationPipeline.memory.clear()
+        llmPipeline.memory.clear()
+        llm?.cancelAll()
+        llmSource = ""
         clearFullUndo()
         keyboard?.setTranslateSelected(next.ordinal)
         if (!translating) return
         translatedSource = ""
         showTranslateSource()
         prepareTranslator(next)
+        if (llmUsable()) llmClient().warm(next)
     }
 
     private fun enterTranslate() {
@@ -759,8 +788,20 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         val target = Prefs.translateTarget(this)
         keyboard?.setTranslateMode(true, targetLabels(), target.ordinal)
         showTranslateSource()
-        keyboard?.setTranslatePreview("", getString(R.string.translate_preview_empty))
+        keyboard?.setTranslatePreview("", emptyPreviewText())
         prepareTranslator(target)
+        // 모델을 미리 올리고 이 언어의 지시문을 계산해 둔다 — 첫 글자를 치고 나서 올리면 첫 번역이 십수 초 늦다.
+        if (llmUsable()) llmClient().warm(target)
+    }
+
+    /** 입력줄이 비었을 때 미리보기 자리에 보이는 안내. 고성능 번역을 받을 수 있는 기기면 세 번까지 그 안내를 덧붙인다. */
+    private fun emptyPreviewText(): String {
+        val hint = LlmSupport.check(this) == LlmSupport.Reason.OK &&
+            !LlmModelStore.isReady(this) &&
+            Prefs.llmHintShown(this) < LLM_HINT_MAX
+        if (!hint) return getString(R.string.translate_preview_empty)
+        Prefs.bumpLlmHintShown(this)
+        return getString(R.string.translate_preview_empty_llm_hint)
     }
 
     /** 번역문은 입력란에 남긴 채 입력줄만 닫는다. */
@@ -770,7 +811,12 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         polishing = false
         keyboard?.setTranslateBusy(false)
         mainHandler.removeCallbacks(translateNow)
+        mainHandler.removeCallbacks(llmNow)
+        mainHandler.removeCallbacks(enterPatience)
         translateSerial++
+        llmSource = ""
+        // 큰 모델 연결을 끊는다. 모델 프로세스가 끝나 메모리가 돌아온다.
+        llm?.release()
         // 조합을 먼저 끝낸다. 안 그러면 다음에 입력줄을 열었을 때 옛 조합 자리가 남아
         // 첫 글자가 앞 글자를 덮어쓴다.
         translateBuffer.finishComposing()
@@ -836,6 +882,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         val source = translateBuffer.text.trim()
         val connection = currentInputConnection ?: return
         if (source.isEmpty()) {
+            llm?.cancelAll()
+            llmSource = ""
+            mainHandler.removeCallbacks(llmNow)
             translateOutput.replace(ConnectionEditor(connection), "")
             translatedSource = ""
             keyboard?.setTranslatePreview("", getString(R.string.translate_preview_empty))
@@ -843,26 +892,79 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             return
         }
         val target = Prefs.translateTarget(this)
-        val translator = translator ?: return
-        if (!translator.isReady(target)) return
+        val deviceReady = translator?.isReady(target) == true
+        val useLlm = llmUsable()
+        if (!deviceReady && !useLlm) return
 
-        val serial = ++translateSerial
-        translationPipeline.translate(source, target.tag, deviceEngine(translator, target)) { result ->
-            renderTranslation(result, source, serial)
+        // 글이 바뀌었으면 큰 모델이 옮기던 낡은 요청은 거두고, 잠깐 뒤(치기를 멈추면) 새로 시작한다.
+        // 같은 글이면(엔터를 눌러 다시 부른 경우) 도는 것을 건드리지 않는다.
+        if (useLlm && llmSource != source) {
+            llm?.cancelAll()
+            llmSource = ""
+            mainHandler.removeCallbacks(llmNow)
+            mainHandler.postDelayed(llmNow, LLM_DEBOUNCE_MS)
+        }
+
+        // ML Kit 은 바로 옮긴다. 큰 모델을 쓸 수 있으면 이것은 '초안' 이다 — 큰 모델의 확정본이 오면 그것으로 갈아 끼운다.
+        if (deviceReady) {
+            val translator = translator ?: return
+            translationPipeline.translate(source, target.tag, deviceEngine(translator, target)) { result ->
+                renderTranslation(result, source, target.tag, final = !useLlm)
+            }
         }
     }
 
-    /** 문장별 번역을 이어 붙인 것을 앱 입력란과 미리보기에 넣는다. 그사이 새 요청이 나갔으면 버린다. */
-    private fun renderTranslation(result: TranslationPipeline.Result, source: String, serial: Int) {
-        if (!translating || serial != translateSerial) return
+    /** 큰 모델로 [translateBuffer] 의 글을 옮긴다. 못 옮긴 문장은 ML Kit 이 대신한다. */
+    private fun startLlmTranslation() {
+        mainHandler.removeCallbacks(llmNow)
+        if (!translating) return
+        val source = translateBuffer.text.trim()
+        if (source.isEmpty() || !llmUsable() || llmSource == source) return
+        val client = llmClient()
+        val target = Prefs.translateTarget(this)
+        client.cancelAll()
+        llmSource = source
+        val device = translator?.takeIf { it.isReady(target) }?.let { deviceEngine(it, target) }
+        val engine = if (device != null) FallbackEngine(client.engine(target), device) else client.engine(target)
+        llmPipeline.translate(source, target.tag, engine) { result ->
+            renderTranslation(result, source, target.tag, final = true)
+        }
+    }
+
+    private fun llmClient(): LlmTranslator = llm ?: LlmTranslator(this).also { llm = it }
+
+    /** 큰 모델을 쓸 수 있나(받아 뒀고, 기기가 감당하고, 사용자가 안 껐고, 연달아 죽지 않았다). */
+    private fun llmUsable(): Boolean = llmClient().usable()
+
+    /**
+     * 문장별 번역을 이어 붙인 것을 앱 입력란과 미리보기에 넣는다.
+     *
+     * 그사이 글이나 언어가 바뀌었으면 버린다. [final] 이 아니면 초안이다 — 확정본이 이미 들어가 있으면 초안으로 덮지 않는다.
+     */
+    private fun renderTranslation(result: TranslationPipeline.Result, source: String, language: String, final: Boolean) {
+        if (!translating) return
+        if (translateBuffer.text.trim() != source || Prefs.translateTarget(this).tag != language) return
+        if (!final && translatedSource == source) return
         val connection = currentInputConnection ?: return
         // 이 편집으로 올 커서 알림도 우리 것이다.
         lastEditAt = android.os.SystemClock.uptimeMillis()
         translateOutput.replace(ConnectionEditor(connection), result.text)
-        translatedSource = source
         keyboard?.setTranslatePreview(result.text)
+        if (!final) return
+        translatedSource = source
+        if (llmSource == source) llmSource = ""
         if (result.failed > 0) notify(getString(R.string.translate_failed))
-        if (pendingEnter) finishEnter()
+        if (pendingEnter) {
+            mainHandler.removeCallbacks(enterPatience)
+            finishEnter()
+        }
+    }
+
+    /** 엔터를 누르고 큰 모델을 기다리다 지쳤다. 입력란에 초안이 들어가 있으면 그것을 보낸다. */
+    private fun onEnterPatienceOver() {
+        if (!translating || !pendingEnter) return
+        if (translateOutput.inserted > 0) finishEnter()
+        else pendingEnter = false
     }
 
     /**
@@ -889,6 +991,12 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             pendingEnter = true
             mainHandler.removeCallbacks(translateNow)
             translateBufferNow()
+            // 큰 모델은 치기를 멈추길 기다리지 않고 지금 시작한다. 너무 오래 걸리면 초안을 보낸다.
+            if (llmUsable()) {
+                startLlmTranslation()
+                mainHandler.removeCallbacks(enterPatience)
+                mainHandler.postDelayed(enterPatience, ENTER_PATIENCE_MS)
+            }
         }
     }
 
@@ -1032,8 +1140,14 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                     }
                     return@prepareTranslator
                 }
-                translationPipeline.translate(original, target.tag, deviceEngine(translator, target)) { result ->
+                // 큰 모델을 쓸 수 있고 글이 너무 길지 않으면 그것으로(문장마다 1~3초라 긴 글은 오래 걸린다). 아니면 ML Kit.
+                val big = llmClient().takeIf { original.length <= LLM_FULL_MAX_CHARS && it.usable() }
+                val device = deviceEngine(translator, target)
+                val pipeline = if (big != null) llmPipeline else translationPipeline
+                val engine = if (big != null) FallbackEngine(big.engine(target), device) else device
+                pipeline.translate(original, target.tag, engine) { result ->
                     if (result.failed > 0) notify(getString(R.string.translate_failed))
+                    if (big != null && !translating) big.release()
                     finish(result.text)
                 }
             }
@@ -1456,6 +1570,18 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private companion object {
         /** 입력줄이 바뀐 뒤 번역까지 기다리는 시간. 타이핑 사이 간격보다 살짝 길게. */
         private const val TRANSLATE_DEBOUNCE_MS = 250L
+
+        /** 큰 모델은 치기를 멈추고 이만큼 지나야 시작한다 — 한 글자마다 돌리면 배터리만 쓰고 계속 중단된다. */
+        private const val LLM_DEBOUNCE_MS = 700L
+
+        /** 엔터를 누르고 큰 모델의 확정본을 기다리는 최대 시간. 지나면 ML Kit 초안을 보낸다. */
+        private const val ENTER_PATIENCE_MS = 9_000L
+
+        /** '전체번역' 에서 큰 모델을 쓸 글의 최대 길이. 문장마다 1~3초라 이보다 길면 ML Kit 으로 한다. */
+        private const val LLM_FULL_MAX_CHARS = 400
+
+        /** 번역 패널에서 '고성능 번역을 받으면 더 정확하다' 는 안내를 보이는 최대 횟수. */
+        private const val LLM_HINT_MAX = 3
 
         /** 서버가 알려 주는 구독자 표시. `x-plan` 헤더 값이다. */
         private const val SUBSCRIBER_PLAN = "subscriber"

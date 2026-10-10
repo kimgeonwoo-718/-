@@ -84,20 +84,20 @@ fun sha256Of(file: File): String {
  * 받아 둔 파일(CI 캐시 포함)이든 새로 받은 것이든, 기대 해시와 다르면 세운다. 변조든 버전 어긋남이든
  * 조용히 넘어가지 않는다.
  */
-fun download(url: String, target: File, expectedSha: String) {
+fun download(url: String, target: File, expectedSha: String, label: String = "Kiwi") {
     if (!(target.exists() && target.length() > 0)) {
         target.parentFile.mkdirs()
         val partial = File(target.parentFile, target.name + ".part")
-        logger.lifecycle("Kiwi 내려받는 중: $url")
+        logger.lifecycle("$label 내려받는 중: $url")
         uri(url).toURL().openStream().use { input -> partial.outputStream().use { input.copyTo(it) } }
         check(partial.length() > 0) { "받은 파일이 비었다: $url" }
         partial.renameTo(target)
     }
     val got = sha256Of(target)
     check(got == expectedSha) {
-        "Kiwi 파일 해시가 다르다 — 변조됐거나 릴리스가 바뀐 것이다. 빌드를 세운다.\n" +
+        "$label 파일 해시가 다르다 — 변조됐거나 릴리스가 바뀐 것이다. 빌드를 세운다.\n" +
             "  파일: $target\n  기대: $expectedSha\n  실제: $got\n" +
-            "  (버전을 일부러 올렸다면 build.gradle.kts 의 kiwiAarSha·kiwiModelSha 를 새 값으로 바꿔라.)"
+            "  (버전을 일부러 올렸다면 build.gradle.kts 의 해시 상수를 새 값으로 바꿔라.)"
     }
 }
 
@@ -133,11 +133,49 @@ val fetchKiwi by tasks.registering {
     }
 }
 
+/**
+ * 기기 안 번역 모델(llama.cpp) 소스.
+ *
+ * 저장소에 넣지 않고 빌드할 때 받는다 — Kiwi 와 같은 방식이다. 출처는 **우리 릴리스**(`llm-assets-1`, tools/llm/PUBLISH 를 올리면
+ * publish-llm-assets 일감이 만든다)라서 깃허브가 소스 압축을 다시 만들어 해시가 바뀌는 일이 없다. 안드로이드 빌드가 쓰는 부분만 추린
+ * 약 6MB 꾸러미다(전체는 38MB). 커밋을 올릴 때는 PUBLISH 의 LLAMA_COMMIT 과 아래 두 값을 같이 바꾼다.
+ */
+val llamaCommit = "1e6f04a75e91"
+val llamaSha = "5b5f27eb3f523d48b68a7916e15af0459dfc00dbd2dd6d57b60b18fab3004926"
+val llamaHome: File = layout.buildDirectory.dir("llama").get().asFile
+val llamaTarball: File = File(llamaHome, "llama.cpp-$llamaCommit.tar.gz")
+val llamaDir: File = File(llamaHome, "src/llama.cpp")
+
+val fetchLlama by tasks.registering {
+    description = "llama.cpp 소스 꾸러미를 받아 풀어 둔다"
+    outputs.dir(llamaHome)
+    outputs.upToDateWhen { File(llamaDir, "CMakeLists.txt").exists() }
+    doLast {
+        download(
+            "https://github.com/kimgeonwoo-718/-/releases/download/llm-assets-1/llama.cpp-$llamaCommit.tar.gz",
+            llamaTarball, llamaSha, label = "llama.cpp"
+        )
+        delete(File(llamaHome, "src"))
+        copy {
+            from(tarTree(resources.gzip(llamaTarball)))
+            into(File(llamaHome, "src"))
+        }
+        check(File(llamaDir, "CMakeLists.txt").exists()) { "llama.cpp 를 못 풀었다: $llamaDir" }
+    }
+}
+
+/** 러너에 깔린 NDK 의 판. 그걸 그대로 써야 그래들이 다른 판을 따로 내려받지 않는다. 없으면 그래들 기본값. */
+val installedNdk: String? = System.getenv("ANDROID_NDK_HOME")
+    ?.let { File(it, "source.properties") }?.takeIf { it.exists() }
+    ?.readLines()?.firstOrNull { it.startsWith("Pkg.Revision") }
+    ?.substringAfter('=')?.trim()?.takeIf { it.isNotEmpty() }
+
 val keystoreFile: File? = System.getenv("KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
 
 android {
     namespace = "com.spellkeyboard.ko"
     compileSdk = 36
+    if (installedNdk != null) ndkVersion = installedNdk
 
     defaultConfig {
         applicationId = "com.spellkeyboard.ko"
@@ -162,6 +200,21 @@ android {
         // 에뮬레이터로 시험할 일이 생기면 여기에 "x86_64" 를 잠깐 도로 넣으면 된다.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+
+        // 기기 안 번역 엔진(libspellllm.so). 64비트 ARM 폰에서만 돈다 — 32비트에는 만들지 않는다(앱도 그 기기에서는 쓰지 않는다: LlmSupport).
+        externalNativeBuild {
+            cmake {
+                abiFilters("arm64-v8a")
+                arguments += listOf("-DLLAMA_DIR=${llamaDir.absolutePath}", "-DANDROID_STL=c++_shared")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
@@ -248,4 +301,9 @@ dependencies {
 }
 
 // 에셋을 모으기 전에 받아 둬야 한다. preBuild 에 걸면 모든 변형(variant)에 다 걸린다.
-tasks.named("preBuild") { dependsOn(fetchKiwi) }
+tasks.named("preBuild") { dependsOn(fetchKiwi, fetchLlama) }
+
+// 네이티브 빌드는 preBuild 를 거치지 않는 길이 있다. llama.cpp 소스가 있어야 CMake 설정이 선다.
+tasks.matching { it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") }.configureEach {
+    dependsOn(fetchLlama)
+}
