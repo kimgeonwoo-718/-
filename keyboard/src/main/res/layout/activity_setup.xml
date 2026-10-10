@@ -152,8 +152,13 @@
           2026-10-02: AI 한 줄만 적혀 있어서 살 이유가 안 보였다(사용자). 가운데에 크게 "프리미엄 /
           절대 후회 없는 기능들", 밑에 값(하루 99원)과 "버튼을 눌러 보라" 를 둔다. 기능 목록은 버튼 너머
           결제 화면(PaywallActivity)의 비교표에 있다.
+
+          2026-10-10: 화면 여백(20dp)에 카드 안쪽 여백(20dp)까지 더해져 글이 양쪽에서 40dp 씩 들어가 좁게 내려갔다(사용자).
+          이 카드만 안쪽 여백을 8dp 로 줄인다.
         -->
-        <LinearLayout style="@style/Card">
+        <LinearLayout
+            style="@style/Card"
+            android:paddingHorizontal="8dp">
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
