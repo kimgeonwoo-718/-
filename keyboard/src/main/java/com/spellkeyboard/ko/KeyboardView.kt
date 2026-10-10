@@ -547,9 +547,10 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     /** 번역 결과 미리보기. 앱 입력란에 들어간 것과 같은 글이다. 비면 안내([note])를 흐리게. */
-    fun setTranslatePreview(text: String, note: String = "") {
-        translatePreview.text = text.ifEmpty { note }
-        translatePreview.alpha = if (text.isEmpty()) 0.7f else 1f
+    fun setTranslatePreview(text: String, note: String = "", draft: Boolean = false) {
+        // 초안(ML Kit)은 흐리게 보이고 끝에 '…' 가 붙는다 — 큰 모델이 다듬는 중이라는 뜻이다. 이 점은 미리보기에만 붙고 입력란에는 안 들어간다.
+        translatePreview.text = if (text.isEmpty()) note else if (draft) "$text …" else text
+        translatePreview.alpha = if (text.isEmpty()) 0.7f else if (draft) 0.6f else 1f
     }
 
     /** '전체번역' 자리를 '되돌리기' 로 바꾼다(방금 입력란을 통째로 옮겼을 때). */

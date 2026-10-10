@@ -7,6 +7,11 @@
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      고성능 번역 모델(약 3GB)을 받을 때 와이파이인지 데이터인지 가려 데이터 요금이 나가지 않게 한다. 이 용도 하나뿐이다.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"

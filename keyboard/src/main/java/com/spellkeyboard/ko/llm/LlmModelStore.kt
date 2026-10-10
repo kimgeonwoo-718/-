@@ -87,10 +87,12 @@ object LlmModelStore {
     }
 
     /** 데이터(종량제) 망에 있나. */
-    fun onMeteredNetwork(context: Context): Boolean {
+    fun onMeteredNetwork(context: Context): Boolean = try {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return true
-        return !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+        caps == null || !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    } catch (_: SecurityException) {
+        true // 망 상태를 못 보면 데이터라고 가정한다 — 데이터 요금이 나가는 쪽이 더 나쁜 실수다.
     }
 
     /** 받기 전에 저장 공간이 넉넉한가. 남은 조각만큼과 여유 300MB. */

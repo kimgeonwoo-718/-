@@ -784,12 +784,13 @@ test('개인정보 처리방침은 PC 프로그램·IP·국외 이전·백업·1
   // 국외 이전: 거부 방법까지.
   assert.match(body, /거부 방법과 그 결과/);
   assert.match(body, /Mozilla/);
+  assert.match(body, /GitHub, Inc\..*고성능 번역/s); // 휴대폰이 모델 파일을 받는 곳
   // 파기: "되살릴 수 없게" 대신 복구용 기록 최대 30일.
   assert.ok(!body.includes('되살릴 수 없게'), '자동 백업이 있는데 되살릴 수 없게 지운다고 적으면 안 된다');
   assert.match(body, /최대 30일/);
   // 만 14세 미만: 법정대리인 동의.
   assert.match(body, /법정대리인의 동의를 받은 경우에만/);
-  assert.match(body, /시행일: 2026-10-08/);
+  assert.match(body, /시행일: 2026-10-10/);
 });
 
 test('이용약관의 시행일은 방침과 따로 간다', async () => {

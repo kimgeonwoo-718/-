@@ -815,8 +815,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         mainHandler.removeCallbacks(enterPatience)
         translateSerial++
         llmSource = ""
-        // 큰 모델 연결을 끊는다. 모델 프로세스가 끝나 메모리가 돌아온다.
-        llm?.release()
+        // 큰 모델이 하던 일은 거두되 연결은 둔다. 번역 모드를 닫았다 다시 여는 일이 잦아서 바로 끊으면 그때마다 모델을 새로 올려야 한다
+        // (몇 초 + 지시문 계산). 모델 프로세스가 쉬면 90초 뒤 스스로 끝나 메모리를 돌려준다.
+        llm?.cancelAll()
         // 조합을 먼저 끝낸다. 안 그러면 다음에 입력줄을 열었을 때 옛 조합 자리가 남아
         // 첫 글자가 앞 글자를 덮어쓴다.
         translateBuffer.finishComposing()
@@ -949,7 +950,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 이 편집으로 올 커서 알림도 우리 것이다.
         lastEditAt = android.os.SystemClock.uptimeMillis()
         translateOutput.replace(ConnectionEditor(connection), result.text)
-        keyboard?.setTranslatePreview(result.text)
+        keyboard?.setTranslatePreview(result.text, draft = !final)
         if (!final) return
         translatedSource = source
         if (llmSource == source) llmSource = ""
@@ -1147,7 +1148,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 val engine = if (big != null) FallbackEngine(big.engine(target), device) else device
                 pipeline.translate(original, target.tag, engine) { result ->
                     if (result.failed > 0) notify(getString(R.string.translate_failed))
-                    if (big != null && !translating) big.release()
                     finish(result.text)
                 }
             }

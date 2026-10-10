@@ -23,7 +23,7 @@ import com.spellkeyboard.ko.TargetLanguage
  *   줄 서서 기다린 시간이 아니라 실제로 계산한 시간만 잰다.
  * - 글이 바뀌어 낡아진 요청은 [cancelAll] 로 거둔다. **거둔 요청은 콜백을 부르지 않는다** — 실패로 알리면 파이프라인이 그 문장을
  *   '못 옮겼다' 고 기억해 버린다.
- * - 연결은 처음 쓸 때 맺고, 번역 모드를 닫으면 [release] 로 끊는다(끊으면 서비스가 프로세스째 끝나 메모리가 돌아온다).
+ * - 연결은 처음 쓸 때 맺는다. 서비스는 쉬면 스스로 프로세스째 끝나고(그러면 [lost]) 키보드가 꺼질 때 [release] 로 끊는다.
  */
 class LlmTranslator(private val context: Context) {
 
