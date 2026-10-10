@@ -163,6 +163,39 @@ class ConfusableClassifierTest {
         assertEquals(0, NatNah.classOf("나아")); assertEquals(0, NatNah.classOf("나았다")); assertEquals(1, NatNah.classOf("낳았어"))
     }
 
+    /** 모델 줄을 받아 분류기를 만든다(아래 두 시험용). */
+    private fun fakeOf(vararg lines: String): ConfusableClassifier {
+        val bytes = ByteArrayOutputStream()
+        GZIPOutputStream(bytes).use { it.write((listOf("KSCF\t1\t64") + lines).joinToString("\n").toByteArray(Charsets.UTF_8)) }
+        return ConfusableClassifier(ConfusableModel.parse(bytes.toByteArray().inputStream()))
+    }
+
+    @Test
+    fun `글 전체 교정의 낳→낫 은 앞만 본 판정도 같아야 고친다`() {
+        // 뒤까지 보는 모델만 '더' 에 쏠려 낫다 쪽이고, 앞만 본 모델은 모른다(0.5) — 애매하니 안 건드린다(2026-10-10 윈도우 보고).
+        val c = fakeOf(
+            "model\tnatda\trt\t2\t0\t0", "w\tL1:많이\t0",
+            "model\tnatda\trt1\t2\t1\t0", "w\tL1:많이\t0",
+            "model\tnatda\tall\t2\t2\t0", "w\tL1:더\t-900", "w\tL1:많이\t900",
+        )
+        assertEquals("아이를 더 낳을까 고민이야", run(c, "아이를 더 낳을까 고민이야", lookahead = true))
+        // 반대쪽(낫→낳)은 문턱이 이미 0.98 이라 확인을 걸지 않는다 — 진짜 오타('많이 나아서')를 놓치지 않게.
+        assertEquals("아이들 많이 낳아서 키웠다", run(c, "아이들 많이 나아서 키웠다", lookahead = true))
+    }
+
+    @Test
+    fun `같은 짝이 둘이면 뒤엣것을 고친 문맥으로 앞엣것을 다시 본다`() {
+        // 앞 '낳아' 는 뒤의 틀린 '낳아' 를 문맥(R2s1:낳)으로 읽어 낳다 쪽으로 끌려간다. 뒤엣것을 '나아' 로 고친 뒤 다시 보면 고친다.
+        val c = fakeOf(
+            "model\tnatda\trt\t2\t0\t0", "w\tL1s1:게\t-500",
+            "model\tnatda\trt1\t2\t1\t0", "w\tL1s1:게\t-500",
+            "model\tnatda\tall\t2\t2\t0", "w\tL1s1:게\t-500", "w\tR2s1:낳\t400",
+        )
+        assertEquals("이게 나아 저게 나아", run(c, "이게 낳아 저게 낳아", lookahead = true))
+        // 입력 중에는 한 바퀴다(뒤를 안 본다).
+        assertEquals("이게 나아 저게 나아", run(c, "이게 낳아 저게 낳아"))
+    }
+
     // ── 진짜 모델 ─────────────────────────────────────────────────────────────────────────────────────
 
     private val engine = CorrectionEngine()
@@ -231,6 +264,15 @@ class ConfusableClassifierTest {
     fun `글 전체 교정에서도 같다`() {
         assertEquals("야 삼전이 나을까 하이닉스가 나을까", engine.correctAll("야 삼전이 낳을까 하이닉스가 낳을까").text)
         assertEquals("아이를 낳을까 고민했어", engine.correctAll("아이를 나을까 고민했어").text)
+    }
+
+    @Test
+    fun `글 전체 교정은 목적어 뒤 '더 낳' 을 낫다로 바꾸지 않는다`() {
+        // 2026-10-10 윈도우 세션 보고. 입력 중 길은 맞게 뒀는데 전체 교정이 '나을까·나았어' 로 바꿨다.
+        for (s in listOf("하나 더 낳을까", "아이를 더 낳을까 고민이야", "고양이가 새끼를 더 낳았어")) {
+            assertEquals(s, engine.correctAll(s).text)
+        }
+        assertEquals("이게 나아 저게 나아", engine.correctAll("이게 낳아 저게 낳아").text)
     }
 
     @Test

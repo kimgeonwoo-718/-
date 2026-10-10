@@ -18,7 +18,8 @@ import java.io.File
  *   RM  둘 다 (지금 앱이 쓰는 것)
  *
  * 문장마다 **틀리게 바꾼 것**(대상 어절을 반대쪽으로 뒤집음)을 실시간 길(어절마다 correctTail)로 쳐서
- * 정답이 되는지(고침), **정답을 그대로 친 것**이 그대로인지(지킴)를 잰다.
+ * 정답이 되는지(고침), **정답을 그대로 친 것**이 그대로인지(지킴)를 잰다. 줄 이름 끝의 '·전체' 는 같은 것을
+ * 전체 교정 길(correctAll — 뒤 두 어절까지 본다)로 잰 값이다. 윈도우 PC 의 전체교정이 이 길이다.
  * 시험지 줄 앞이 KEEPNAT / KEEPNAH 인 것은 정답을 알 수 없는(둘 다 되는) 문장이다 — 쓴 그대로 둬야 한다(지킴만 잰다).
  */
 fun main(args: Array<String>) {
@@ -32,7 +33,10 @@ fun main(args: Array<String>) {
         if (lm != null) context = ContextCorrector(lm, spacer)
         confusableEnabled = model
     }
-    val configs = listOf("R" to engine(rules = true, model = false), "M" to engine(rules = false, model = true), "RM" to engine(rules = true, model = true))
+    val engines = listOf("R" to engine(rules = true, model = false), "M" to engine(rules = false, model = true), "RM" to engine(rules = true, model = true))
+    val full: (CorrectionEngine, String) -> String = { e, s -> e.correctAll(s).text.trim().replace(Regex("\\s+"), " ") }
+    val live: (CorrectionEngine, String) -> String = ::type
+    val configs = engines.flatMap { (n, e) -> listOf(Triple(n, e, live), Triple("$n·전체", e, full)) }
     val show = System.getenv("LIVE_SHOW")?.toIntOrNull() ?: 0
     val showConfig = System.getenv("CONF_SHOW") ?: "M"
     val oneRun = Regex("""[^가-힣]*([가-힣]+)[^가-힣]*""")
@@ -61,17 +65,17 @@ fun main(args: Array<String>) {
             if (targets == 0) continue
             val wrong = flipped.joinToString(" ")
             if (!keepOnly) fixTotal++
-            for ((name, e) in configs) {
+            for ((name, e, run) in configs) {
                 if (!keepOnly) {
-                    val out = type(e, wrong)
+                    val out = run(e, wrong)
                     if (out == gold) fixed.merge(name, 1, Int::plus) else misses.getOrPut(name) { mutableListOf() } += "  $wrong\n    → $out\n    ✓ $gold"
                 }
-                val again = type(e, gold)
+                val again = run(e, gold)
                 if (again == gold) kept.merge(name, 1, Int::plus) else broken.getOrPut(name) { mutableListOf() } += "  $gold\n    → $again"
             }
         }
-        for ((name, _) in configs) {
-            println("  %-3s 고침 %3d / %3d (%s)   지킴 %3d / %3d (%s)".format(name, fixed[name] ?: 0, fixTotal, pct(fixed[name] ?: 0, fixTotal),
+        for ((name, _, _) in configs) {
+            println("  %-6s 고침 %3d / %3d (%s)   지킴 %3d / %3d (%s)".format(name, fixed[name] ?: 0, fixTotal, pct(fixed[name] ?: 0, fixTotal),
                 kept[name] ?: 0, kept[name]?.let { it + (broken[name]?.size ?: 0) } ?: 0, pct(kept[name] ?: 0, (kept[name] ?: 0) + (broken[name]?.size ?: 0))))
         }
         if (show > 0) {

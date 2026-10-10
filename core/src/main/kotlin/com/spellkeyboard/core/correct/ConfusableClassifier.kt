@@ -29,6 +29,17 @@ import com.spellkeyboard.core.lm.LanguageModel
  *
  * **앞 두 어절이 안 갖춰진 어절은 입력 중에는 건드리지 않는다.** 창이 밀리면서 같은 어절이 다른 앞
  * 문맥으로 다시 검사되는데, 앞이 한 어절뿐인 채로 방금 한 판정을 뒤집으면 고친 것을 도로 되돌리게 된다.
+ *
+ * ## 글 전체를 고칠 때
+ *
+ * **뒤까지 본 판정만 믿지 않는다 — 앞만 본 판정(입력 중에 쓰는 것)도 같은 쪽이어야 고친다**([ConfusablePair.crossCheck] 인 방향만).
+ * 뒤까지 보는 모델은 '더' 를 보면 '더 나아' 로 세게 기울어 '아이를 더 낳을까'·'새끼를 더 낳았어' 를 '나을까·나았어' 로 바꿨다
+ * (2026-10-10 윈도우 세션 보고 — 같은 문장을 입력 중 길은 맞게 뒀다). 받아 둔 글 전체(청원·영화평·번역문 2만 5천 문장)로
+ * 견줘 보니 이 확인으로 덜 고치게 된 낳→낫 은 대부분 **잘못 고치던 것**('아이 더 낳기 무섭습니다' → '낫기')이었다. 반대 방향(낫→낳)은
+ * 문턱이 이미 0.98 이라 잘못 고치는 일이 드물고, 여기에 확인을 걸면 '아이들 많이 나아서' 같은 진짜 오타를 놓쳐서 걸지 않는다.
+ *
+ * **같은 짝이 한 글에 여럿이면 두 번 본다.** '이게 낳아 저게 낳아' 의 앞 '낳아' 는 뒤 '낳아'(이것도 틀린 글자)를 문맥으로 읽어
+ * 낳다 쪽으로 끌려갔다. 첫 바퀴에서 뒤엣것을 고친 뒤, 못 고친 것만 고친 문맥으로 한 번 더 본다.
  */
 class ConfusableClassifier internal constructor(
     private val model: ConfusableModel,
@@ -78,7 +89,10 @@ class ConfusableClassifier internal constructor(
         }
 
         val replaced = HashMap<Int, String>()
-        for (c in found) {
+        // 글 전체면 두 바퀴: 뒤에서 고친 것을 문맥으로 앞의 못 고친 것을 다시 본다. 입력 중에는 한 바퀴.
+        val rounds = if (lookahead && found.size > 1) 2 else 1
+        for (round in 0 until rounds) for (c in found) {
+            if (c.index in replaced) continue
             val j = c.index + offset
             var s = j
             var bos = false
@@ -102,6 +116,12 @@ class ConfusableClassifier internal constructor(
             val p = model.probability(c.pair.name, look, slice, j - s, bos) ?: continue
             val confidence = if (c.cls == 0) p else 1 - p            // 반대쪽이라고 믿는 정도
             if (confidence < c.pair.flipConfidence(c.cls)) continue
+            if (look == ConfusableModel.Look.ALL && c.pair.crossCheck(c.cls)) {
+                // 앞만 본 판정도 같은 쪽이어야 한다(위 "글 전체를 고칠 때"). 관형형은 앞만으로는 못 가리니 한 어절 뒤까지 본 것과 견준다.
+                val near = if (c.pair.needsNextWord(words[j].substring(c.run.first, c.run.last + 1))) ConfusableModel.Look.NEXT else ConfusableModel.Look.NONE
+                val q = model.probability(c.pair.name, near, slice, j - s, bos) ?: continue
+                if ((if (c.cls == 0) q else 1 - q) < c.pair.flipConfidence(c.cls)) continue
+            }
             val target = 1 - c.cls
             val original = words[j]
             val token = original.substring(c.run.first, c.run.last + 1)
@@ -186,6 +206,12 @@ interface ConfusablePair {
      * 사람들이 어느 쪽을 더 자주 틀리는지에 따라 방향마다 다르다.
      */
     fun flipConfidence(from: Int): Double
+
+    /**
+     * 글 전체를 고칠 때 [from] 쪽으로 쓴 것을 뒤집으려면, 뒤까지 본 판정에 더해 **앞만 본 판정도** 같은 쪽이어야 하나.
+     * 뒤까지 보는 모델이 한쪽으로 쏠리는 버릇이 있는 방향에만 건다([ConfusableClassifier] 의 "글 전체를 고칠 때").
+     */
+    fun crossCheck(from: Int): Boolean = false
 }
 
 /**
@@ -220,6 +246,9 @@ object NatNah : ConfusablePair {
      * 정했다 — 0.98 이면 낫→낳 을 70% 고치면서 '아이도 나았어'(아이가 나았다) 같은 둘 다 되는 문장을 대부분 둔다.
      */
     override fun flipConfidence(from: Int): Double = if (from == 1) 0.90 else 0.98
+
+    /** 낳→낫 만. 뒤까지 보는 모델이 '더' 를 보면 낫다 쪽으로 쏠린다('아이를 더 낳을까' → '나을까'). */
+    override fun crossCheck(from: Int): Boolean = from == 1
 
     override fun convert(token: String, to: Int): String? {
         val from = classOf(token) ?: return null
