@@ -1,0 +1,151 @@
+name: 기기 안 번역 파일 올리기
+
+# **손으로만 돈다.** `tools/llm/PUBLISH` 파일이 바뀌어 올라가면 한 번 돈다. 파일이 없으면 아무것도 안 한다.
+# (기본 가지가 다른 프로젝트 것이라 workflow_dispatch 가 목록에 안 올라와서, 모델 겨루기와 같은 방식을 쓴다.)
+#
+# 하는 일:
+#   1. llama.cpp 를 PUBLISH 의 커밋에 고정해 받아, 안드로이드 빌드에 필요한 부분만 추려 꾸러미로 만든다(약 6MB).
+#   2. 도커 허브에서 모델(GGUF 한 덩어리, 약 3.1GB)을 받아 해시를 확인하고 1.9GB 이하 조각으로 쪼갠다.
+#   3. 조각·꾸러미·SHA256SUMS 를 릴리스에 올린다.
+# 앱은 이 릴리스에서 모델 조각을 받고, 안드로이드 빌드는 이 릴리스에서 꾸러미를 받는다. 둘 다 해시를 코드에 박아 두고 확인한다.
+on:
+  push:
+    paths:
+      - "tools/llm/PUBLISH"
+      - ".github/workflows/publish-llm-assets.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: 모델과 소스 꾸러미 올리기
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 돌릴 일이 있나
+        id: plan
+        run: |
+          set -euo pipefail
+          if [ ! -f tools/llm/PUBLISH ]; then echo "run=no" >> "$GITHUB_OUTPUT"; echo "PUBLISH 가 없다 — 할 일 없음"; exit 0; fi
+          set -a; . <(grep -E '^[A-Z_]+=' tools/llm/PUBLISH); set +a
+          for v in TAG LLAMA_COMMIT MODEL_REPO MODEL_TAG MODEL_NAME; do
+            [ -n "${!v:-}" ] || { echo "::error::PUBLISH 에 $v 가 없다"; exit 1; }
+            echo "$v=${!v}" >> "$GITHUB_ENV"
+          done
+          echo "run=yes" >> "$GITHUB_OUTPUT"
+
+      - name: llama.cpp 소스 받기 (커밋 고정)
+        if: steps.plan.outputs.run == 'yes'
+        run: |
+          set -euo pipefail
+          mkdir llama && cd llama
+          git init -q .
+          git fetch -q --depth 1 https://github.com/ggml-org/llama.cpp "$LLAMA_COMMIT"
+          git checkout -q FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$LLAMA_COMMIT"
+          git log -1 --format='%h %cd %s'
+
+      - name: 안드로이드용 소스 꾸러미 만들기
+        if: steps.plan.outputs.run == 'yes'
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cd llama
+          # 안드로이드 빌드가 쓰는 부분만(ggml·src·include·vendor 와 CMake 파일). 문서·모델 예제·도구·시험은 뺀다 — 전체는 38MB, 이건 약 6MB.
+          git archive --format=tar.gz --prefix=llama.cpp/ -o "../out/llama.cpp-${LLAMA_COMMIT:0:12}.tar.gz" HEAD \
+            CMakeLists.txt cmake ggml src include vendor common LICENSE licenses AUTHORS
+          ls -l ../out
+
+      - name: 쪼개는 도구 만들기 (llama-gguf-split)
+        if: steps.plan.outputs.run == 'yes'
+        run: |
+          set -euo pipefail
+          cd llama
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF > /dev/null
+          cmake --build build -j"$(nproc)" --target llama-gguf-split 2>&1 | tail -3
+          ls -l build/bin/llama-gguf-split
+
+      - name: 모델 받기 (도커 허브) + 해시 확인
+        if: steps.plan.outputs.run == 'yes'
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess, urllib.request
+          repo, tag = os.environ["MODEL_REPO"], os.environ["MODEL_TAG"]
+          def get(url, headers=None):
+              return urllib.request.urlopen(urllib.request.Request(url, headers=headers or {}), timeout=60)
+          tok = json.load(get(f"https://auth.docker.io/token?service=registry.docker.io&scope=repository:{repo}:pull"))["token"]
+          manifest = json.load(get(f"https://registry-1.docker.io/v2/{repo}/manifests/{tag}",
+                                   {"Authorization": "Bearer " + tok, "Accept": "application/vnd.oci.image.manifest.v1+json"}))
+          layer = manifest["layers"][0]
+          print("층:", layer["digest"], layer["size"], layer.get("mediaType"))
+          subprocess.run(["curl", "-sS", "-L", "-f", "--retry", "5", "--retry-delay", "10", "-o", "model.gguf",
+                          "-H", "Authorization: Bearer " + tok,
+                          f"https://registry-1.docker.io/v2/{repo}/blobs/{layer['digest']}"], check=True)
+          h = hashlib.sha256()
+          with open("model.gguf", "rb") as f:
+              for chunk in iter(lambda: f.read(1 << 24), b""):
+                  h.update(chunk)
+          got = "sha256:" + h.hexdigest()
+          assert os.path.getsize("model.gguf") == layer["size"], "크기가 다르다"
+          assert got == layer["digest"], f"해시가 다르다: {got} != {layer['digest']}"
+          print("받은 모델 해시 확인:", got)
+          PY
+          ls -l model.gguf
+
+      - name: 조각으로 쪼개기
+        if: steps.plan.outputs.run == 'yes'
+        run: |
+          set -euo pipefail
+          # 릴리스 파일 하나는 2GiB 미만이어야 한다. 1900M 로 쪼갠다.
+          llama/build/bin/llama-gguf-split --split --split-max-size 1900M model.gguf "out/$MODEL_NAME"
+          rm model.gguf
+          ls -l out
+          for f in out/*.gguf; do test "$(stat -c %s "$f")" -lt 2000000000 || { echo "::error::$f 가 2GB 를 넘는다"; exit 1; }; done
+
+      - name: 해시 목록 만들기
+        if: steps.plan.outputs.run == 'yes'
+        run: |
+          set -euo pipefail
+          cd out
+          sha256sum * | tee SHA256SUMS
+          # 크기도 같이 남긴다(앱이 받는 중 진행률을 셈하는 데 쓴다).
+          stat -c '%s %n' * | tee SIZES
+
+      - name: 릴리스에 올리기
+        if: steps.plan.outputs.run == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # 만들기와 올리기를 가른다(APK 릴리스 때 겪은 초안 404 를 피하려고). 파일 없이 먼저 게시하고 뒤에 붙인다.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --prerelease \
+              --title "기기 안 번역 파일 ($TAG)" \
+              --notes "키보드의 기기 안 번역(제마 4 E2B)에 쓰는 파일입니다. 앱이 직접 받아 쓰므로 사람이 받을 필요는 없습니다. 해시는 SHA256SUMS 에 있습니다."
+          fi
+          upload() {
+            for attempt in 1 2 3; do
+              if timeout 1200 "$@"; then return 0; fi
+              echo "::warning::올리기 실패/시간초과 ($attempt/3). 30초 뒤 다시."
+              sleep 30
+            done
+            echo "::error::올리지 못했다: $*"
+            return 1
+          }
+          for f in out/*; do
+            echo "올리는 중: $f"
+            upload gh release upload "$TAG" "$f" --clobber
+          done
+          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name)\t\(.size)\t\(.state)"'
+
+      - name: 앱에 박을 값 (여기 찍힌 해시를 build.gradle.kts·LlmModelFiles.kt 에 옮긴다)
+        if: steps.plan.outputs.run == 'yes'
+        run: |
+          echo "TAG=$TAG"
+          echo "LLAMA_COMMIT=$LLAMA_COMMIT"
+          cat out/SHA256SUMS
+          cat out/SIZES

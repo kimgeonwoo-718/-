@@ -1,0 +1,9 @@
+# 기기 안 번역에 쓸 파일들을 릴리스에 올리는 한 번짜리 스위치. 이 파일이 바뀌어 올라가면 publish-llm-assets 일감이 한 번 돈다.
+# 값이 같으면 다시 올려도 같은 이름으로 덮어쓸 뿐이다(--clobber).
+TAG=llm-assets-1
+# llama.cpp 를 이 커밋에 못 박는다. 안드로이드 빌드가 이 소스를 받아 컴파일한다(build.gradle.kts 의 fetchLlama).
+LLAMA_COMMIT=1e6f04a75e91da4bb66b5248f3fd4bdeff169d41
+# 모델: 도커 허브의 ai/gemma4:e2b-q4_K_M (제마 4 E2B, 아파치 2.0). 2GB 를 넘는 파일은 릴리스에 못 올려서 1.9GB 이하 조각으로 쪼갠다.
+MODEL_REPO=ai/gemma4
+MODEL_TAG=e2b-q4_K_M
+MODEL_NAME=gemma-4-E2B-it-Q4_K_M

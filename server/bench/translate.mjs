@@ -168,6 +168,30 @@ async function askOpenAi(spec, system, text) {
   };
 }
 
+/**
+ * 내 컴퓨터에서 도는 모델(llama.cpp 의 llama-server). `local:이름` 으로 부른다. 돈이 안 든다.
+ * 주소는 환경변수 LOCAL_URL (기본 http://127.0.0.1:8080). 기기 안에서 돌릴 모델이 번역을 얼마나 하는지 재려고 만들었다(2026-10-10).
+ */
+async function askLocal(spec, system, text) {
+  const res = await fetch(`${process.env.LOCAL_URL ?? 'http://127.0.0.1:8080'}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: spec.slice('local:'.length) || 'local',
+      messages: [{ role: 'system', content: system }, { role: 'user', content: text }],
+      temperature: 0,
+      max_tokens: Number(process.env.LOCAL_MAX_TOKENS ?? 300),
+    }),
+  });
+  if (!res.ok) return { error: `HTTP ${res.status} ${(await res.text()).slice(0, 120)}` };
+  const reply = await res.json();
+  const used = reply?.usage ?? {};
+  return {
+    text: (reply?.choices?.[0]?.message?.content ?? '').trim(),
+    tokens: { in: Number(used.prompt_tokens ?? 0), out: Number(used.completion_tokens ?? 0) },
+  };
+}
+
 /** 키 없이 도구만 시험: 정답의 끝을 조금 깎아 돌려준다. */
 async function askFake(_spec, _system, text, caseRef) {
   return { text: (caseRef ?? text).slice(0, Math.max(1, (caseRef ?? text).length - 1)), tokens: { in: 500, out: 40 } };
@@ -175,6 +199,7 @@ async function askFake(_spec, _system, text, caseRef) {
 
 const send = (spec, system, text, caseRef) =>
   FAKE ? askFake(spec, system, text, caseRef)
+    : spec.startsWith('local') ? askLocal(spec, system, text)
     : spec.startsWith('claude') ? askClaude(spec, system, text)
     : spec.startsWith('gpt') ? askOpenAi(spec, system, text)
     : askUpstage(spec, system, text);
