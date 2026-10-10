@@ -161,7 +161,7 @@ class KeyboardView @JvmOverloads constructor(
     private var translateOn = false
     private val translatePanel: LinearLayout
     private val translateSource: TranslateSourceView
-    private val translatePreview: TextView
+    private val translateNote: TextView
     private val translateChips = ArrayList<TextView>()
     private val translateAllButton: TextView
     private val translateClose: TextView
@@ -302,21 +302,22 @@ class KeyboardView @JvmOverloads constructor(
         addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOLBAR_HEIGHT_DP)))
         applyToolbarCollapsed()
 
-        // 번역 패널. 자판 바로 위에 열린다. 세 줄이다:
+        // 번역 패널. 자판 바로 위에 열린다:
         //   1) 언어 칩(영어·일본어·중국어)과 '전체번역'·닫기
-        //   2) 한국어를 쓰는 줄 — 깜빡이는 커서가 있고 두 줄까지 보인다
-        //   3) 번역 결과 미리보기 — 앱 입력란에 들어간 것과 같은 글
+        //   2) 한국어를 쓰는 줄 — 깜빡이는 커서가 있다. 한 줄 높이로 시작해 글이 길어지면 두 줄까지 자란다
+        //   3) 안내 줄 — **할 말이 있을 때만** 나타난다(언어팩 받는 중, 받기 실패 등). 평소에는 없다
+        // 번역 결과는 앱 입력란에 바로 들어가므로 따로 미리보기 줄을 두지 않는다.
         translateSource = TranslateSourceView(context).apply {
-            setPadding(dp(10), dp(2), dp(10), dp(2))
+            setPadding(dp(10), dp(4), dp(10), dp(4))
             onCaretRequested = { index -> listener?.onTranslateCaret(index) }
         }
-        translatePreview = TextView(context).apply {
+        translateNote = TextView(context).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             maxLines = 1
-            // 긴 번역은 앞이 아니라 **끝**이 방금 친 부분이다. 끝이 보이게 앞을 줄인다.
-            ellipsize = TextUtils.TruncateAt.START
+            ellipsize = TextUtils.TruncateAt.END
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), 0, dp(10), 0)
+            isVisible = false
         }
         translateAllButton = TextView(context).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
@@ -343,8 +344,8 @@ class KeyboardView @JvmOverloads constructor(
             isVisible = false
             setPadding(dp(4), dp(2), dp(4), dp(2))
             addView(translateHeader, LayoutParams(LayoutParams.MATCH_PARENT, dp(TRANSLATE_HEADER_DP)))
-            addView(translateSource, LayoutParams(LayoutParams.MATCH_PARENT, dp(TRANSLATE_SOURCE_DP)))
-            addView(translatePreview, LayoutParams(LayoutParams.MATCH_PARENT, dp(TRANSLATE_PREVIEW_DP)))
+            addView(translateSource, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+            addView(translateNote, LayoutParams(LayoutParams.MATCH_PARENT, dp(TRANSLATE_NOTE_DP)))
         }
         addView(translatePanel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
@@ -502,12 +503,9 @@ class KeyboardView @JvmOverloads constructor(
         translateSelected = selected
         if (translateChips.size != labels.size) rebuildTranslateChips(labels)
         labels.forEachIndexed { i, label -> translateChips[i].text = label }
-        // 가로 화면은 높이가 모자라 한국어 줄을 한 줄로, 미리보기는 없앤다.
-        val landscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        translatePreview.isVisible = !landscape
-        translateSource.updateLayoutParams<LayoutParams> {
-            height = dp(if (landscape) TRANSLATE_SOURCE_LANDSCAPE_DP else TRANSLATE_SOURCE_DP)
-        }
+        // 가로 화면은 높이가 모자라 한국어 줄이 자라지 않고 안내 줄도 없앤다.
+        translateSource.maxRows = if (isLandscape()) 1 else TRANSLATE_SOURCE_MAX_ROWS
+        applyTranslateNote()
         translatePanel.isVisible = on
         if (on) closePanels()
         styleTranslateButton()
@@ -546,11 +544,24 @@ class KeyboardView @JvmOverloads constructor(
         translateSource.setContent(text, cursor, hint)
     }
 
-    /** 번역 결과 미리보기. 앱 입력란에 들어간 것과 같은 글이다. 비면 안내([note])를 흐리게. */
-    fun setTranslatePreview(text: String, note: String = "", draft: Boolean = false) {
-        // 초안(ML Kit)은 흐리게 보이고 끝에 '…' 가 붙는다 — 큰 모델이 다듬는 중이라는 뜻이다. 이 점은 미리보기에만 붙고 입력란에는 안 들어간다.
-        translatePreview.text = if (text.isEmpty()) note else if (draft) "$text …" else text
-        translatePreview.alpha = if (text.isEmpty()) 0.7f else if (draft) 0.6f else 1f
+    private var translateNoteText = ""
+
+    private fun isLandscape() =
+        resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
+    /**
+     * 입력줄 아래 안내 줄. [note] 가 비면 줄째 없어진다 — 평소에는 자리를 안 차지한다.
+     * 언어팩 받는 중·받기 실패처럼 **사용자가 알아야 하는데 다른 데 보일 곳이 없는 말**만 여기 온다.
+     */
+    fun setTranslateNote(note: String) {
+        if (note == translateNoteText) return
+        translateNoteText = note
+        applyTranslateNote()
+    }
+
+    private fun applyTranslateNote() {
+        translateNote.text = translateNoteText
+        translateNote.isVisible = translateNoteText.isNotEmpty() && !isLandscape()
     }
 
     /** '전체번역' 자리를 '되돌리기' 로 바꾼다(방금 입력란을 통째로 옮겼을 때). */
@@ -567,7 +578,7 @@ class KeyboardView @JvmOverloads constructor(
             styleToolbarButton(translateButton)
         }
         translateSource.setColors(theme.text, theme.hint, theme.accent)
-        translatePreview.setTextColor(theme.hint)
+        translateNote.setTextColor(theme.hint)
         translatePanel.background = roundRect(toolbarFill(theme.panelItem))
         translateChips.forEachIndexed { index, chip ->
             if (index == translateSelected) {
@@ -1944,9 +1955,8 @@ class KeyboardView @JvmOverloads constructor(
         /** 번역 패널의 세 줄. 한국어 줄은 두 줄까지 보인다(가로 화면은 한 줄). */
         const val TRANSLATE_HEADER_DP = 32
         const val TRANSLATE_CHIP_DP = 26
-        const val TRANSLATE_SOURCE_DP = 46
-        const val TRANSLATE_SOURCE_LANDSCAPE_DP = 26
-        const val TRANSLATE_PREVIEW_DP = 22
+        const val TRANSLATE_SOURCE_MAX_ROWS = 2
+        const val TRANSLATE_NOTE_DP = 22
         const val TOOLBAR_BUTTON_DP = 28
 
         /**

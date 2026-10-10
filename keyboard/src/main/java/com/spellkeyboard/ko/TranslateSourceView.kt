@@ -9,6 +9,7 @@ import android.os.Looper
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.text.TextUtils
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
@@ -19,8 +20,11 @@ import kotlin.math.min
  * 번역 입력줄의 한국어. **깜빡이는 커서가 있다.**
  *
  * 예전에는 한 줄짜리 `TextView` 였다. 커서가 없어서 어디에 쓰고 있는지 알 수 없었고, 글이 길어지면
- * 앞이 잘려 나가("…") 앞쪽 오타를 볼 수도 고칠 수도 없었다. 이 뷰는 두 줄까지 줄바꿈해 보여 주고,
+ * 앞이 잘려 나가("…") 앞쪽 오타를 볼 수도 고칠 수도 없었다. 이 뷰는 줄바꿈해 보여 주고,
  * 커서가 있는 줄이 늘 보이도록 밀어 올리며, 글자를 눌러 커서를 옮길 수 있다.
+ *
+ * **높이는 글에 맞춘다.** 한 줄이면 한 줄 높이, 줄바꿈이 생기면 [maxRows] 줄까지 칸이 자란다. 처음부터 두 줄 높이를 잡아 두면
+ * 한 줄만 쓰는 대부분의 때에 빈칸이 남는다. 안내 문구는 한 줄로만 보인다(길면 …).
  *
  * 글을 들고 있지 않는다 — 그리라고 받은 것(글, 커서 자리)만 그린다. 진짜 내용은 `TranslateBuffer` 에 있다.
  */
@@ -46,6 +50,17 @@ class TranslateSourceView(context: Context) : View(context) {
     private var shown = ""
     private var layoutWidth = -1
 
+    /** 칸이 자라는 한계 줄 수. 이보다 길면 커서가 있는 줄이 보이도록 밀어 올린다. 가로 화면은 1 로 줄인다. */
+    var maxRows = DEFAULT_MAX_ROWS
+        set(value) {
+            if (field == value) return
+            field = value
+            requestLayout()
+        }
+
+    /** 마지막으로 잰 줄 수. 줄 수가 바뀔 때만 다시 재려고 쥔다(글자마다 재면 낭비다). */
+    private var measuredRows = 0
+
     /** 이 첫 줄부터 그린다. 커서가 보이는 줄 안에 오도록 [scrollToCaret] 가 정한다. */
     private var firstLine = 0
 
@@ -67,6 +82,7 @@ class TranslateSourceView(context: Context) : View(context) {
         // 쓰는 동안은 커서가 꺼진 채로 멈춰 있으면 안 된다. 바뀔 때마다 켜 두고 깜빡임을 다시 시작한다.
         restartBlink()
         rebuild()
+        if (wantedRows() != measuredRows) requestLayout()
         invalidate()
     }
 
@@ -83,20 +99,40 @@ class TranslateSourceView(context: Context) : View(context) {
         return max(1, (height - paddingTop - paddingBottom) / max(1, line))
     }
 
-    private fun lineHeight(): Int = (paint.fontMetrics.let { it.descent - it.ascent } * LINE_SPACING).toInt()
+    /** 한 줄의 높이. 실제로 그려지는 줄의 높이를 쓴다 — 어림값이 모자라면 칸이 마지막 줄을 조금 자른다. */
+    private fun lineHeight(): Int =
+        layout?.let { it.getLineBottom(0) - it.getLineTop(0) }?.takeIf { it > 0 }
+            ?: (paint.fontMetrics.let { it.descent - it.ascent } * LINE_SPACING).toInt()
 
     private fun rebuild() {
-        val width = width - paddingLeft - paddingRight
-        if (width <= 0) return
+        val inner = width - paddingLeft - paddingRight
+        if (inner > 0) build(inner)
+    }
+
+    private fun build(inner: Int) {
         shown = text.ifEmpty { hint }
-        layoutWidth = width
+        layoutWidth = inner
         paint.color = if (text.isEmpty()) hintColor else textColor
-        layout = StaticLayout.Builder.obtain(shown, 0, shown.length, paint, width)
+        val builder = StaticLayout.Builder.obtain(shown, 0, shown.length, paint, inner)
             .setAlignment(Layout.Alignment.ALIGN_NORMAL)
             .setLineSpacing(0f, LINE_SPACING)
             .setIncludePad(false)
-            .build()
+        // 안내 문구는 한 줄만. 두 줄이 되면 글을 치기 시작할 때 칸이 줄어 자판이 출렁인다.
+        if (text.isEmpty()) builder.setMaxLines(1).setEllipsize(TextUtils.TruncateAt.END)
+        layout = builder.build()
         scrollToCaret()
+    }
+
+    /** 지금 글이 차지하는 줄 수(1~[maxRows]). */
+    private fun wantedRows(): Int = (layout?.lineCount ?: 1).coerceIn(1, maxRows)
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val width = MeasureSpec.getSize(widthMeasureSpec)
+        val inner = width - paddingLeft - paddingRight
+        if (inner > 0 && (layout == null || layoutWidth != inner)) build(inner)
+        measuredRows = wantedRows()
+        val wanted = paddingTop + paddingBottom + measuredRows * lineHeight()
+        setMeasuredDimension(width, resolveSize(wanted, heightMeasureSpec))
     }
 
     /** 커서가 있는 줄이 보이는 칸 안에 오도록 첫 줄을 정한다. */
@@ -183,6 +219,7 @@ class TranslateSourceView(context: Context) : View(context) {
 
     private companion object {
         const val TEXT_SP = 15f
+        const val DEFAULT_MAX_ROWS = 2
         const val LINE_SPACING = 1.1f
         const val BLINK_MS = 530L
     }

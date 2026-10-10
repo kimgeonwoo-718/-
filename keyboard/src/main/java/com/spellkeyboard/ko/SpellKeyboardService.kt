@@ -775,20 +775,23 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         val target = Prefs.translateTarget(this)
         keyboard?.setTranslateMode(true, targetLabels(), target.ordinal)
         showTranslateSource()
-        keyboard?.setTranslatePreview("", emptyPreviewText())
+        keyboard?.setTranslateNote(llmHint())
         prepareTranslator(target)
         // 모델을 미리 올리고 이 언어의 지시문을 계산해 둔다 — 첫 글자를 치고 나서 올리면 첫 번역이 십수 초 늦다.
         if (llmUsable()) llmClient().warm(target)
     }
 
-    /** 입력줄이 비었을 때 미리보기 자리에 보이는 안내. 고성능 번역을 받을 수 있는 기기면 세 번까지 그 안내를 덧붙인다. */
-    private fun emptyPreviewText(): String {
+    /**
+     * 번역 패널을 열 때 안내 줄에 보이는, 고성능 번역을 받으라는 말. 받을 수 있는 기기에서 아직 안 받았을 때만, 세 번까지.
+     * 안 보일 때는 빈 문자열이다(안내 줄이 없어진다).
+     */
+    private fun llmHint(): String {
         val hint = LlmSupport.check(this) == LlmSupport.Reason.OK &&
             !LlmModelStore.isReady(this) &&
             Prefs.llmHintShown(this) < LLM_HINT_MAX
-        if (!hint) return getString(R.string.translate_preview_empty)
+        if (!hint) return ""
         Prefs.bumpLlmHintShown(this)
-        return getString(R.string.translate_preview_empty_llm_hint)
+        return getString(R.string.translate_llm_hint)
     }
 
     /** 번역문은 입력란에 남긴 채 입력줄만 닫는다. */
@@ -824,23 +827,20 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private fun prepareTranslator(target: TargetLanguage, then: (() -> Unit)? = null) {
         val translator = this.translator ?: OnDeviceTranslator().also { this.translator = it }
         val label = target.label(this)
-        if (!translator.isReady(target)) {
-            keyboard?.setTranslatePreview("", getString(R.string.translate_downloading, label))
-        }
+        val downloading = !translator.isReady(target)
+        if (downloading) keyboard?.setTranslateNote(getString(R.string.translate_downloading, label))
         translator.ensureModel(
             target,
             onReady = {
                 if (translating) {
-                    if (translateBuffer.isEmpty) {
-                        keyboard?.setTranslatePreview("", getString(R.string.translate_preview_empty))
-                    }
+                    if (downloading) keyboard?.setTranslateNote("")
                     onTranslateSourceChanged()
                 }
                 then?.invoke()
             },
             onFailed = {
                 notify(getString(R.string.translate_download_failed, label))
-                if (translating) keyboard?.setTranslatePreview("", getString(R.string.translate_download_failed, label))
+                if (translating) keyboard?.setTranslateNote(getString(R.string.translate_download_failed, label))
             }
         )
     }
@@ -899,14 +899,14 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             // 이 편집으로 올 커서 알림도 우리 것이다.
             lastEditAt = android.os.SystemClock.uptimeMillis()
             translateOutput.replace(ConnectionEditor(connection), result.text)
-            keyboard?.setTranslatePreview(result.text, draft = draft)
+            keyboard?.setTranslateNote("")
         }
 
         override fun showEmpty() {
             if (!translating) return
             val connection = currentInputConnection ?: return
             translateOutput.replace(ConnectionEditor(connection), "")
-            keyboard?.setTranslatePreview("", getString(R.string.translate_preview_empty))
+            keyboard?.setTranslateNote("")
         }
 
         override fun warnFailed() = notify(getString(R.string.translate_failed))
@@ -984,7 +984,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                         currentInputConnection?.let {
                             translateOutput.replace(ConnectionEditor(it), polished)
                         }
-                        keyboard?.setTranslatePreview(polished)
                         finishEnter()
                     }
                     .onFailure {
@@ -1140,7 +1139,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             translateBuffer.clear()
             translateOutput.detach()
             showTranslateSource()
-            keyboard?.setTranslatePreview(translated)
+            keyboard?.setTranslateNote("")
         }
         fullUndo = FullUndo(original, translated.length)
         keyboard?.setTranslateUndo(true)
@@ -1157,7 +1156,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         connection.commitText(undo.original, 1)
         connection.endBatchEdit()
         session.reset()
-        if (translating) keyboard?.setTranslatePreview("", getString(R.string.translate_preview_empty))
+        if (translating) keyboard?.setTranslateNote("")
     }
 
     private fun clearFullUndo() {
