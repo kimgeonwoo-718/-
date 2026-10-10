@@ -810,7 +810,15 @@ test('개인정보 처리방침은 화면 세부를 적지 않고, 공개 파일
 
 test('이용약관의 시행일은 방침과 따로 간다', async () => {
   const body = await (await handle(new Request('https://spell.test/terms'), env({ GEMINI_API_KEY: '' }))).text();
-  assert.match(body, /시행일: 2026-09-26/);
+  assert.match(body, /시행일: 2026-10-10/);
+});
+
+test('이용약관은 PC 프로그램과 무료 기기 번역, 두 곳의 탈퇴를 적는다 (2026-10-10)', async () => {
+  const body = await (await handle(new Request('https://spell.test/terms'), env({ GEMINI_API_KEY: '' }))).text();
+  assert.match(body, /안드로이드 키보드 앱과 윈도우 PC 프로그램/);
+  assert.match(body, /기기 안 번역은 무료로 제공/);
+  assert.match(body, /PC 프로그램의 계정 창에서/);
+  assert.match(body, /요금이 오르면 Google Play 가 구독자에게 따로 동의를 받습니다/);
 });
 
 test('이용약관 페이지가 뜬다', async () => {
