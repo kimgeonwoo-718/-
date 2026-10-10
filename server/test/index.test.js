@@ -797,6 +797,12 @@ test('개인정보 처리방침은 PC 프로그램·IP·국외 이전·백업·1
   // 휴대폰 번역 창: AI정밀번역만 보내고 전체번역·실시간은 기기 안.
   assert.match(body, /"AI정밀번역"을 누를 때/);
   assert.match(body, /"전체번역"과 실시간 번역은 휴대폰 안에서만/);
+  // PC 단추 이름이 폰과 같아졌고(AI정밀번역), PC 도 같은 번역 모델(AI 킷)을 GitHub 에서 받을 수 있다 — 받을 때만, 옮기기는 PC 안에서만.
+  assert.match(body, /"AI 교정" 또는 "AI정밀번역"을 직접 누를 때/);
+  assert.ok(!body.includes('"AI 번역"을'), 'PC 옛 단추 이름이 남았다');
+  assert.match(body, /PC 프로그램에서 ‘AI 킷’ 받기를/);
+  assert.match(body, /AI 킷\(번역 모델\) 내려받기\(사용자가 받기를 누를 때만, GitHub\)/);
+  assert.match(body, /%LOCALAPPDATA%\\SpellDesktop\\llm/);
 });
 
 test('이용약관의 시행일은 방침과 따로 간다', async () => {
