@@ -26,6 +26,8 @@ import com.spellkeyboard.core.editor.TranslationOutput
 import com.spellkeyboard.core.lm.ContextCorrector
 import com.spellkeyboard.core.translate.FallbackEngine
 import com.spellkeyboard.core.translate.LiveTranslation
+import com.spellkeyboard.core.translate.LlmCorrection
+import com.spellkeyboard.core.translate.LlmMerge
 import com.spellkeyboard.core.translate.SentenceSplitter
 import com.spellkeyboard.core.translate.TranslationPipeline
 import com.spellkeyboard.core.spacing.Spacer
@@ -1295,13 +1297,19 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 keyboard?.setAiBusy(false)
                 result
                     .onSuccess { fixed ->
+                        // 고성능 모델(제마)을 받아 둔 폰이면 엔진 결과를 넣은 **뒤에** 한 번 더 다듬는다. 엔진 결과는 기다림 없이 바로 보이고,
+                        // 모델을 처음 올리느라 오래 걸려도 사용자가 멈춘 키보드를 보지 않는다.
+                        val big = llmClient().takeIf { fixed.text.length <= LLM_CORRECT_MAX_CHARS && it.usable() }
                         if (!fixed.changed) {
                             // 이건 AI 가 아니라 기기 안 교정이다. "AI 가 보기에" 라고 하면
                             // 서버까지 갔다 온 줄 알고 AI 를 다시 안 눌러 본다.
-                            notify(getString(R.string.correct_all_unchanged))
+                            if (big == null) notify(getString(R.string.correct_all_unchanged))
+                            else polishWithLlm(big, before, after, fixed.text, engineChanged = false)
                         } else {
                             applyAiResult(before, after, fixed.text)
                             notify(resources.getQuantityString(R.plurals.correct_all_done, fixed.corrections.size, fixed.corrections.size))
+                            // 갈아 끼우면 커서는 고친 글 끝에 선다 — 이제 커서 앞이 고친 글 전부다.
+                            if (big != null) polishWithLlm(big, fixed.text, "", fixed.text, engineChanged = true)
                         }
                     }
                     .onFailure { notify(getString(R.string.correct_all_failed)) }
@@ -1310,6 +1318,86 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             isDaemon = true
             start()
         }
+    }
+
+    /**
+     * 기기 안 큰 모델(제마)로 '전체' 교정을 한 번 더 다듬는다.
+     *
+     * 우리 엔진이 고친 글([text])을 문장 조각으로 나눠([LlmCorrection.segments]) 하나씩 고치게 하고, 모델이 바꾼 것 가운데
+     * **믿을 만한 것만** 받아들인다([LlmMerge] — 글자는 사람이 실제로 내는 오타 방향 고침만, 띄어쓰기는 붙여도 되는 보조용언 자리를 빼고.
+     * 멀쩡한 말을 딴 말·딴 말투로 바꾼 것은 되돌린다. 문맥 교정기와 같은 기준).
+     * 모델이 못 고친 조각은 그대로 둔다. 다 끝나면 입력란이 [before]·[after] 그대로인지 다시 보고서야 갈아 끼운다 — 몇 초 걸리는 사이
+     * 사용자가 더 쳤으면 엉뚱한 자리를 지운다.
+     */
+    private fun polishWithLlm(big: LlmTranslator, before: String, after: String, text: String, engineChanged: Boolean) {
+        // 언어모델이 아직 안 올라왔으면 모델 고침을 가릴 수 없다 — 다듬지 않는다(엔진 결과는 이미 들어갔다).
+        val context = session.engine.context
+        val segments = if (context == null) emptyList()
+        else LlmCorrection.segments(text).filter { range -> text.substring(range).any { it in '가'..'힣' } }
+        if (context == null || segments.isEmpty()) {
+            if (!engineChanged) notify(getString(R.string.correct_all_unchanged))
+            return
+        }
+        aiBusy = true
+        keyboard?.setAiBusy(true)
+        notify(getString(R.string.correct_all_polishing))
+        val requestId = aiRequestId.incrementAndGet()
+        // 감시 타이머. 번역 쪽이 모델 요청을 거두면(cancelAll) 콜백이 안 와서 '끝' 을 영영 못 듣는다 — 그러면 '전체'·AI 단추가
+        // 계속 '처리 중' 으로 막힌다. 넉넉히 기다린 뒤 스스로 푼다(모델이 처음 올라오는 데 1분까지 걸린다).
+        mainHandler.postDelayed({
+            if (aiRequestId.get() == requestId && aiBusy) {
+                aiRequestId.incrementAndGet()
+                aiBusy = false
+                keyboard?.setAiBusy(false)
+            }
+        }, POLISH_WATCHDOG_MS)
+        val results = arrayOfNulls<String>(segments.size)
+        var remaining = segments.size
+        val engine = big.corrector()
+        val frequency: (String) -> Float? = { word -> context.lnCount(word) }
+
+        fun done() {
+            if (aiRequestId.get() != requestId) return
+            aiBusy = false
+            keyboard?.setAiBusy(false)
+            val polished = results.count { it != null }
+            if (polished == 0) {
+                // 엔진도 모델도 고칠 것이 없었으면 늘 하던 말을 한다.
+                notify(getString(if (engineChanged) R.string.correct_all_polish_none else R.string.correct_all_unchanged))
+                return
+            }
+            val out = StringBuilder(text)
+            for (k in segments.indices.reversed()) results[k]?.let { out.replace(segments[k].first, segments[k].last + 1, it) }
+            if (!fieldStill(before, after)) {
+                notify(getString(R.string.correct_all_polish_skipped))
+                return
+            }
+            applyAiResult(before, after, out.toString())
+            notify(getString(R.string.correct_all_polished, polished))
+        }
+
+        for ((k, range) in segments.withIndex()) {
+            val piece = text.substring(range)
+            engine.translate(
+                piece,
+                { reply ->
+                    if (aiRequestId.get() == requestId) {
+                        val merged = LlmMerge.merge(piece, reply, frequency)
+                        if (merged != piece) results[k] = merged
+                    }
+                    if (--remaining == 0) done()
+                },
+                { if (--remaining == 0) done() }
+            )
+        }
+    }
+
+    /** 입력란의 커서 앞뒤가 아직 [before]·[after] 그대로인가. 되읽기가 안 되는 앱이면 우리가 써 넣은 사본으로 본다. */
+    private fun fieldStill(before: String, after: String): Boolean {
+        val connection = currentInputConnection ?: return false
+        val nowBefore = session.readBeforeCursor(ConnectionEditor(connection), before.length)
+        val nowAfter = connection.getTextAfterCursor(after.length, 0)?.toString().orEmpty()
+        return nowBefore == before && nowAfter == after
     }
 
     override fun onAiCorrect() {
@@ -1577,6 +1665,15 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     private companion object {
         /** '전체번역' 에서 큰 모델을 쓸 글의 최대 길이. 문장마다 1~3초라 이보다 길면 ML Kit 으로 한다. */
         private const val LLM_FULL_MAX_CHARS = 400
+
+        /**
+         * '전체' 교정을 고성능 모델로 한 번 더 다듬을 글의 최대 길이. 조각(120자 안팎)마다 폰에서 1~3초라, 넘으면 엔진 결과만 둔다.
+         * 엔진 결과는 어차피 먼저 들어가므로 길어서 안 다듬어도 잃는 것은 없다.
+         */
+        private const val LLM_CORRECT_MAX_CHARS = 600
+
+        /** 고성능 모델로 다듬기를 기다리는 한도. 넘으면 '처리 중' 을 스스로 푼다(엔진 결과는 이미 들어가 있다). */
+        private const val POLISH_WATCHDOG_MS = 120_000L
 
         /** 번역 패널에서 '고성능 번역을 받으면 더 정확하다' 는 안내를 보이는 최대 횟수. */
         private const val LLM_HINT_MAX = 3

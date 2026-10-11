@@ -123,6 +123,9 @@ class ContextCorrector(
         return false
     }
 
+    /** 말뭉치에 이 어절이 나온 횟수의 ln. 모르면 null. 큰 모델의 고침을 받아들일지 가를 때 쓴다([com.spellkeyboard.core.translate.LlmMerge]). */
+    fun lnCount(word: String): Float? = lm.lnCount(word)
+
     fun correct(window: String, contextBefore: String? = null): String? {
         val pieces = tokenize(window)
         if (pieces.none { it.soft }) return null

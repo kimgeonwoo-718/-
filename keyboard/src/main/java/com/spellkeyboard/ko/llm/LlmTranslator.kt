@@ -10,6 +10,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Message
 import android.os.Messenger
+import com.spellkeyboard.core.translate.LlmPrompt
 import com.spellkeyboard.core.translate.TranslationPipeline
 import com.spellkeyboard.ko.Prefs
 import com.spellkeyboard.ko.TargetLanguage
@@ -62,6 +63,16 @@ class LlmTranslator(private val context: Context) {
     fun engine(target: TargetLanguage): TranslationPipeline.Engine =
         TranslationPipeline.Engine { text, onResult, onFailed ->
             waiting += Job(nextId++, target.tag, text, onResult, onFailed)
+            pump()
+        }
+
+    /**
+     * 한국어 글 한 조각을 고치는 교정기('전체' 교정을 한 번 더 다듬는 데 쓴다). 같은 모델·같은 줄에 '교정' 지시문([LlmPrompt.CORRECT])으로
+     * 보낸다. 서비스가 교정문을 거르고([com.spellkeyboard.core.translate.LlmCorrection]), 못 쓰면 `onFailed` — 부르는 쪽이 그 조각을 그대로 둔다.
+     */
+    fun corrector(): TranslationPipeline.Engine =
+        TranslationPipeline.Engine { text, onResult, onFailed ->
+            waiting += Job(nextId++, LlmPrompt.CORRECT, text, onResult, onFailed)
             pump()
         }
 

@@ -16,9 +16,11 @@ package com.spellkeyboard.core.translate
  */
 object LlmPrompt {
 
-    /** [code] 는 [Phrasebook] 의 언어 코드("en"·"ja"·"zh"). 모르는 코드거나 자원이 없으면 null. */
+    /**
+     * [code] 는 [Phrasebook] 의 언어 코드("en"·"ja"·"zh"), 또는 교정 지시문 [CORRECT]. 모르는 코드거나 자원이 없으면 null.
+     */
     fun system(code: String): String? {
-        if (code !in SUPPORTED) return null
+        if (code !in SUPPORTED && code != CORRECT) return null
         synchronized(cache) { cache[code]?.let { return it } }
         // 윈도우에서 core.autocrlf 로 받으면 자원이 \r\n 으로 풀린다. 모델에 주는 글이 폰과 한 글자도 달라지지 않게 \n 으로 맞춘다
         // (다르면 지시문 앞부분 재사용도 깨진다). 저장소에서는 .gitattributes 가 LF 로 고정한다.
@@ -30,6 +32,12 @@ object LlmPrompt {
     }
 
     val SUPPORTED = setOf(Phrasebook.ENGLISH, Phrasebook.JAPANESE, Phrasebook.CHINESE)
+
+    /**
+     * 번역이 아니라 **한국어 교정** 지시문(`llm_prompt_ko.txt`). '전체' 교정을 한 번 더 다듬는 데 쓴다(2026-10-11).
+     * 같은 모델·같은 엔진에 지시문만 바꿔 보낸다. 모델의 답은 [LlmCorrection] 이 거른다(번역문 거름 [LlmOutput] 과 보는 것이 반대다).
+     */
+    const val CORRECT = "ko"
 
     private val cache = HashMap<String, String>()
 }
