@@ -3636,3 +3636,6 @@ PC 는 출시 전) — 폰 고성능 번역과 같은 제마 4 E2B 파일을 같
 (`setting_plan_note` "자동 교정은 언제나 무제한…", 결제 상태 `billing_status`, `ai_notice` "AI 를 누를 때만 글이 서버로…")을 지웠다.
 글이 나간다는 안내는 환경설정 `privacy_notice` 와 처리방침에 남아 있고, 결제 오류는 버튼 너머 결제 화면(`paywall_status`)이 보여 준다.
 첫 화면의 BillingManager 는 그대로 돈다 — 산 구독 되살리기(restore·acknowledge)가 여기서 일어나기 때문이다. 처음 안내 투어는 id 로 과녁을 찾아 스크롤하므로 순서와 상관없다.
+
+**AI정밀번역 실패 문구(2026-10-11, 사용자)**: `translate_ai_failed` 가 옛 이름("자연스러운 번역 실패")이었다 → "AI정밀번역 실패: …". 어디서도 안 쓰던
+`translate_premium_only`("자연스러운 번역은 프리미엄 기능입니다…")도 지웠다. 실패하면 문구 뒤에 기기 번역(젬마 또는 ML Kit)으로 대신 옮긴다.
