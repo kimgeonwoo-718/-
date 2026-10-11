@@ -31,7 +31,7 @@
         <!--
           위 막대. 앱 이름과 ☰ 하나. 로그인·키보드 맞춤설정·약관·고객센터는 전부 ☰ 뒤
           더보기 화면에 모았다 — 버튼을 여기 늘어놓았더니 지저분하고 서로 따로 놀았다.
-          본문에는 처음 온 사람이 할 일(시작하기 → 써 보기 → 사용법 → 프리미엄)만 남긴다.
+          본문에는 처음 온 사람이 할 일(시작하기 → 써 보기 → 프리미엄 → 사용법)만 남긴다.
         -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -127,25 +127,6 @@
         </LinearLayout>
 
         <!--
-          사용법. 방금 써 본 바로 밑에 둔다 — 쳐 보다가 "이건 뭐지" 싶을 때 눈이 가는
-          자리가 거기다. 도구 줄을 그림으로 그려 놓고 누른 자리를 막대기로 가리킨다.
-        -->
-        <LinearLayout style="@style/Card">
-            <TextView style="@style/CardTitle" android:text="@string/section_guide" />
-            <TextView
-                style="@style/RowSub"
-                android:layout_marginTop="6dp"
-                android:text="@string/guide_intro" />
-
-            <com.spellkeyboard.ko.ToolbarGuideView
-                android:id="@+id/toolbar_guide"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp" />
-
-        </LinearLayout>
-
-        <!--
           프리미엄. 무엇을 파는지와 사는 버튼만. 한도·데이터 안내 같은 잔글씨는 환경설정의
           정보 칸으로 옮겼다 — 여기서는 눈이 버튼에 가야 한다.
 
@@ -155,6 +136,10 @@
 
           2026-10-10: 화면 여백(20dp)에 카드 안쪽 여백(20dp)까지 더해져 글이 양쪽에서 40dp 씩 들어가 좁게 내려갔다(사용자).
           이 카드만 안쪽 여백을 8dp 로 줄인다.
+
+          2026-10-11: 버튼 밑 잔글씨(무제한 안내·결제 상태·AI 로 글이 나간다는 안내)를 뺐다(사용자). 사용법 칸보다
+          위로 올렸다. 글이 나간다는 안내는 환경설정의 개인정보 줄(privacy_notice)과 처리방침에 남아 있고,
+          결제 오류는 버튼 너머 결제 화면(paywall_status)이 보여 준다.
         -->
         <LinearLayout
             style="@style/Card"
@@ -202,24 +187,27 @@
                 android:id="@+id/subscribe_button"
                 style="@style/PrimaryButton"
                 android:layout_marginTop="14dp"
+                android:layout_marginBottom="8dp"
                 android:text="@string/setting_plan_subscribe" />
+        </LinearLayout>
 
+        <!--
+          사용법. 도구 줄을 그림으로 그려 놓고 누른 자리를 막대기로 가리킨다.
+          2026-10-11: 프리미엄 칸 밑으로 내렸다(사용자).
+        -->
+        <LinearLayout style="@style/Card">
+            <TextView style="@style/CardTitle" android:text="@string/section_guide" />
             <TextView
-                android:id="@+id/billing_status"
-                style="@style/Caption"
+                style="@style/RowSub"
+                android:layout_marginTop="6dp"
+                android:text="@string/guide_intro" />
+
+            <com.spellkeyboard.ko.ToolbarGuideView
+                android:id="@+id/toolbar_guide"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="10dp" />
 
-            <TextView
-                style="@style/Caption"
-                android:layout_marginTop="6dp"
-                android:text="@string/setting_plan_note" />
-
-            <!-- AI 로 글이 나간다는 말은 AI 를 파는 자리에 있어야 한다. -->
-            <TextView
-                style="@style/Caption"
-                android:layout_marginTop="6dp"
-                android:layout_marginBottom="8dp"
-                android:text="@string/ai_notice" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

@@ -147,13 +147,9 @@ class SetupActivity : AppCompatActivity() {
 
     private fun bindPremium() {
         quotaOutput = findViewById(R.id.quota_output)
-        val billingStatus = findViewById<TextView>(R.id.billing_status)
-        billing = BillingManager(this) { message ->
-            runOnUiThread {
-                billingStatus.text = message
-                showQuota()
-            }
-        }.also { it.start() }
+        // 여기서는 산 구독을 되살리고(restore) 요금제 줄만 고친다. 결제 오류 글은 결제 화면이 보여 준다 —
+        // 첫 화면 버튼 밑의 잔글씨는 뺐다(2026-10-11, 사용자).
+        billing = BillingManager(this) { runOnUiThread { showQuota() } }.also { it.start() }
         // 결제창을 바로 띄우지 않는다. 무엇을 얼마에 사는지 먼저 보여주는 화면을 거친다.
         findViewById<View>(R.id.subscribe_button).setOnClickListener {
             startActivity(Intent(this, PaywallActivity::class.java))
