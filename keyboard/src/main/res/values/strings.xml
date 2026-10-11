@@ -72,7 +72,8 @@
          줄은 직접 나눈다 — 문장이 길어 글자 중간에서 끊겼다("알 겁니 / 다"). "일단 결제하십시오" 는 한 줄로 굵게·파랗게. -->
     <string name="premium_pitch_title">프리미엄</string>
     <string name="premium_pitch_tagline">절대 후회 없는 기능들</string>
-    <string name="premium_pitch_body"><b>하루 99원</b>밖에 안 하는데,\n진짜 한번 써 보시면 알 겁니다.\n<b><font color="#3182F6"><big>일단 결제하십시오.</big></font></b>\n자세한 기능들이 궁금하시면\n아래 버튼을 눌러 보십시오!</string>
+    <!-- 줄바꿈을 억지로 넣지 않는다 — 다섯 줄로 잘라 두었더니 글이 가운데에 좁게 내려갔다(2026-10-11 사용자). 큰 파란 줄만 따로. -->
+    <string name="premium_pitch_body"><b>하루 99원</b>밖에 안 하는데, 진짜 한번 써 보시면 알 겁니다.\n<b><font color="#3182F6"><big>일단 결제하십시오.</big></font></b>\n자세한 기능들이 궁금하시면 아래 버튼을 눌러 보십시오!</string>
     <string name="setting_plan_subscribe">프리미엄 알아보기 · 월 2,990원</string>
     <!-- 더보기 서랍(첫 화면 ☰)과 키보드 맞춤설정. -->
     <string name="more_title">더보기</string>
@@ -164,6 +165,8 @@
     <string name="setting_llm_title">기기 안 AI 모델</string>
     <string name="setting_llm_intro">휴대폰 안에서 도는 AI 모델로 영어·일본어·중국어 번역을 더 자연스럽게 합니다. 파일을 한 번 받아 두면 이후에는 통신도, 요금도, 사용 한도도 없고 번역하는 글이 휴대폰 밖으로 나가지 않습니다.</string>
     <string name="setting_llm_size">받는 파일은 약 3GB입니다. 와이파이로 받기를 권합니다. 번역할 때만 메모리를 쓰며, 쓰지 않으면 저절로 비웁니다.</string>
+    <!-- 최소 사양은 LlmSupport 가 실제로 막는 조건과 같아야 한다(64비트 ARM·안드로이드 10·RAM 5.5GiB·dotprod/fp16, 빈 자리 3.5GB). 권장 사양은 어림이다 — 실기기로 아직 못 쟀다. -->
+    <string name="setting_llm_specs">최소 사양: 64비트 ARM 휴대폰 · 안드로이드 10 이상 · 메모리 6GB 이상 · 빈 저장 공간 약 3.5GB\n권장 사양: 메모리 8GB 이상인 최근 중급 이상 휴대폰. 최소 사양에 가까우면 번역이 느리거나 휴대폰이 뜨거워질 수 있습니다.\n조건이 맞지 않는 기기에서는 받기 대신 그 이유가 보입니다.</string>
     <string name="setting_llm_status_none">아직 받지 않았습니다</string>
     <string name="setting_llm_status_downloading">받는 중 %1$d%% (%2$s / %3$s)</string>
     <string name="setting_llm_status_verifying">파일을 확인하는 중입니다…</string>
