@@ -64,8 +64,12 @@ fun main(args: Array<String>) {
     if (broken.isNotEmpty()) { println("\n## 멀쩡한 걸 건드린 것 (${broken.size})"); broken.take(show).forEach(::println) }
 }
 
-/** 어절마다 스페이스를 누르는 것처럼. 마지막 어절 뒤에도 스페이스를 한 번 누른다. */
+/**
+ * 어절마다 스페이스를 누르는 것처럼. 마지막 어절 뒤에도 스페이스를 한 번 누른다.
+ * `LIVE_FULL=1` 이면 같은 시험지를 **전체교정 길**(`correctAll`, 폰 '전체' 단추·PC 전체교정)로 잰다.
+ */
 fun type(engine: CorrectionEngine, sentence: String): String {
+    if (System.getenv("LIVE_FULL") == "1") return engine.correctAll(sentence).text.trim().replace(Regex("\\s+"), " ")
     val buffer = StringBuilder()
     for (word in sentence.trim().split(Regex("\\s+"))) {
         buffer.append(word)

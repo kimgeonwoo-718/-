@@ -298,8 +298,45 @@ class ContextCorrector(
             candidates[key] = if (list == null) fresh else merge(list, fresh)
         }
 
-        val lattice = arrayOfNulls<HashMap<String, Node>>(n + 1)
         val initialKey = contextBefore ?: UNKNOWN_CONTEXT
+        val identity = identityScore(cores, contextBefore, trace)
+        var (best, tokens) = search(n, candidates, layout, initialKey) { _, _, _ -> true } ?: return null
+        trace?.let { traceTokens(it, "최선", best, tokens, candidates, layout, contextBefore) }
+
+        // **글자를 바꾼 답은 띄어쓰기만 고친 읽기보다도 확실히 나아야 한다.** 원문 덩어리를 통째로 모르는 말로 매기면
+        // 한 글자 고친 '아는 말' 이 쉽게 이긴다 — '밥 먹은거지' 가 '먹은건지'(→ 먹은 건지) 가 됐다(2026-10-11 사용자).
+        // 띄어 쓰면 '먹은 거지' 로 멀쩡히 읽히는데 받침 하나로 뜻이 바뀐 것이다. 글자를 그대로 둔 가장 좋은 읽기와
+        // 견줘 [MARGIN] 만큼 못 이기면 그 읽기를 쓴다(그것도 원문보다 [MARGIN] 만큼 나을 때만).
+        if (tokens.joinToString("") != text) {
+            val plain = search(n, candidates, layout, initialKey) { i, j, candidate ->
+                candidate.text.length == j - i && text.regionMatches(i, candidate.text, 0, j - i)
+            }
+            if (plain != null) {
+                trace?.let { traceTokens(it, "글자 그대로 최선", plain.first, plain.second, candidates, layout, contextBefore) }
+                if (best.score - plain.first.score < MARGIN) {
+                    trace?.append("글자를 바꾼 답이 글자 그대로 읽기보다 %.2f 낫다 — 문턱 %.2f 를 못 넘어 글자 그대로를 쓴다\n"
+                        .format(best.score - plain.first.score, MARGIN))
+                    best = plain.first
+                    tokens = plain.second
+                }
+            }
+        }
+        trace?.append("차이 %.2f (문턱 %.2f)\n".format(best.score - identity, MARGIN))
+        if (best.score - identity < MARGIN) return null
+        return if (tokens == cores) null else tokens
+    }
+
+    /**
+     * 비터비 한 판. [keep] 이 받아 준 후보만 쓴다. 가장 좋은 끝 노드와 그 어절 목록을 돌려준다.
+     */
+    private fun search(
+        n: Int,
+        candidates: Map<Long, List<Candidate>>,
+        layout: Layout,
+        initialKey: String,
+        keep: (Int, Int, Candidate) -> Boolean
+    ): Pair<Node, List<String>>? {
+        val lattice = arrayOfNulls<HashMap<String, Node>>(n + 1)
         lattice[0] = hashMapOf(initialKey to Node(0f, -1, "", ""))
 
         for (i in 0 until n) {
@@ -308,6 +345,7 @@ class ContextCorrector(
                 val list = candidates[spanKey(i, j)] ?: continue
                 for ((prevKey, node) in prune(here)) {
                     for (candidate in list) {
+                        if (!keep(i, j, candidate)) continue
                         val boundaryCost = boundaryCost(layout, prevKey, i, j, candidate.text) ?: continue
                         val score = node.score + lnScore(prevKey, candidate.text) + candidate.channel + boundaryCost
                         val target = lattice[j] ?: HashMap<String, Node>().also { lattice[j] = it }
@@ -320,10 +358,7 @@ class ContextCorrector(
             }
         }
 
-        val finish = lattice[n] ?: return null
-        val best = finish.values.maxByOrNull { it.score } ?: return null
-        val identity = identityScore(cores, contextBefore, trace)
-
+        val best = lattice[n]?.values?.maxByOrNull { it.score } ?: return null
         val tokens = ArrayList<String>()
         var at = n
         var key = best.text
@@ -334,25 +369,32 @@ class ContextCorrector(
             key = node.fromKey
         }
         tokens.reverse()
-        if (trace != null) {
-            trace.append("최선 %.2f: %s\n".format(best.score, tokens.joinToString(" ")))
-            var prev = contextBefore ?: UNKNOWN_CONTEXT
-            var position = 0
-            for (token in tokens) {
-                val candidate = candidates[spanKey(position, position + token.length)]?.firstOrNull { it.text == token }
-                trace.append(
-                    "  %s: 모델 %.2f 통로 %.2f 경계 %s\n".format(
-                        token, lnScore(prev, token), candidate?.channel ?: Float.NaN,
-                        boundaryCost(layout, prev, position, position + token.length, token)?.let { "%.2f".format(it) } ?: "금지"
-                    )
+        return best to tokens
+    }
+
+    private fun traceTokens(
+        trace: StringBuilder,
+        label: String,
+        best: Node,
+        tokens: List<String>,
+        candidates: Map<Long, List<Candidate>>,
+        layout: Layout,
+        contextBefore: String?
+    ) {
+        trace.append("%s %.2f: %s\n".format(label, best.score, tokens.joinToString(" ")))
+        var prev = contextBefore ?: UNKNOWN_CONTEXT
+        var position = 0
+        for (token in tokens) {
+            val candidate = candidates[spanKey(position, position + token.length)]?.firstOrNull { it.text == token }
+            trace.append(
+                "  %s: 모델 %.2f 통로 %.2f 경계 %s\n".format(
+                    token, lnScore(prev, token), candidate?.channel ?: Float.NaN,
+                    boundaryCost(layout, prev, position, position + token.length, token)?.let { "%.2f".format(it) } ?: "금지"
                 )
-                prev = token
-                position += token.length
-            }
-            trace.append("차이 %.2f (문턱 %.2f)\n".format(best.score - identity, MARGIN))
+            )
+            prev = token
+            position += token.length
         }
-        if (best.score - identity < MARGIN) return null
-        return if (tokens == cores) null else tokens
     }
 
     /** 왜 그렇게 고쳤는지(또는 안 고쳤는지) 점수를 풀어 쓴다. 조정·진단용. */

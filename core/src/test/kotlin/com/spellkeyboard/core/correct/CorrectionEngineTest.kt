@@ -252,6 +252,17 @@ class CorrectionEngineTest {
     }
 
     @Test
+    fun `아라비아 숫자 뒤 단위는 붙여 쓴 그대로 둔다`() {
+        // 숫자와 어울려 쓰는 단위는 붙여 써도 된다(한글 맞춤법 제43항 다만). '5천원' 만 '5천 원' 으로 떼고 있었다(2026-10-11).
+        assertUntouched("사과 3개 샀어")
+        assertUntouched("5천원이야")
+        assertUntouched("2천원짜리")
+        assertUntouched("3백명 왔어")
+        assertUntouched("3만원 줘")
+        assertUntouched("10분 뒤에")
+    }
+
+    @Test
     fun `수관형사로 보이지만 낱말 속인 자리는 건드리지 않는다`() {
         // 이것 하나가 없으면 격식체가 통째로 무너진다.
         assertUntouched("확인해 주십시오")
