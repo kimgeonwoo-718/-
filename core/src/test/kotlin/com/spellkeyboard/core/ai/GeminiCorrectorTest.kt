@@ -789,4 +789,59 @@ class GeminiCorrectorTest {
         assertTrue(proxied(transport).correct("원문").isFailure)
         assertEquals(1, transport.calls)
     }
+
+    @Test
+    fun `우리 서버의 분당 상한 429 는 다시 보내지 않고 바깥 AI 의 429 는 한 번 더 보낸다`() {
+        // 둘 다 rate_limited 를 싣는다. 우리 서버 것은 status 가 RATE_LIMITED, 바깥이 거절한 것은 ERROR 다(2026-10-11 윈도우 보고).
+        val own = GeminiCorrector.HttpResponse(429, "{\"error\":{\"code\":429,\"message\":\"rate_limited\",\"status\":\"RATE_LIMITED\"}}")
+        val ownCalls = Counting(own, ok("Hello"))
+        assertTrue(proxied(ownCalls).translate("안녕", "en").isFailure)
+        assertEquals(1, ownCalls.calls)
+
+        val upstream = Counting(error(429, "rate_limited"), ok("Hello"))
+        assertEquals("Hello", proxied(upstream).translate("안녕", "en").getOrThrow())
+        assertEquals(2, upstream.calls)
+    }
+
+    @Test
+    fun `중계 서버 교정은 한 번 누르면 최대 두 번만 나간다`() {
+        // 중계 서버는 모델을 제가 고르니 '다른 모델로 옮겨 보기' 는 같은 요청을 또 보낼 뿐이다. 예전에는 최대 네 번 나갔다.
+        val transport = Counting(error(503, "upstream_unavailable"))
+        assertTrue(proxied(transport).correct("원문").isFailure)
+        assertEquals(2, transport.calls)
+    }
+
+    @Test
+    fun `통신부는 보낸 뒤 연결이 끊겨도 POST 를 몰래 다시 보내지 않는다`() {
+        // JDK 는 본문을 붙잡아 두는 방식이면 답 없이 끊긴 POST 를 한 번 더 보낸다(sun.net.http.retryPost).
+        // 진짜 소켓으로: 요청을 다 읽고 답 없이 끊는다. 요청은 한 번만 와야 한다.
+        val server = java.net.ServerSocket(0, 50, java.net.InetAddress.getLoopbackAddress())
+        server.soTimeout = 1500
+        val requests = java.util.concurrent.atomic.AtomicInteger()
+        val worker = Thread {
+            while (true) {
+                val socket = runCatching { server.accept() }.getOrNull() ?: break
+                socket.use { s ->
+                    val input = s.getInputStream()
+                    val head = StringBuilder()
+                    while (!head.endsWith("\r\n\r\n")) {
+                        val b = input.read()
+                        if (b < 0) break
+                        head.append(b.toChar())
+                    }
+                    val length = Regex("(?i)content-length:\\s*(\\d+)").find(head)?.groupValues?.get(1)?.toInt() ?: 0
+                    repeat(length) { input.read() }
+                    requests.incrementAndGet()
+                }   // 답 없이 끊는다
+            }
+        }.apply { isDaemon = true; start() }
+
+        val result = runCatching {
+            GeminiCorrector.HttpTransport().send("POST", "http://127.0.0.1:${server.localPort}/v1beta/models/m:generateContent", "", "{\"a\":1}")
+        }
+        worker.join(5000)
+        server.close()
+        assertTrue(result.isFailure, "답 없이 끊겼는데 성공으로 돌아왔다")
+        assertEquals(1, requests.get(), "POST 가 몰래 다시 보내졌다")
+    }
 }

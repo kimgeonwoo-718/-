@@ -113,7 +113,9 @@ class GeminiCorrector(
         // 모델마다 여유가 달라서, 한가한 쪽을 찾아가는 편이 빠르고 잘 된다.
         val tried = linkedSetOf(activeModel)
         var hops = 0
-        while (worthSwitchingModel(response) && hops < MAX_MODEL_HOPS) {
+        // 중계 서버는 모델을 제가 고른다 — 갈아타기는 같은 요청을 또 보내는 것일 뿐이다. 그쪽은 아래 한 번만 더 보낸다
+        // (예전에는 한 번 누르면 최대 네 번 나갔다 — 2026-10-11 윈도우 세션 보고).
+        while (!viaProxy && worthSwitchingModel(response) && hops < MAX_MODEL_HOPS) {
             val next = candidates().firstOrNull { it !in tried } ?: break
             tried += next
             activeModel = next
@@ -217,8 +219,11 @@ class GeminiCorrector(
      */
     internal fun safeToResend(response: HttpResponse): Boolean = when (response.code) {
         NETWORK_FAILURE -> true
+        // 우리 서버의 분당 상한도 같은 rate_limited 를 싣지만 status 가 RATE_LIMITED 다(바깥이 거절한 것은 ERROR).
+        // 다시 보내면 분당 상한만 또 쓴다 — 가른다(2026-10-11 윈도우 세션 보고).
         429, 500, 502, 503, 504 ->
-            response.body.contains("upstream_unavailable") || response.body.contains("rate_limited")
+            !response.body.contains(OWN_RATE_LIMIT) &&
+                (response.body.contains("upstream_unavailable") || response.body.contains("rate_limited"))
         else -> false
     }
 
@@ -478,6 +483,7 @@ class GeminiCorrector(
             apiKey: String,
             body: String?
         ): HttpResponse {
+            val payload = body?.toByteArray(Charsets.UTF_8)
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = method
                 connectTimeout = CONNECT_TIMEOUT_MS
@@ -488,6 +494,10 @@ class GeminiCorrector(
                 if (apiKey.isNotBlank()) setRequestProperty("x-goog-api-key", apiKey)
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 extraHeaders.forEach { (name, value) -> setRequestProperty(name, value) }
+                // 본문 길이를 미리 정해 흘려보낸다. 그러지 않으면 JDK 는 본문을 붙잡아 두었다가, 보낸 뒤 연결이 끊기면
+                // **몰래 한 번 더 POST 한다**(sun.net.http.retryPost) — 서버는 이미 AI 를 불렀을 수 있다(2026-10-11 윈도우 세션 보고).
+                // 길이를 정해 흘려보내면 다시 보낼 본문이 없어서 그러지 못하고 실패로 돌아온다.
+                payload?.let { setFixedLengthStreamingMode(it.size) }
             }
             // 연결을 먼저 맺는다. 여기서 실패하면 요청은 서버에 닿지 않았다 — 다시 보내도 값이 두 번 나가지 않는다.
             try {
@@ -497,9 +507,7 @@ class GeminiCorrector(
                 throw NotSentException(e)
             }
             try {
-                body?.let { payload ->
-                    connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-                }
+                payload?.let { bytes -> connection.outputStream.use { it.write(bytes) } }
                 val code = connection.responseCode
                 val stream = if (code == 200) connection.inputStream else connection.errorStream
                 val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
@@ -603,6 +611,9 @@ class GeminiCorrector(
 
         /** 보낸 뒤에 끊겨 답을 못 받았을 때 붙이는 자리 코드(읽기 시간 초과 등). 서버는 이미 일했을 수 있다. */
         const val RESPONSE_LOST = 598
+
+        /** 우리 서버의 분당 상한(429)이 싣는 표시. 바깥 AI 가 거절한 429 는 status 가 ERROR 다. */
+        private const val OWN_RATE_LIMIT = "\"status\":\"RATE_LIMITED\""
 
         private val TRANSIENT_CODES = setOf(408, 429, 500, 502, 503, 504, NETWORK_FAILURE, RESPONSE_LOST)
 
