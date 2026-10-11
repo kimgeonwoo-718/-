@@ -33,7 +33,20 @@ class TranslationMemory(private val capacity: Int = 64) {
     /**
      * 번역들을 이어 붙인다. 아직 없는 문장은 원문을 그대로 놓는다 — 그 자리가 비면
      * 사용자는 글이 사라진 줄로 안다.
+     *
+     * 사이는 한 칸 띄되, 앞 문장이 전각 부호(`。！？`)로 끝났으면 붙인다 — 일본어·중국어는 문장 사이를 띄지 않는다.
      */
-    fun assemble(sentences: List<String>): String =
-        sentences.map { known[it] ?: it }.filter { it.isNotBlank() }.joinToString(" ")
+    fun assemble(sentences: List<String>): String {
+        val out = StringBuilder()
+        for (piece in sentences.map { known[it] ?: it }) {
+            if (piece.isBlank()) continue
+            if (out.isNotEmpty() && out.last() !in WIDE_ENDERS) out.append(' ')
+            out.append(piece)
+        }
+        return out.toString()
+    }
+
+    private companion object {
+        val WIDE_ENDERS = setOf('。', '！', '？')
+    }
 }

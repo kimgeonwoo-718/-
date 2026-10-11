@@ -26,9 +26,8 @@ import com.spellkeyboard.core.editor.TranslationOutput
 import com.spellkeyboard.core.lm.ContextCorrector
 import com.spellkeyboard.core.translate.FallbackEngine
 import com.spellkeyboard.core.translate.LiveTranslation
-import com.spellkeyboard.core.translate.LlmCorrection
-import com.spellkeyboard.core.translate.LlmMerge
 import com.spellkeyboard.core.translate.SentenceSplitter
+import com.spellkeyboard.core.translate.SourceLanguage
 import com.spellkeyboard.core.translate.TranslationPipeline
 import com.spellkeyboard.core.spacing.Spacer
 import com.spellkeyboard.core.spacing.Speller
@@ -138,11 +137,19 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     // --- 번역 모드 -------------------------------------------------------------
     //
-    // 켜져 있으면 모든 키 입력이 앱 입력란 대신 [translateBuffer] 로 간다 ([editor] 가 그걸
+    // 실시간 번역이 켜져 있으면 모든 키 입력이 앱 입력란 대신 [translateBuffer] 로 간다 ([editor] 가 그걸
     // 돌려준다). 한글 조합과 자동 교정은 평소와 똑같이 그 위에서 돌고, 내용이 바뀔 때마다
     // 잠깐 뒤 온디바이스 번역기가 돌아 앱 입력란의 번역문을 갈아 끼운다.
+    // 실시간 번역을 끄면 패널(언어·전체번역·AI정밀번역)만 열린 채 평소처럼 입력란에 바로 쓴다.
 
+    /** 번역 패널이 열려 있다. */
     private var translating = false
+
+    /** 패널의 '실시간' 단추. 패널을 열 때 설정에서 읽는다([Prefs.translateLive]). */
+    private var translateLive = true
+
+    /** 키 입력이 번역 입력줄로 가는 중 — 패널이 열려 있고 실시간 번역이 켜져 있다. */
+    private val liveInput: Boolean get() = translating && translateLive
     private val translateBuffer = TranslateBuffer().also {
         it.onChange = { onTranslateSourceChanged() }
         // 커서만 움직였을 때는 화면만 갱신한다. 번역을 다시 돌리면 입력란의 번역문이 깜빡인다.
@@ -390,7 +397,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         // 비밀번호를 고쳐 주는 것은 도움이 아니라 사고다.
         // 다만 자동 교정 스위치와는 묶지 않는다 — 그건 실시간 교정만 끄는 스위치다.
         keyboard?.setCorrectAllAvailable(fieldCorrectable)
-        // **번역도 같이 감춘다.** 번역을 길게 누르면 입력란의 글이 통째로 서버로 간다.
+        // **번역도 같이 감춘다.** 번역 패널의 AI정밀번역은 입력란의 글을 통째로 서버로 보낸다.
         // 예전에는 AI 동그라미만 감춰서, 비밀번호 칸에서도 번역은 그대로 눌렸다.
         keyboard?.setTranslateAvailable(fieldSendable)
         // 예전에는 여기서 서버를 한 번 두드려 모델 목록을 미리 받았다. 뺐다 —
@@ -438,13 +445,13 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd
         )
         hasSelection = newSelStart != newSelEnd
-        // **번역 모드에서는 이 알림이 전부 우리 것이다.**
+        // **실시간 번역 중에는 이 알림이 전부 우리 것이다.**
         //
         // 사용자는 앱 입력란이 아니라 번역 입력줄에 쓰고 있고, 앱 입력란이 바뀌는 것은
         // 우리가 번역문을 갈아 끼울 때뿐이다. 그런데 번역은 타이핑이 멎고 250ms 뒤에 도는
         // 반면 아래의 자기 편집 창은 200ms 라, 번역할 때마다 창 밖이라 판정돼 조합이 끊겼다.
         // 실기기에서 '어' 를 쓰고 'ㄸ' 를 누르면 '어' 가 지워지는 것으로 나타났다.
-        if (translating) return
+        if (liveInput) return
 
         if (!session.isComposing()) return
 
@@ -601,7 +608,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 if (isCheonjiin() && session.composingText().isNotEmpty()) session.commitPending(editor)
                 else session.pressSpace(editor)
 
-            KeyAction.ENTER -> if (translating) {
+            KeyAction.ENTER -> if (liveInput) {
                 pressEnterWhileTranslating(editor)
             } else {
                 session.pressEnter(editor)
@@ -680,8 +687,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         val editor = editor() ?: return
         session.commitPending(editor)
         session.reset()
-        // 번역 입력줄이 열려 있으면 움직이는 것은 앱 입력란이 아니라 입력줄의 커서다.
-        if (translating) {
+        // 번역 입력줄에 쓰는 중이면 움직이는 것은 앱 입력란이 아니라 입력줄의 커서다.
+        if (liveInput) {
             translateBuffer.moveCursor(delta)
             return
         }
@@ -760,7 +767,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         if (!translating) return
         showTranslateSource()
         prepareTranslator(next)
-        if (llmUsable()) llmClient().warm(next)
+        if (translateLive && llmUsable()) llmClient().warm(next)
     }
 
     private fun enterTranslate() {
@@ -769,9 +776,13 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             notify(getString(R.string.ai_no_connection))
             return
         }
-        // 앱 입력란에 조합 중이던 글자는 거기서 끝낸다. 입력줄은 빈 채로 시작한다.
-        session.commitPending(ConnectionEditor(connection))
-        session.reset()
+        translateLive = Prefs.translateLive(this)
+        // 실시간 번역이면 앱 입력란에 조합 중이던 글자는 거기서 끝낸다. 입력줄은 빈 채로 시작한다.
+        // 실시간이 꺼져 있으면 입력란에 계속 쓰므로 조합을 끊지 않는다.
+        if (translateLive) {
+            session.commitPending(ConnectionEditor(connection))
+            session.reset()
+        }
         translateBuffer.clear()
         forgetTranslation()
         live.reset()
@@ -779,11 +790,55 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         translating = true
         val target = Prefs.translateTarget(this)
         keyboard?.setTranslateMode(true, targetLabels(), target.ordinal)
+        keyboard?.setTranslateLive(translateLive)
         showTranslateSource()
-        keyboard?.setTranslateNote(llmHint())
+        keyboard?.setTranslateNote(if (translateLive) llmHint() else restingNote())
         prepareTranslator(target)
         // 모델을 미리 올리고 이 언어의 지시문을 계산해 둔다 — 첫 글자를 치고 나서 올리면 첫 번역이 십수 초 늦다.
-        if (llmUsable()) llmClient().warm(target)
+        // 큰 모델은 실시간 번역에만 쓴다(전체번역은 ML Kit) — 실시간이 꺼져 있으면 올리지 않는다.
+        if (translateLive && llmUsable()) llmClient().warm(target)
+    }
+
+    /**
+     * 패널의 '실시간' 단추. 실시간 번역을 끄고 켠다(설정에 기억한다).
+     *
+     * - 끄면: 입력줄에 쓰던 한국어를 입력란으로 옮긴다(미리보기로 들어가 있던 번역문 자리에). 이후로는 평소처럼 입력란에 바로 쓰고,
+     *   다 쓴 뒤 '전체번역'·'AI정밀번역' 으로 옮긴다. 쓰던 글이 사라지면 안 된다.
+     * - 켜면: 입력란의 조합을 끝내고 빈 입력줄로 시작한다. 입력란에 이미 쓴 글은 그대로 둔다.
+     */
+    override fun onToggleTranslateLive() {
+        if (!translating) return
+        // 전체번역·AI정밀번역이 입력란을 갈아 끼우는 중에 바꾸면 지울 자리가 어긋난다.
+        if (polishing) {
+            notify(getString(R.string.translate_busy))
+            return
+        }
+        val connection = currentInputConnection ?: return
+        val on = !translateLive
+        lastEditAt = android.os.SystemClock.uptimeMillis()
+        live.reset()
+        llm?.cancelAll()
+        clearFullUndo()
+        if (on) {
+            session.commitPending(ConnectionEditor(connection))
+            session.reset()
+            translateBuffer.clear()
+            forgetTranslation()
+        } else {
+            session.commitPending(translateBuffer)
+            session.reset()
+            translateBuffer.finishComposing()
+            putTranslation(ConnectionEditor(connection), translateBuffer.text)
+            translateBuffer.clear()
+            forgetTranslation()
+        }
+        translateLive = on
+        Prefs.setTranslateLive(this, on)
+        keyboard?.setTranslateLive(on)
+        showTranslateSource()
+        keyboard?.setTranslateNote(restingNote())
+        notify(getString(if (on) R.string.translate_live_on else R.string.translate_live_off))
+        if (on && llmUsable()) llmClient().warm(Prefs.translateTarget(this))
     }
 
     /**
@@ -814,6 +869,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         translateBuffer.clear()
         forgetTranslation()
         clearFullUndo()
+        // 실시간이 꺼져 있었으면 입력란에 조합 중인 글자가 있다. 확정하고 잊는다 — 그냥 잊으면 다음 글자가 그 자리를 덮어 지운다.
+        if (!translateLive) currentInputConnection?.let { session.commitPending(ConnectionEditor(it)) }
         session.reset()
         keyboard?.setTranslateMode(false, targetLabels(), Prefs.translateTarget(this).ordinal)
     }
@@ -828,6 +885,9 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         )
     }
 
+    /** 할 말이 없을 때 안내 줄에 둘 것. 실시간 번역이 꺼져 있으면 그렇다고(입력줄이 없어 무엇을 하는 패널인지 모른다), 아니면 비운다. */
+    private fun restingNote(): String = if (translateLive) "" else getString(R.string.translate_live_off_note)
+
     /** 언어팩이 있으면 바로, 없으면 받고 나서 입력줄의 안내를 바꾼다. */
     private fun prepareTranslator(target: TargetLanguage, then: (() -> Unit)? = null) {
         val translator = this.translator ?: OnDeviceTranslator().also { this.translator = it }
@@ -838,7 +898,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             target,
             onReady = {
                 if (translating) {
-                    if (downloading) keyboard?.setTranslateNote("")
+                    if (downloading) keyboard?.setTranslateNote(restingNote())
                     onTranslateSourceChanged()
                 }
                 then?.invoke()
@@ -852,7 +912,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     /** 입력줄 내용이 바뀌었다. 화면을 갱신하고 잠깐 뒤 번역한다 — 글자마다 돌리면 낭비다. */
     private fun onTranslateSourceChanged() {
-        if (!translating) return
+        if (!liveInput) return
         showTranslateSource()
         // 글을 더 쳤으면 방금 한 '전체번역' 은 되돌릴 자리가 어긋난다.
         clearFullUndo()
@@ -898,21 +958,32 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         connection.deleteSurroundingTextInCodePoints(1, 0)
     }
 
-    /** 기기 번역기를 [TranslationPipeline] 이 쓰는 모양으로. */
+    /**
+     * 기기 번역기를 [TranslationPipeline] 이 쓰는 모양으로. 원문 언어는 **문장마다** 글자로 가린다([SourceLanguage]) — 입력란의
+     * 일본어를 중국어로, 영어 자판으로 친 영어를 일본어로 옮기기도 한다. 이미 목표 언어인 문장은 그대로 둔다. 언어팩이 없으면 받고 나서 옮긴다.
+     */
     private fun deviceEngine(translator: OnDeviceTranslator, target: TargetLanguage) =
-        TranslationPipeline.Engine { text, onResult, onFailed -> translator.translate(text, target, onResult, onFailed) }
+        TranslationPipeline.Engine { text, onResult, onFailed ->
+            val source = SourceLanguage.detect(text) ?: SourceLanguage.KOREAN
+            if (source == target.tag) onResult(text)
+            else translator.translate(text, source, target.tag, onResult, onFailed)
+        }
 
     /** 큰 모델을 쓸 수 있나(받아 뒀고, 기기가 감당하고, 사용자가 안 껐고, 연달아 죽지 않았다). */
     private fun llmUsable(): Boolean = llmClient().usable()
 
-    private fun llmClient(): LlmTranslator = llm ?: LlmTranslator(this).also { llm = it }
+    private fun llmClient(): LlmTranslator = llm ?: LlmTranslator(this).also {
+        // 이 폰에서 너무 느려 쓰지 않기로 했으면 한 번 알린다. 설정 화면에도 이유가 남는다.
+        it.onTooSlow = { ms -> notify(getString(R.string.translate_llm_too_slow, ((ms + 500) / 1000).toInt())) }
+        llm = it
+    }
 
     /** [LiveTranslation] 이 부탁하는 일들. 글·언어가 그사이 바뀌었는지 가리는 것은 저쪽이 하고, 여기는 화면과 번역기만 만진다. */
     private inner class LiveEnv : LiveTranslation.Env {
         private fun target(language: String): TargetLanguage =
             TargetLanguage.entries.firstOrNull { it.tag == language } ?: Prefs.translateTarget(this@SpellKeyboardService)
 
-        override fun source(): String = if (translating) translateBuffer.text.trim() else ""
+        override fun source(): String = if (liveInput) translateBuffer.text.trim() else ""
 
         override fun language(): String = Prefs.translateTarget(this@SpellKeyboardService).tag
 
@@ -927,9 +998,14 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
         override fun translateBig(source: String, language: String, onDone: (TranslationPipeline.Result) -> Unit) {
             val target = target(language)
-            val client = llmClient()
+            val big = llmClient().engine(target)
             val device = translator?.takeIf { it.isReady(target) }?.let { deviceEngine(it, target) }
-            val engine = if (device != null) FallbackEngine(client.engine(target), device) else client.engine(target)
+            val fallback = if (device != null) FallbackEngine(big, device) else big
+            // 큰 모델의 지시문은 한국어 → 목표 언어다. 한국어가 아닌 문장(영어 자판으로 친 영어 등)은 ML Kit 이 옮긴다.
+            val engine = TranslationPipeline.Engine { text, onResult, onFailed ->
+                val korean = (SourceLanguage.detect(text) ?: SourceLanguage.KOREAN) == SourceLanguage.KOREAN
+                if (korean || device == null) fallback.translate(text, onResult, onFailed) else device.translate(text, onResult, onFailed)
+            }
             llmPipeline.translate(source, language, engine, onDone)
         }
 
@@ -938,7 +1014,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
 
         override fun show(result: TranslationPipeline.Result, draft: Boolean) {
-            if (!translating) return
+            if (!liveInput) return
             val connection = currentInputConnection ?: return
             // 이 편집으로 올 커서 알림도 우리 것이다.
             lastEditAt = android.os.SystemClock.uptimeMillis()
@@ -947,7 +1023,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
 
         override fun showEmpty() {
-            if (!translating) return
+            if (!liveInput) return
             val connection = currentInputConnection ?: return
             putTranslation(ConnectionEditor(connection), "")
             keyboard?.setTranslateNote("")
@@ -1044,17 +1120,17 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     /**
      * 입력란에 이미 써 둔 글을 통째로 옮긴다. 두 가지다.
      *
-     * - **'전체번역'**(번역 패널 단추, 번역 동그라미 길게 누르기): **누구나** 기기 안 번역. 서버도 한도도 쓰지 않는다.
+     * - **'전체번역'**(번역 패널 단추): **누구나** 기기 번역(ML Kit). 서버도 한도도 쓰지 않는다. 기기 안 큰 모델은 쓰지 않는다 —
+     *   문장마다 몇 초씩이라 폰에서 1분을 넘겨 시간 초과가 났다(2026-10-11 사용자 제보). 큰 모델은 실시간 번역의 다듬기에만 쓴다.
      * - **'AI정밀번역'**(번역 패널 단추): 구독자는 서버 AI. 실패하면 기기 번역으로 대신한다(아무것도 못 받는 것보다 낫다).
      *   구독자가 아니면 결제 화면으로 보낸다.
      *
-     * 입력줄이 열려 있어 한국어를 쓰는 중이었다면 그 글도 같이 옮긴다. 입력란 끝에 미리보기로 들어가 있던
+     * 원문 언어는 문장마다 가린다([deviceEngine]) — 입력란의 일본어를 중국어로 옮기기도 한다.
+     * 입력줄에 한국어를 쓰는 중이었다면 그 글도 같이 옮긴다. 입력란 끝에 미리보기로 들어가 있던
      * 번역문은 원문이 아니므로 뺀다. 방금 한 번역은 [fullUndo] 로 되돌릴 수 있다 — '전체번역' 단추가 '되돌리기' 로 바뀐다.
      * 되돌리기가 떠 있을 때 AI정밀번역을 누르면 되돌리지 않고, 쥐고 있던 **원문**을 AI 로 다시 옮겨 방금 번역을 갈아 끼운다.
      */
     override fun onTranslateAll() = translateAll(ai = false)
-
-    override fun onTranslateField() = translateAll(ai = false)
 
     override fun onTranslateAi() {
         // 구독자인지는 폰이 아는 만큼만 본다(Play 구매 토큰 또는 서버가 마지막으로 알려 준 요금제). 진짜 한도 판단은 서버가 한다.
@@ -1070,7 +1146,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         if (pending != null && !ai) {
             // AI 가 같은 자리를 갈아 끼우는 중에 되돌리면, AI 결과가 와서 엉뚱한 글자를 지운다.
             if (polishing) {
-                notify(getString(R.string.ai_busy))
+                notify(getString(R.string.translate_busy))
                 return
             }
             undoFullTranslate()
@@ -1080,7 +1156,12 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             notify(getString(R.string.sensitive_field_blocked))
             return
         }
-        if (polishing || aiBusy) {
+        // 번역하는 중에 또 누르면 '교정' 이 아니라 '번역' 중이라고 말한다(예전에는 '이미 교정하는 중입니다' 가 떴다 — 사용자 제보).
+        if (polishing) {
+            notify(getString(R.string.translate_busy))
+            return
+        }
+        if (aiBusy) {
             notify(getString(R.string.ai_busy))
             return
         }
@@ -1105,12 +1186,17 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             deleteAfter = 0
         } else {
             val editor = ConnectionEditor(connection)
-            val inserted = if (translating) translateOutput.inserted else 0
+            // 실시간 번역이 꺼져 있으면 입력란에 바로 쓰는 중이다 — 조합 중인 글자를 먼저 확정해야 원문에 든다.
+            if (!liveInput) {
+                session.commitPending(editor)
+                session.reset()
+            }
+            val inserted = if (liveInput) translateOutput.inserted else 0
             val beforeAll = session.readBeforeCursor(editor, (if (useAi) AI_BEFORE_CHARS else FULL_BEFORE_CHARS) + inserted)
             // 입력란 끝에 미리보기로 들어가 있는 번역문은 원문이 아니다.
             val prefix = if (inserted in 1..beforeAll.length) beforeAll.dropLast(inserted) else beforeAll
             val after = connection.getTextAfterCursor(if (useAi) AI_AFTER_CHARS else FULL_AFTER_CHARS, 0)?.toString().orEmpty()
-            val typed = if (translating) translateBuffer.text.trim() else ""
+            val typed = if (liveInput) translateBuffer.text.trim() else ""
             val joiner = if (typed.isNotEmpty() && prefix.isNotEmpty() && !prefix.last().isWhitespace()) " " else ""
             original = prefix + joiner + typed + after
             // 지울 범위: 커서 앞은 (원문 + 미리보기 번역문), 커서 뒤는 전부.
@@ -1128,9 +1214,11 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         val requestId = aiRequestId.incrementAndGet()
         mainHandler.postDelayed({
             if (polishing && aiRequestId.get() == requestId) {
+                // 포기한다. 늦게 온 결과는 버린다 — 사용자가 그사이 글을 고쳤을 수 있다.
+                aiRequestId.incrementAndGet()
                 polishing = false
                 keyboard?.setTranslateBusy(false)
-                notify(getString(R.string.ai_timeout))
+                notify(getString(if (useAi) R.string.ai_timeout else R.string.translate_timeout))
             }
         }, AI_WATCHDOG_MS)
 
@@ -1138,29 +1226,24 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             if (aiRequestId.get() != requestId) return
             polishing = false
             keyboard?.setTranslateBusy(false)
-            applyFullTranslation(original, deleteBefore, deleteAfter, translated)
+            applyFullTranslation(original, deleteBefore, deleteAfter, translated, target)
         }
 
-        // 기기 번역. 언어팩이 아직 없으면 받고 나서 한다.
+        // 기기 번역(ML Kit). 문장마다 원문 언어를 가려 옮기고, 그 언어팩이 없으면 받고 나서 옮긴다.
         fun onDevice() {
-            prepareTranslator(target) {
-                val translator = this.translator
-                if (aiRequestId.get() != requestId || translator == null || !translator.isReady(target)) {
-                    if (aiRequestId.get() == requestId) {
-                        polishing = false
-                        keyboard?.setTranslateBusy(false)
-                    }
-                    return@prepareTranslator
-                }
-                // 큰 모델을 쓸 수 있고 글이 너무 길지 않으면 그것으로(문장마다 1~3초라 긴 글은 오래 걸린다). 아니면 ML Kit.
-                val big = llmClient().takeIf { original.length <= LLM_FULL_MAX_CHARS && it.usable() }
-                val device = deviceEngine(translator, target)
-                val pipeline = if (big != null) llmPipeline else translationPipeline
-                val engine = if (big != null) FallbackEngine(big.engine(target), device) else device
-                pipeline.translate(original, target.tag, engine) { result ->
-                    if (result.failed > 0) notify(getString(R.string.translate_failed))
-                    finish(result.text)
-                }
+            if (aiRequestId.get() != requestId) return
+            val translator = this.translator ?: OnDeviceTranslator().also { this.translator = it }
+            // 이번 실행에서 아직 확인하지 않은 언어 짝이 있으면 언어팩을 받아야 할 수도 있다(입력란의 일본어를 처음 옮길 때 등).
+            // 이미 받아 둔 것이면 금방 끝나므로 조금 기다렸다가 그래도 안 끝났으면 알린다 — 아무 말 없이 오래 걸리면 고장으로 보인다.
+            val needed = sentenceSplitter.split(original).mapNotNull { SourceLanguage.detect(it) }.toSet() - target.tag
+            if (needed.any { !translator.isReady(it, target.tag) }) {
+                mainHandler.postDelayed({
+                    if (polishing && aiRequestId.get() == requestId) notify(getString(R.string.translate_downloading_any))
+                }, DOWNLOAD_NOTICE_MS)
+            }
+            translationPipeline.translate(original, target.tag, deviceEngine(translator, target)) { result ->
+                if (result.failed > 0) notify(getString(R.string.translate_failed))
+                finish(result.text)
             }
         }
 
@@ -1191,10 +1274,14 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     /** 입력란의 글을 번역문으로 갈아 끼운다. 입력줄은 비우고, 되돌릴 수 있게 원문을 쥔다. */
-    private fun applyFullTranslation(original: String, deleteBefore: Int, deleteAfter: Int, translated: String) {
+    private fun applyFullTranslation(original: String, deleteBefore: Int, deleteAfter: Int, translated: String, target: TargetLanguage) {
         val connection = currentInputConnection ?: return
         if (translated.isBlank() || translated == original) {
-            notify(getString(R.string.ai_unchanged))
+            // 이미 그 언어로 쓴 글이면 그렇다고 말한다. 'AI 가 보기에 고칠 것이 없습니다' 는 교정의 말이다.
+            notify(
+                if (SourceLanguage.detect(original) == target.tag) getString(R.string.translate_already, target.label(this))
+                else getString(R.string.translate_nothing)
+            )
             return
         }
         lastEditAt = android.os.SystemClock.uptimeMillis()
@@ -1211,7 +1298,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             translateBuffer.clear()
             forgetTranslation()
             showTranslateSource()
-            keyboard?.setTranslateNote("")
+            keyboard?.setTranslateNote(restingNote())
         }
         fullUndo = FullUndo(original, translated.length)
         keyboard?.setTranslateUndo(true)
@@ -1228,7 +1315,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         connection.commitText(undo.original, 1)
         connection.endBatchEdit()
         session.reset()
-        if (translating) keyboard?.setTranslateNote("")
+        if (translating) keyboard?.setTranslateNote(restingNote())
     }
 
     private fun clearFullUndo() {
@@ -1239,7 +1326,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     /** 번역 입력줄의 글자를 눌러 커서를 옮긴다. */
     override fun onTranslateCaret(index: Int) {
-        if (!translating) return
+        if (!liveInput) return
         session.commitPending(translateBuffer)
         session.reset()
         translateBuffer.setCursor(index)
@@ -1261,11 +1348,16 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      * 다른 스레드에서 돌린다.
      */
     override fun onCorrectAll() {
-        if (translating) {
+        // 실시간 번역 중에는 입력란에 번역문이 들어가 있다 — 그걸 고치면 안 된다. 실시간을 끄면 입력란에 바로 쓰므로 고칠 수 있다.
+        if (liveInput) {
             notify(getString(R.string.translate_blocks_ai))
             return
         }
-        if (aiBusy || polishing) {
+        if (polishing) {
+            notify(getString(R.string.translate_busy))
+            return
+        }
+        if (aiBusy) {
             notify(getString(R.string.ai_busy))
             return
         }
@@ -1297,19 +1389,13 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
                 keyboard?.setAiBusy(false)
                 result
                     .onSuccess { fixed ->
-                        // 고성능 모델(제마)을 받아 둔 폰이면 엔진 결과를 넣은 **뒤에** 한 번 더 다듬는다. 엔진 결과는 기다림 없이 바로 보이고,
-                        // 모델을 처음 올리느라 오래 걸려도 사용자가 멈춘 키보드를 보지 않는다.
-                        val big = llmClient().takeIf { fixed.text.length <= LLM_CORRECT_MAX_CHARS && it.usable() }
                         if (!fixed.changed) {
                             // 이건 AI 가 아니라 기기 안 교정이다. "AI 가 보기에" 라고 하면
                             // 서버까지 갔다 온 줄 알고 AI 를 다시 안 눌러 본다.
-                            if (big == null) notify(getString(R.string.correct_all_unchanged))
-                            else polishWithLlm(big, before, after, fixed.text, engineChanged = false)
+                            notify(getString(R.string.correct_all_unchanged))
                         } else {
                             applyAiResult(before, after, fixed.text)
                             notify(resources.getQuantityString(R.plurals.correct_all_done, fixed.corrections.size, fixed.corrections.size))
-                            // 갈아 끼우면 커서는 고친 글 끝에 선다 — 이제 커서 앞이 고친 글 전부다.
-                            if (big != null) polishWithLlm(big, fixed.text, "", fixed.text, engineChanged = true)
                         }
                     }
                     .onFailure { notify(getString(R.string.correct_all_failed)) }
@@ -1320,86 +1406,6 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
-    /**
-     * 기기 안 큰 모델(제마)로 '전체' 교정을 한 번 더 다듬는다.
-     *
-     * 우리 엔진이 고친 글([text])을 문장 조각으로 나눠([LlmCorrection.segments]) 하나씩 고치게 하고, 모델이 바꾼 것 가운데
-     * **믿을 만한 것만** 받아들인다([LlmMerge] — 글자는 사람이 실제로 내는 오타 방향 고침만, 띄어쓰기는 붙여도 되는 보조용언 자리를 빼고.
-     * 멀쩡한 말을 딴 말·딴 말투로 바꾼 것은 되돌린다. 문맥 교정기와 같은 기준).
-     * 모델이 못 고친 조각은 그대로 둔다. 다 끝나면 입력란이 [before]·[after] 그대로인지 다시 보고서야 갈아 끼운다 — 몇 초 걸리는 사이
-     * 사용자가 더 쳤으면 엉뚱한 자리를 지운다.
-     */
-    private fun polishWithLlm(big: LlmTranslator, before: String, after: String, text: String, engineChanged: Boolean) {
-        // 언어모델이 아직 안 올라왔으면 모델 고침을 가릴 수 없다 — 다듬지 않는다(엔진 결과는 이미 들어갔다).
-        val context = session.engine.context
-        val segments = if (context == null) emptyList()
-        else LlmCorrection.segments(text).filter { range -> text.substring(range).any { it in '가'..'힣' } }
-        if (context == null || segments.isEmpty()) {
-            if (!engineChanged) notify(getString(R.string.correct_all_unchanged))
-            return
-        }
-        aiBusy = true
-        keyboard?.setAiBusy(true)
-        notify(getString(R.string.correct_all_polishing))
-        val requestId = aiRequestId.incrementAndGet()
-        // 감시 타이머. 번역 쪽이 모델 요청을 거두면(cancelAll) 콜백이 안 와서 '끝' 을 영영 못 듣는다 — 그러면 '전체'·AI 단추가
-        // 계속 '처리 중' 으로 막힌다. 넉넉히 기다린 뒤 스스로 푼다(모델이 처음 올라오는 데 1분까지 걸린다).
-        mainHandler.postDelayed({
-            if (aiRequestId.get() == requestId && aiBusy) {
-                aiRequestId.incrementAndGet()
-                aiBusy = false
-                keyboard?.setAiBusy(false)
-            }
-        }, POLISH_WATCHDOG_MS)
-        val results = arrayOfNulls<String>(segments.size)
-        var remaining = segments.size
-        val engine = big.corrector()
-        val frequency: (String) -> Float? = { word -> context.lnCount(word) }
-
-        fun done() {
-            if (aiRequestId.get() != requestId) return
-            aiBusy = false
-            keyboard?.setAiBusy(false)
-            val polished = results.count { it != null }
-            if (polished == 0) {
-                // 엔진도 모델도 고칠 것이 없었으면 늘 하던 말을 한다.
-                notify(getString(if (engineChanged) R.string.correct_all_polish_none else R.string.correct_all_unchanged))
-                return
-            }
-            val out = StringBuilder(text)
-            for (k in segments.indices.reversed()) results[k]?.let { out.replace(segments[k].first, segments[k].last + 1, it) }
-            if (!fieldStill(before, after)) {
-                notify(getString(R.string.correct_all_polish_skipped))
-                return
-            }
-            applyAiResult(before, after, out.toString())
-            notify(getString(R.string.correct_all_polished, polished))
-        }
-
-        for ((k, range) in segments.withIndex()) {
-            val piece = text.substring(range)
-            engine.translate(
-                piece,
-                { reply ->
-                    if (aiRequestId.get() == requestId) {
-                        val merged = LlmMerge.merge(piece, reply, frequency)
-                        if (merged != piece) results[k] = merged
-                    }
-                    if (--remaining == 0) done()
-                },
-                { if (--remaining == 0) done() }
-            )
-        }
-    }
-
-    /** 입력란의 커서 앞뒤가 아직 [before]·[after] 그대로인가. 되읽기가 안 되는 앱이면 우리가 써 넣은 사본으로 본다. */
-    private fun fieldStill(before: String, after: String): Boolean {
-        val connection = currentInputConnection ?: return false
-        val nowBefore = session.readBeforeCursor(ConnectionEditor(connection), before.length)
-        val nowAfter = connection.getTextAfterCursor(after.length, 0)?.toString().orEmpty()
-        return nowBefore == before && nowAfter == after
-    }
-
     override fun onAiCorrect() {
         // 단추를 감추는 것만 믿지 않는다. 감추기는 화면의 일이고, 이 줄은 글이 기기 밖으로
         // 나가는 마지막 문이다. 문은 문대로 잠가 둔다.
@@ -1407,8 +1413,12 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
             notify(getString(R.string.sensitive_field_blocked))
             return
         }
-        if (translating) {
+        if (liveInput) {
             notify(getString(R.string.translate_blocks_ai))
+            return
+        }
+        if (polishing) {
+            notify(getString(R.string.translate_busy))
             return
         }
         // 아래 세 가지는 예전에 조용히 return 했다. 그러면 눌러도 **아무 일도 안 일어나고**,
@@ -1589,7 +1599,7 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
      */
     private fun editor(): Editor? {
         lastEditAt = android.os.SystemClock.uptimeMillis()
-        if (translating) return translateBuffer
+        if (liveInput) return translateBuffer
         return currentInputConnection?.let(::ConnectionEditor)
     }
 
@@ -1663,17 +1673,8 @@ class SpellKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     private companion object {
-        /** '전체번역' 에서 큰 모델을 쓸 글의 최대 길이. 문장마다 1~3초라 이보다 길면 ML Kit 으로 한다. */
-        private const val LLM_FULL_MAX_CHARS = 400
-
-        /**
-         * '전체' 교정을 고성능 모델로 한 번 더 다듬을 글의 최대 길이. 조각(120자 안팎)마다 폰에서 1~3초라, 넘으면 엔진 결과만 둔다.
-         * 엔진 결과는 어차피 먼저 들어가므로 길어서 안 다듬어도 잃는 것은 없다.
-         */
-        private const val LLM_CORRECT_MAX_CHARS = 600
-
-        /** 고성능 모델로 다듬기를 기다리는 한도. 넘으면 '처리 중' 을 스스로 푼다(엔진 결과는 이미 들어가 있다). */
-        private const val POLISH_WATCHDOG_MS = 120_000L
+        /** 전체번역이 이만큼 지나도 안 끝났고 아직 확인 안 한 언어가 있었으면 '언어팩 받는 중' 을 알린다. */
+        private const val DOWNLOAD_NOTICE_MS = 1_500L
 
         /** 번역 패널에서 '고성능 번역을 받으면 더 정확하다' 는 안내를 보이는 최대 횟수. */
         private const val LLM_HINT_MAX = 3

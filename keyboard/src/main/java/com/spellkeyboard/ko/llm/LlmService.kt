@@ -10,7 +10,6 @@ import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.Process
-import com.spellkeyboard.core.translate.LlmCorrection
 import com.spellkeyboard.core.translate.LlmOutput
 import com.spellkeyboard.core.translate.LlmPrompt
 import java.io.File
@@ -143,9 +142,7 @@ class LlmService : Service() {
             replyResult(replyTo, id, LlmProtocol.STATUS_FAILED, null)
             return
         }
-        // 교정 요청이면 교정문 거름(원문과 거의 같아야 한다), 번역이면 번역문 거름(한글이 남으면 안 된다). 보는 것이 반대다.
-        val cleaned = if (lang == LlmPrompt.CORRECT) LlmCorrection.clean(raw.toString(Charsets.UTF_8), text)
-        else LlmOutput.clean(raw.toString(Charsets.UTF_8), text, lang)
+        val cleaned = LlmOutput.clean(raw.toString(Charsets.UTF_8), text, lang)
         if (cleaned == null) replyResult(replyTo, id, LlmProtocol.STATUS_BAD_OUTPUT, null)
         else replyResult(replyTo, id, 0, cleaned)
     }

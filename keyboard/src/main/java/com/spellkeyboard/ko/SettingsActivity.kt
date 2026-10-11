@@ -209,7 +209,10 @@ class SettingsActivity : AppCompatActivity() {
                     action.visibility = View.GONE
                 }
                 LlmModelStore.State.READY -> {
-                    status.setText(R.string.setting_llm_status_ready)
+                    // 키보드가 재 보니 너무 느려 쓰지 않기로 했으면 그 까닭을 보인다(LlmTranslator). '사용' 을 껐다 켜면 지워진다.
+                    val slowMs = Prefs.llmSlowMs(this)
+                    if (slowMs > 0) status.text = getString(R.string.setting_llm_status_slow, ((slowMs + 500) / 1000).toInt())
+                    else status.setText(R.string.setting_llm_status_ready)
                     action.visibility = View.GONE
                 }
                 LlmModelStore.State.FAILED -> {
@@ -262,8 +265,8 @@ class SettingsActivity : AppCompatActivity() {
                 .setNegativeButton(R.string.setting_llm_delete_no, null)
                 .show()
         }
-        on.setOnClickListener { Prefs.setLlmEnabled(this, true); showUse() }
-        off.setOnClickListener { Prefs.setLlmEnabled(this, false); showUse() }
+        on.setOnClickListener { Prefs.setLlmEnabled(this, true); showUse(); render() }
+        off.setOnClickListener { Prefs.setLlmEnabled(this, false); showUse(); render() }
 
         showUse()
         render()

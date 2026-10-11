@@ -25,6 +25,14 @@ class TranslationMemoryTest {
     }
 
     @Test
+    fun `일본어·중국어 번역문은 문장 사이를 띄지 않는다`() {
+        val memory = TranslationMemory()
+        memory.remember("안녕하세요.", "こんにちは。")
+        memory.remember("잘 지내요?", "元気ですか？")
+        assertEquals("こんにちは。元気ですか？", memory.assemble(listOf("안녕하세요.", "잘 지내요?")))
+    }
+
+    @Test
     fun `언어가 바뀌면 통째로 버린다`() {
         val memory = TranslationMemory()
         memory.remember("안녕하세요", "Hello")

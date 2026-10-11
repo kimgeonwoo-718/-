@@ -20,6 +20,18 @@ class SentenceSplitterTest {
     }
 
     @Test
+    fun `띄어쓰기 없는 일본어·중국어도 전각 부호에서 자른다`() {
+        // 한 덩어리로 넘기면 번역기가 가운데 문장을 삼킨다. 입력란의 일본어를 중국어로 옮길 때 그랬다(2026-10-11).
+        assertEquals(listOf("こんにちは。", "元気ですか？"), plain.split("こんにちは。元気ですか？"))
+        assertEquals(listOf("你好！", "我很好。", "你呢？"), plain.split("你好！我很好。你呢？"))
+        // 닫는 괄호는 앞 문장에 붙는다.
+        assertEquals(listOf("「はい。」", "そうです。"), plain.split("「はい。」そうです。"))
+        // 반각 부호는 어절 안에서 자르지 않는다.
+        assertEquals(listOf("평점 3.5점이에요"), plain.split("평점 3.5점이에요"))
+        assertEquals(listOf("좋아요.)", "다음에 봐요"), plain.split("좋아요.) 다음에 봐요"))
+    }
+
+    @Test
     fun `줄바꿈에서 자른다`() {
         assertEquals(listOf("첫 줄", "둘째 줄"), plain.split("첫 줄\n둘째 줄"))
     }

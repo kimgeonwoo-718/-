@@ -13,7 +13,9 @@ object Prefs {
     private const val KEY_THEME = "theme_mode"
     private const val KEY_LAYOUT = "layout_type"
     private const val KEY_TRANSLATE_TARGET = "translate_target"
+    private const val KEY_TRANSLATE_LIVE = "translate_live"
     private const val KEY_LLM_ENABLED = "llm_enabled"
+    private const val KEY_LLM_SLOW_MS = "llm_slow_ms"
     private const val KEY_LLM_HINT_SHOWN = "llm_hint_shown"
     private const val KEY_KEY_ALPHA = "key_alpha_percent"
     private const val KEY_TOOLBAR_COLLAPSED = "toolbar_collapsed"
@@ -95,13 +97,34 @@ object Prefs {
     }
 
     /**
+     * 번역 패널의 실시간 번역. 켜져 있으면 패널의 입력줄에 친 한국어가 치는 동안 번역돼 입력란에 들어가고, 꺼져 있으면 평소처럼
+     * 입력란에 바로 쓰고 다 쓴 뒤 '전체번역'·'AI정밀번역' 으로 옮긴다. 마지막에 고른 것을 기억한다.
+     */
+    fun translateLive(context: Context): Boolean = prefs(context).getBoolean(KEY_TRANSLATE_LIVE, true)
+
+    fun setTranslateLive(context: Context, live: Boolean) {
+        prefs(context).edit().putBoolean(KEY_TRANSLATE_LIVE, live).apply()
+    }
+
+    /**
      * 기기 안 큰 모델(고성능 번역)을 쓰는가. 모델을 받아 두었을 때만 뜻이 있다 — 받지 않았으면 이 값과 상관없이 ML Kit 이다.
      * 기본은 켬: 받았다는 것이 쓰겠다는 뜻이다.
      */
     fun llmEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_LLM_ENABLED, true)
 
+    /** 켜고 끄면 '느려서 안 씀' 표시([llmSlowMs])도 지운다 — 사용자가 다시 켰으면 다시 재 본다. */
     fun setLlmEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_LLM_ENABLED, enabled).apply()
+        prefs(context).edit().putBoolean(KEY_LLM_ENABLED, enabled).remove(KEY_LLM_SLOW_MS).apply()
+    }
+
+    /**
+     * 이 기기에서 큰 모델이 문장 하나에 걸린 시간(ms) — **너무 느려서 쓰지 않기로 했을 때만** 있다(0 이면 없음).
+     * 키보드가 재 보고 정한다([com.spellkeyboard.ko.llm.LlmTranslator]). 설정 화면이 이유를 보여 준다.
+     */
+    fun llmSlowMs(context: Context): Long = prefs(context).getLong(KEY_LLM_SLOW_MS, 0L)
+
+    fun setLlmSlowMs(context: Context, ms: Long) {
+        prefs(context).edit().putLong(KEY_LLM_SLOW_MS, ms).apply()
     }
 
     /** 번역 패널에서 '고성능 번역을 받으면 더 정확하다' 는 안내를 보인 횟수. 세 번까지만 보인다. */

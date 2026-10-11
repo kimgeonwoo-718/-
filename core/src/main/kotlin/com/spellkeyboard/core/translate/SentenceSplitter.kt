@@ -46,18 +46,45 @@ class SentenceSplitter(
                 if (value.any { it == '\n' }) flush(current, out) else if (current.isNotEmpty()) current.append(' ')
                 continue
             }
-            if (current.isNotEmpty() && current.length + value.length > maxChars) flush(current, out)
-            current.append(value)
-            if (endsHere(value)) flush(current, out)
+            for (piece in pieces(value)) {
+                if (current.isNotEmpty() && current.length + piece.length > maxChars) flush(current, out)
+                current.append(piece)
+                if (endsHere(piece)) flush(current, out)
+            }
         }
         flush(current, out)
+        return out
+    }
+
+    /**
+     * 띄어쓰기 없는 어절 안의 문장 끝. 일본어·중국어는 문장 사이를 띄지 않아서('こんにちは。元気ですか？') 어절 단위로만 보면
+     * 여러 문장이 한 덩어리로 번역기에 들어가 가운데가 사라진다. 전각 부호(`。！？`) 뒤에서 자른다 — 닫는 괄호·따옴표는 앞 문장에 붙인다.
+     * 반각 `. ! ?` 은 어절 안에서 자르지 않는다(3.5, U.S., 주소).
+     */
+    private fun pieces(token: String): List<String> {
+        if (token.none { it in WIDE_ENDERS }) return listOf(token)
+        val out = ArrayList<String>()
+        var start = 0
+        var i = 0
+        while (i < token.length) {
+            if (token[i] !in WIDE_ENDERS) {
+                i++
+                continue
+            }
+            while (i < token.length && token[i] in WIDE_ENDERS) i++
+            while (i < token.length && token[i] in CLOSERS) i++
+            out += token.substring(start, i)
+            start = i
+        }
+        if (start < token.length) out += token.substring(start)
         return out
     }
 
     /** 이 어절 뒤에서 문장이 끝나는가. */
     private fun endsHere(word: String): Boolean {
         val core = word.trimEnd(*TRAILING)
-        if (word.length > core.length && word.last() in ENDERS) return true
+        // 끝의 부호 덩어리에 문장 부호가 있으면 끝이다 — 닫는 괄호·따옴표가 뒤에 붙어도('はい。」', '좋아요.)').
+        if (word.substring(core.length).any { it in ENDERS }) return true
         // 부호가 없으면 종결어미로 판단한다. 조사가 붙은 인용('좋아요라고')은 EF 로 안 끝난다.
         return core.isNotEmpty() && core.all { it in HANGUL } && endsSentence(core)
     }
@@ -74,8 +101,10 @@ class SentenceSplitter(
 
         private val TOKEN = Regex("""\S+|\s+""")
         private val ENDERS = setOf('.', '!', '?', '…', '。', '！', '？')
+        private val WIDE_ENDERS = setOf('。', '！', '？')
+        private val CLOSERS = setOf('」', '』', '）', ')', '"', '”', '’', '\'')
         private val TRAILING = charArrayOf(
-            '.', '!', '?', '…', '。', '！', '？', ',', '"', '\'', ')', ']', '»', '”', '’', '~'
+            '.', '!', '?', '…', '。', '！', '？', ',', '"', '\'', ')', ']', '»', '”', '’', '~', '」', '』', '）'
         )
         private val HANGUL = '가'..'힣'
     }
