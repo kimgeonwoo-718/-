@@ -72,5 +72,19 @@ if __name__ == "__main__":
     use_guard = True
     if args and args[0] == "--no-guard":
         use_guard, args = False, args[1:]
+    # -f 파일: 한 줄에 한 문장. 큰 시험지(build-sheet.py)를 통째로 돌릴 때 쓴다 — 바뀐 줄만 찍는다.
+    if args and args[0] == "-f":
+        changed = total = 0
+        for line in open(args[1], encoding="utf-8"):
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            total += 1
+            fixed = fix(s, use_guard)
+            if fixed:
+                changed += 1
+                print(f"{s}  →  {fixed}")
+        print(f"바뀐 문장 {changed} / {total}")
+        sys.exit(0)
     for s in args:
         print(f"{s}  →  {fix(s, use_guard) or '(그대로)'}")

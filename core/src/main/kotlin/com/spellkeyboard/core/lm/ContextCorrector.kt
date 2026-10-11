@@ -290,11 +290,33 @@ class ContextCorrector(
         val pieceBoundary = BooleanArray(n + 1)
         val spans = collectSpans(text, n, cores, starts, ends, boundary, pieceBoundary)
         val layout = Layout(cores, boundary, starts, owner, pieceBoundary)
+        // 음절 자리마다, 그 음절이 든 원래 어절이 멀쩡한 말이면 그 어절의 길이(아니면 0). 편집 후보를 거르는 데 쓴다([singleEdits]).
+        // 붙여 쓴 덩어리의 조각이 멀쩡한 말이면 그 조각 길이를 **음수로** 적는다 — 받침 넣기는 그쪽만 막는다.
+        // 붙여 쓴 덩어리는 형태소 사전이 나눈 조각마다 본다 — '운전하는거' 의 '운전하는'·'거' 는 멀쩡한 말이라 '거 → 건' 으로 받침을
+        // 넣지 않는다(큰 시험지 2026-10-11: '운전하는거 재미있어요 → 운전하는건').
+        val realLength = IntArray(n)
+        for ((k, core) in cores.withIndex()) {
+            if (isRealWord(core)) {
+                for (p in starts[k] until ends[k]) realLength[p] = core.length
+                continue
+            }
+            val spaced = splitOf(core) ?: continue
+            var at = starts[k]
+            for (piece in spaced.split(' ')) {
+                if (isRealWord(piece)) for (p in at until at + piece.length) realLength[p] = -piece.length
+                at += piece.length
+            }
+        }
+        // 멀쩡한 말 한가운데 자리인가 — 그 자리에서 자르면서 글자까지 바꾸면 거의 언제나 딴 말이다('경영대를 → 경영 때를').
+        fun insideRealWord(p: Int): Boolean =
+            p in 1 until n && !boundary[p] && !pieceBoundary[p] && owner[p] == owner[p - 1] &&
+                realLength[p] != 0 && realLength[p - 1] != 0
         val candidates = HashMap<Long, List<Candidate>>()
         for (span in spans) {
             val key = spanKey(span.start, span.end)
             val list = candidates[key]
-            val fresh = candidatesFor(text.substring(span.start, span.end), span.kind)
+            val edits = !(span.kind == KIND_FREE && (insideRealWord(span.start) || insideRealWord(span.end)))
+            val fresh = candidatesFor(text.substring(span.start, span.end), span.kind, edits) { realLength[span.start + it] }
             candidates[key] = if (list == null) fresh else merge(list, fresh)
         }
 
@@ -466,7 +488,16 @@ class ContextCorrector(
         return spans
     }
 
-    private fun candidatesFor(surface: String, kind: Int): List<Candidate> {
+    /**
+     * @param edits 글자를 고친 후보도 낼 것인가. 멀쩡한 말 한가운데를 자르는 자유 구간이면 false.
+     * @param realLength 구간 안 음절 자리 → 그 음절이 든 원래 어절이 멀쩡한 말이면 그 길이, 아니면 0([isRealWord]).
+     */
+    private fun candidatesFor(
+        surface: String,
+        kind: Int,
+        edits: Boolean = true,
+        realLength: (Int) -> Int = { 0 }
+    ): List<Candidate> {
         val identityCount = lm.lnCount(surface)
         val identityKnown = identityCount != null
         val out = ArrayList<Candidate>()
@@ -478,16 +509,20 @@ class ContextCorrector(
             // 조사·어미로 시작하는 조각('로', '이라는')은 어절이 아니므로 뺀다.
             KIND_MERGE, KIND_FREE -> if (identityKnown && !startsBound(surface)) out += Candidate(surface, 0f)
         }
-        if (kind == KIND_PIECE) return out
+        if (kind == KIND_PIECE || !edits) return out
 
         // 편집 후보는 언어모델이 아는 어절만. 모르는 말끼리 형태소 비용으로 겨루게 하면
         // 이름과 외래어('웰트쿠겔브루넨')가 비슷한 소리의 엉뚱한 말로 바뀐다.
         val penalty = knownPenalty(identityCount) + EDIT_BASE_COST
         for ((edited, cost) in singleEdits(
             surface,
-            codaSlip = (identityCount ?: -1f) < CODA_SLIP_MAX_LN,
+            // 받침 넣기는 드문 말에만, 그리고 형태소 분석이 **아주 자연스러운** 말에는 안 한다 — '후련하고 → 훈련하고',
+            // '좋아하시니까 → 좋아하십니까', '이해해주기 → 이해해주길' 은 분석 비용이 -1700 ~ -2600 인 멀쩡한 말이었다. 진짜 오타
+            // ('채을' 2083, '생가보다' -470, '사란이' 584)는 그 위에 있다(큰 시험지 2026-10-11).
+            codaSlip = (identityCount ?: -1f) < CODA_SLIP_MAX_LN && (morphCost(surface) ?: 0) >= NATURAL_WORD_COST,
             nearKey = (identityCount ?: -1f) < NEAR_KEY_MAX_LN,
-            cheonjiinKey = cheonjiin && (identityCount ?: -1f) < CJI_MAX_LN
+            cheonjiinKey = cheonjiin && (identityCount ?: -1f) < CJI_MAX_LN,
+            realLength = realLength
         )) {
             if (lm.lnCount(edited) != null && !(kind == KIND_FREE && startsBound(edited)) &&
                 !hearsayToConnective(surface, edited)
@@ -495,9 +530,11 @@ class ContextCorrector(
                 out += Candidate(edited, -(cost + penalty))
             }
         }
+        // 두 군데 고치기는 **없는 말**에만, 그리고 두 걸음 다 사람이 실제로 내는 오타 방향일 때만(햇는대요 → 했는데요).
+        // 소리 같은 받침끼리 바꾸는 걸음이 끼면 딴 말이 된다('잊는게 → 잇는게 → 있는게').
         if (kind == KIND_IDENTITY && !identityKnown && surface.length <= MAX_DOUBLE_EDIT_SYLLABLES) {
-            for ((once, cost1) in singleEdits(surface)) {
-                for ((twice, cost2) in singleEdits(once)) {
+            for ((once, cost1) in singleEdits(surface, realLength = { surface.length })) {
+                for ((twice, cost2) in singleEdits(once, realLength = { once.length })) {
                     if (twice != surface && lm.lnCount(twice) != null) {
                         out += Candidate(twice, -(cost1 + cost2 + EDIT_BASE_COST))
                     }
@@ -594,6 +631,9 @@ class ContextCorrector(
                 if (endsWithBoundaryMarker(prevKey)) cost += BOUNDARY_MARKER_BONUS
                 else if (nounJunction(prevKey, text)) cost -= NOUN_JUNCTION_COST
                 if (endsWithAEo(prevKey) && spacer?.tagAt(core, offset)?.let { spacer?.isVerbTag(it) } == true) return null
+                // 같은 '-아/-어' 뒤라도 한 어절로 분석했을 때 **형태소 한가운데**면 자르지 않는다 — '떨어져야할' 은
+                // 떨어지/VV 한 덩어리라 '떨어|져야할' 자리에서 시작하는 형태소가 없다(큰 시험지 2026-10-11).
+                if (endsWithAEo(prevKey) && isWellFormed(core) && spacer?.tagAt(core, offset) == null) return null
                 // 체언 뒤의 '받다·당하다·시키다·드리다' 는 한 낱말이다('발급받았다', '인계받았다').
                 if (ATTACHABLE_VERBS.any { text.startsWith(it) } && endsNominal(prevKey)) return null
             }
@@ -689,6 +729,19 @@ class ContextCorrector(
         synchronized(wellFormed) { wellFormed[text] = formed }
         return formed
     }
+
+    /**
+     * 사람이 친 이 어절이 **멀쩡한 말**인가 — 말뭉치가 알거나, 형태소 사전이 한 어절로 무리 없이 읽는다.
+     *
+     * 멀쩡한 말은 사람이 실제로 내는 오타 방향으로만 고친다([singleEdits] 의 `realLength`). 그 밖의 편집은 **딴 말로 바꾸는 것**이라
+     * 문맥 점수가 조금 낫다고 해서 자동으로 바꾸면 안 된다. 큰 시험지(챗봇 답 6천 문장, 2026-10-11)에서 디코더가 글자를 바꾼 것을
+     * 하나씩 판정해 보니 틀린 것이 거의 이 꼴이었다 — '깨 볶는 → 개 볶는', '짐 싸세요 → 사세요', '썸 → 섬', '잊는게 → 있는게',
+     * '후련하고 → 훈련하고', '앓아 → 알아', '날인지는 → 말인지는'.
+     *
+     * 말뭉치가 흔한 오타('잇는', '봣는데')도 알기 때문에 이것만으로는 오타와 바른 말이 안 갈린다. 그래서 막는 것은 **방향**이다 —
+     * 쉬프트를 놓친 것(햇→했, 가→까), 겹받침 한쪽을 빠뜨린 것(괜찬→괜찮, 업→없)은 멀쩡한 말에도 그대로 고친다.
+     */
+    private fun isRealWord(core: String): Boolean = lm.lnCount(core) != null
 
     private fun boundAt(text: String, syllableIndex: Int): Boolean {
         val spacer = this.spacer ?: return false
@@ -880,11 +933,16 @@ class ContextCorrector(
         word: String,
         codaSlip: Boolean = false,
         nearKey: Boolean = false,
-        cheonjiinKey: Boolean = false
+        cheonjiinKey: Boolean = false,
+        realLength: (Int) -> Int = { 0 }
     ): List<Pair<String, Float>> {
         val out = ArrayList<Pair<String, Float>>()
         for (index in word.indices) {
             val (cho, jung, jong) = Hangul.decompose(word[index]) ?: continue
+            // 이 음절이 든 원래 어절이 멀쩡한 말이면([isRealWord]) **사람이 실제로 내는 오타 방향**만 고친다.
+            // 받침 통째로 넣기·옆 키·천지인은 없는 말을 살리는 편집이라 멀쩡한 말에는 안 한다('후련하고 → 훈련하고', '날 → 말').
+            val realWordLength = realLength(index)
+            val real = realWordLength != 0
             // 어절 끝 조사 '은↔을'은 ㄴ·ㄹ 이 한 키라 한 번에 바뀌는데, 문맥으로 가를 수 없어
             // '선택사항들은'이 '들을'이 됐다. 조사 자리는 천지인 편집을 하지 않는다.
             if (cheonjiinKey && !(index == word.lastIndex && index > 0 && word[index] in CJI_PARTICLES)) {
@@ -901,7 +959,8 @@ class ContextCorrector(
                     if (id > 0) out += swap(word, index, Hangul.compose(cho, jung, id)) to CJI_COST
                 }
             }
-            if (codaSlip && jong == 0) CODA_SLIPS.forEach { (alternative, cost) ->
+            // '거'(것) 에는 받침을 넣지 않는다 — '거/건/걸' 은 사용자가 고른 말이지 오타가 아니다('운전하는거 → 운전하는건').
+            if (codaSlip && realWordLength >= 0 && jong == 0 && word[index] != '거') CODA_SLIPS.forEach { (alternative, cost) ->
                 val id = Hangul.jongseongIndex(alternative)
                 if (id >= 0) out += swap(word, index, Hangul.compose(cho, jung, id)) to cost
             }
@@ -924,6 +983,9 @@ class ContextCorrector(
                 if (id >= 0) out += swap(word, index, Hangul.compose(id, jung, jong)) to cost
             }
             JUNGSEONG_EDITS[Hangul.JUNGSEONG[jung]]?.forEach { (alternative, cost) ->
+                // 소리가 같은 모음은 멀쩡한 말에도 흔한 오타라(같은대 → 같은데, 하길레 → 하길래) 고친다. 다만 한 음절짜리 말은
+                // 거의 언제나 딴 말이고(떼 → 때, 얘 → 예), ㅒ·ㅖ·ㅕ 끼리는 한쪽이 바른 말인 일이 드물어 멀쩡한 말에는 안 한다.
+                if (real && (kotlin.math.abs(realWordLength) < 2 || Hangul.JUNGSEONG[jung] !in SAME_SOUND_VOWELS)) return@forEach
                 val id = Hangul.jungseongIndex(alternative)
                 if (id >= 0) out += swap(word, index, Hangul.compose(cho, id, jong)) to cost
             }
@@ -940,6 +1002,8 @@ class ContextCorrector(
                 out += swap(word, index, Hangul.compose(cho, jung, JONG_SS)) to PAST_SLIP_COST
             }
             JONGSEONG_EDITS[Hangul.JONGSEONG[jong]]?.forEach { (alternative, cost) ->
+                // 멀쩡한 말은 받침을 **채우는** 쪽만(ㅅ→ㅆ, ㄴ→ㄶ, ㅂ→ㅄ, 없음→ㅎ). 줄이거나 소리 같은 받침끼리 바꾸면 딴 말이다(앓아 → 알아, 잊 → 있).
+                if (real && (Hangul.JONGSEONG[jong] to alternative) !in CODA_COMPLETIONS) return@forEach
                 val id = if (alternative == NO_JONG) 0 else Hangul.jongseongIndex(alternative)
                 if (id >= 0) out += swap(word, index, Hangul.compose(cho, jung, id)) to cost
             }
@@ -1167,13 +1231,19 @@ class ContextCorrector(
         private fun edits(vararg pairs: Pair<Char, Pair<Char, Float>>): Map<Char, List<Pair<Char, Float>>> =
             pairs.groupBy({ it.first }, { it.second })
 
-        /** 된소리/예사소리. */
+        /**
+         * 예사소리 → 된소리. 쉬프트를 놓친 오타를 되돌린다(있을가 → 있을까, 진자 → 진짜, 훨신 → 훨씬).
+         *
+         * **반대쪽(된소리 → 예사소리)은 없앴다(2026-10-11).** 사람이 실수로 쉬프트를 더 누르는 일은 드물고, 그 편집은 거의 언제나
+         * 멀쩡한 말을 딴 말로 바꿨다 — 큰 시험지에서 '깨 볶는 → 개 볶는', '짐 싸세요 → 사세요', '썸 → 섬', '쩌는 → 저는',
+         * '살 찔 → 질'. 맞게 고친 것은 '쪼금 → 조금', '짜르기 → 자르기' 같은 말투 고치기뿐이라 잃을 것이 없다(오타 시험지 그대로).
+         */
         val CHOSEONG_EDITS = edits(
-            'ㄱ' to ('ㄲ' to 1.8f), 'ㄲ' to ('ㄱ' to 1.8f),
-            'ㄷ' to ('ㄸ' to 1.8f), 'ㄸ' to ('ㄷ' to 1.8f),
-            'ㅂ' to ('ㅃ' to 1.8f), 'ㅃ' to ('ㅂ' to 1.8f),
-            'ㅅ' to ('ㅆ' to 1.8f), 'ㅆ' to ('ㅅ' to 1.8f),
-            'ㅈ' to ('ㅉ' to 1.8f), 'ㅉ' to ('ㅈ' to 1.8f)
+            'ㄱ' to ('ㄲ' to 1.8f),
+            'ㄷ' to ('ㄸ' to 1.8f),
+            'ㅂ' to ('ㅃ' to 1.8f),
+            'ㅅ' to ('ㅆ' to 1.8f),
+            'ㅈ' to ('ㅉ' to 1.8f)
         )
 
         /** 소리가 같아진 모음들. 한국어 오타의 가장 큰 축이다. */
@@ -1221,6 +1291,9 @@ class ContextCorrector(
          * | 5 | 53.2% | 1.13% |
          */
         const val CODA_SLIP_MAX_LN = 3.0f
+
+        /** 형태소 분석 비용이 이보다 낮으면 아주 자연스러운 한 낱말로 보고 받침 넣기를 안 한다. 한 낱말인 것들의 중앙값이 -1331 이다. */
+        const val NATURAL_WORD_COST = -1000
 
         /**
          * 두벌식 자판에서 **옆 키를 누른** 오타를 되돌리는 값.
@@ -1322,6 +1395,18 @@ class ContextCorrector(
          * 이 오타는 우연히 맞는 말이 될 일이 드물어서('낫'만 뺐다) 원문과 겨룰 때 확실히 이기게.
          */
         const val PAST_SLIP_COST = -1.0f
+
+        /** 소리가 같아진 모음. 멀쩡한 말(두 음절 이상)의 모음은 이것끼리만 고친다. */
+        private val SAME_SOUND_VOWELS = setOf('ㅐ', 'ㅔ', 'ㅙ', 'ㅚ', 'ㅞ')
+
+        /**
+         * 받침을 **채우는** 편집 — 겹받침 한쪽이나 쉬프트를 빠뜨린 것(괜찬 → 괜찮, 업 → 없, 잇 → 있, 조아 → 좋아).
+         * 멀쩡한 말의 받침은 이쪽으로만 고친다. 반대쪽(줄이기)과 소리 같은 받침끼리 바꾸기는 딴 말을 만든다.
+         */
+        private val CODA_COMPLETIONS = setOf(
+            'ㅅ' to 'ㅆ', 'ㄴ' to 'ㄶ', 'ㄴ' to 'ㄵ', 'ㄹ' to 'ㅀ', 'ㄹ' to 'ㄻ', 'ㄹ' to 'ㄼ',
+            'ㄱ' to 'ㄲ', 'ㄱ' to 'ㄳ', 'ㅂ' to 'ㅄ', NO_JONG to 'ㅎ'
+        )
 
         val JONGSEONG_EDITS = edits(
             'ㅅ' to ('ㅆ' to 0.8f), 'ㅆ' to ('ㅅ' to 0.8f),

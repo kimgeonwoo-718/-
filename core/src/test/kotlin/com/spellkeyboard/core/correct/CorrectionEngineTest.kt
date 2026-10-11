@@ -252,6 +252,28 @@ class CorrectionEngineTest {
     }
 
     @Test
+    fun `않길 않긴 은 바른 말이라 그대로 두고 어절 첫머리 않받네 는 고친다`() {
+        // '하지 않길 바랄게요'(않기를)를 '안 길' 로 뗐다 — 큰 시험지(챗봇 답 6천 문장)에서 열두 번 나온 오교정(2026-10-11).
+        assertUntouched("길지 않길 바랄게요")
+        assertUntouched("후회하지 않길 바라요")
+        assertUntouched("가지 않긴 했어")
+        assertEquals("안 받네", fix("않받네"))
+    }
+
+    @Test
+    fun `일부로 는 앞말을 보고 일부러 로 고친다`() {
+        assertEquals("일부러 안 웃어도 돼요", fix("일부로 안 웃어도 돼요"))
+        // 명사 '일부' + '로' 는 맞는 말이다.
+        assertUntouched("한 남자가 오케스트라의 일부로 연주하고 있다")
+        assertUntouched("세 부분이 일부로 포함된다")
+    }
+
+    @Test
+    fun `텐대 는 텐데`() {
+        assertEquals("벅찰 텐데요", fix("벅찰텐대요"))
+    }
+
+    @Test
     fun `아라비아 숫자 뒤 단위는 붙여 쓴 그대로 둔다`() {
         // 숫자와 어울려 쓰는 단위는 붙여 써도 된다(한글 맞춤법 제43항 다만). '5천원' 만 '5천 원' 으로 떼고 있었다(2026-10-11).
         assertUntouched("사과 3개 샀어")
