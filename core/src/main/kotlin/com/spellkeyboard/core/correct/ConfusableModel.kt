@@ -27,9 +27,12 @@ import kotlin.math.exp
  *
  * ```
  * KSCF <버전> <양자화>
- * model <짝> <rt|all> <앞 어절 수> <뒤 어절 수> <편향>
+ * model <짝> <rt|all> <앞 어절 수> <뒤 어절 수> <편향> [갈리는 앞부분 음절 수]
  * w <특징> <가중치>          (가중치와 편향은 round(값 × 양자화) 한 정수)
  * ```
+ *
+ * 갈리는 앞부분은 짝이 갈리는 글자 수다(낫/낳 은 첫 글자 하나라 적지 않는다, 재발/제발 은 2). 어미 특징은 그 뒤부터 본다 —
+ * 갈리는 글자가 특징에 들어가면 그게 곧 정답이라 모델이 아무것도 못 배운다.
  *
  * `rt` 는 입력 중(뒤를 못 봄), `rt1` 은 입력 중 다음 어절이 막 나온 뒤(관형형 용), `all` 은 글 전체를 고칠 때.
  */
@@ -38,8 +41,39 @@ class ConfusableModel private constructor(
     private val blocks: Map<String, Block>
 ) {
 
-    internal class Block(val left: Int, val right: Int, val bias: Int) {
-        val weights = HashMap<String, Int>(1 shl 15)
+    /**
+     * 한 짝·한 모드의 가중치. 특징 글자를 **64비트 해시로 바꿔 정렬한 배열**에 둔다(이진 탐색).
+     *
+     * 예전에는 `HashMap<String, Int>` 이었다. 짝이 낫/낳 하나일 때도 4만 8천 개에 4.4MB 를 먹었고(PC JVM 에서 잰 값), 오타 짝(재발/제발 …)을
+     * 더하면 키보드 메모리가 그만큼 또 늘 판이라 바꿨다 — 한 개에 12바이트, 낫/낳 만이면 0.5MB, 세 짝 13만 개가 1.4MB.
+     * 64비트 해시라 수만 개끼리 부딪칠 확률은 무시할 만하다.
+     */
+    internal class Block(val left: Int, val right: Int, val bias: Int, val stem: Int) {
+        private var keys = LongArray(1024)
+        private var values = IntArray(1024)
+        private var size = 0
+
+        fun add(feature: String, weight: Int) {
+            if (size == keys.size) {
+                keys = keys.copyOf(size * 2)
+                values = values.copyOf(size * 2)
+            }
+            keys[size] = hash(feature)
+            values[size] = weight
+            size++
+        }
+
+        /** 다 읽은 뒤 한 번. 해시로 정렬하고 남는 자리를 버린다. */
+        fun seal() {
+            keys = keys.copyOf(size)
+            values = values.copyOf(size)
+            sortPairs(keys, values, 0, size - 1)
+        }
+
+        fun weight(feature: String): Int {
+            val i = keys.binarySearch(hash(feature))
+            return if (i >= 0) values[i] else 0
+        }
     }
 
     /** 뒤 어절을 얼마나 볼 수 있나. 모델은 이 셋을 따로 배운다. */
@@ -65,8 +99,8 @@ class ConfusableModel private constructor(
     fun probability(pair: String, look: Look, words: List<String>, i: Int, bos: Boolean): Double? {
         val block = blocks[pair + ":" + look.key] ?: return null
         var z = block.bias
-        for (f in features(words, i, bos, block.left, block.right)) {
-            z += block.weights[f] ?: 0
+        for (f in features(words, i, bos, block.left, block.right, block.stem)) {
+            z += block.weight(f)
         }
         return 1.0 / (1.0 + exp(-z.toDouble() / quant))
     }
@@ -91,13 +125,14 @@ class ConfusableModel private constructor(
                     val p = line.split('\t')
                     when (p[0]) {
                         "model" -> {
-                            current = Block(left = p[3].toInt(), right = p[4].toInt(), bias = p[5].toInt())
+                            current = Block(left = p[3].toInt(), right = p[4].toInt(), bias = p[5].toInt(), stem = p.getOrNull(6)?.toInt() ?: 1)
                             blocks[p[1] + ":" + p[2]] = current
                         }
-                        "w" -> (current ?: error("model 줄 앞에 w 줄이 있다")).weights[p[1]] = p[2].toInt()
+                        "w" -> (current ?: error("model 줄 앞에 w 줄이 있다")).add(p[1], p[2].toInt())
                         else -> error("알 수 없는 줄: $line")
                     }
                 }
+                blocks.values.forEach { it.seal() }
                 return ConfusableModel(quant, blocks)
             }
         }
@@ -107,6 +142,44 @@ class ConfusableModel private constructor(
             runCatching {
                 ConfusableModel::class.java.getResourceAsStream(RESOURCE)?.use { parse(it) }
             }.getOrNull()
+
+        /** 64비트 FNV-1a(UTF-16 글자 단위). 특징 글자를 배열 열쇠로 쓴다. */
+        internal fun hash(text: String): Long {
+            var h = -0x340d631b7bdddcdbL // 14695981039346656037
+            for (c in text) {
+                h = (h xor (c.code.toLong() and 0xff)) * 0x100000001b3L
+                h = (h xor (c.code.toLong() ushr 8)) * 0x100000001b3L
+            }
+            return h
+        }
+
+        /** 열쇠([keys]) 순으로 두 배열을 같이 정렬한다(퀵 정렬). 읽을 때 한 번뿐이다. */
+        private fun sortPairs(keys: LongArray, values: IntArray, from: Int, to: Int) {
+            var lo = from
+            var hi = to
+            while (lo < hi) {
+                val pivot = keys[(lo + hi) ushr 1]
+                var i = lo
+                var j = hi
+                while (i <= j) {
+                    while (keys[i] < pivot) i++
+                    while (keys[j] > pivot) j--
+                    if (i <= j) {
+                        val k = keys[i]; keys[i] = keys[j]; keys[j] = k
+                        val v = values[i]; values[i] = values[j]; values[j] = v
+                        i++; j--
+                    }
+                }
+                // 작은 쪽은 되부르고 큰 쪽은 돌아서 — 스택이 깊어지지 않게
+                if (j - lo < hi - i) {
+                    if (lo < j) sortPairs(keys, values, lo, j)
+                    lo = i
+                } else {
+                    if (i < hi) sortPairs(keys, values, i, hi)
+                    hi = j
+                }
+            }
+        }
 
         private fun hangulOnly(word: String): String {
             val sb = StringBuilder(word.length)
@@ -119,10 +192,10 @@ class ConfusableModel private constructor(
          *
          * 한글 음절만 남긴 어절로 본다(부호·영문·자모는 버린다).
          */
-        internal fun features(words: List<String>, i: Int, bos: Boolean, left: Int, right: Int): Set<String> {
+        internal fun features(words: List<String>, i: Int, bos: Boolean, left: Int, right: Int, stem: Int = 1): Set<String> {
             val f = LinkedHashSet<String>()
             val target = hangulOnly(words[i])
-            val ending = if (target.length > 1) target.substring(1, minOf(4, target.length)) else ""
+            val ending = if (target.length > stem) target.substring(stem, minOf(stem + 3, target.length)) else ""
             f.add("E:$ending")
 
             for (k in 1..left) {

@@ -38,6 +38,8 @@ import com.spellkeyboard.core.lm.LanguageModel
  * 견줘 보니 이 확인으로 덜 고치게 된 낳→낫 은 대부분 **잘못 고치던 것**('아이 더 낳기 무섭습니다' → '낫기')이었다. 반대 방향(낫→낳)은
  * 문턱이 이미 0.98 이라 잘못 고치는 일이 드물고, 여기에 확인을 걸면 '아이들 많이 나아서' 같은 진짜 오타를 놓쳐서 걸지 않는다.
  *
+ * **오타가 다른 진짜 낱말이 된 짝**(재발 → 제발, 애기 → 얘기)은 [TypoPair] — 드문 쪽 → 흔한 쪽만 고친다.
+ *
  * **같은 짝이 한 글에 여럿이면 두 번 본다.** '이게 낳아 저게 낳아' 의 앞 '낳아' 는 뒤 '낳아'(이것도 틀린 글자)를 문맥으로 읽어
  * 낳다 쪽으로 끌려갔다. 첫 바퀴에서 뒤엣것을 고친 뒤, 못 고친 것만 고친 문맥으로 한 번 더 본다.
  */
@@ -105,26 +107,32 @@ class ConfusableClassifier internal constructor(
 
             var e = j
             while (e < words.size - 1 && !breaks[e]) e++
+            val token = words[j].substring(c.run.first, c.run.last + 1)
+            val slice = words.subList(s, e + 1)
             val look = when {
                 lookahead -> ConfusableModel.Look.ALL
-                c.pair.needsNextWord(words[j].substring(c.run.first, c.run.last + 1)) ->
-                    if (e > j) ConfusableModel.Look.NEXT else continue      // 다음 어절이 아직 안 나왔다 — 기다린다
+                c.pair.needsNextWord(token) -> when {
+                    e > j -> ConfusableModel.Look.NEXT
+                    // 다음 어절이 아직 안 나왔다. 그 짝이 허락하고 앞말만으로 확실하면 지금 고치고('애기했어' → '얘기했어'), 아니면 기다린다.
+                    earlyFlip(c, slice, j - s, bos) -> ConfusableModel.Look.NONE
+                    else -> continue
+                }
                 else -> ConfusableModel.Look.NONE
             }
 
-            val slice = words.subList(s, e + 1)
             val p = model.probability(c.pair.name, look, slice, j - s, bos) ?: continue
             val confidence = if (c.cls == 0) p else 1 - p            // 반대쪽이라고 믿는 정도
-            if (confidence < c.pair.flipConfidence(c.cls)) continue
+            if (confidence < c.pair.flipConfidence(c.cls, look)) continue
+            // 다음 어절이 그 짝의 드문 뜻에만 붙는 말이면 안 고친다('재발 방지', '재발 없이').
+            if (e > j && c.pair.protectedBy(hangulRun(words[j + 1]))) continue
             if (look == ConfusableModel.Look.ALL && c.pair.crossCheck(c.cls)) {
                 // 앞만 본 판정도 같은 쪽이어야 한다(위 "글 전체를 고칠 때"). 관형형은 앞만으로는 못 가리니 한 어절 뒤까지 본 것과 견준다.
                 val near = if (c.pair.needsNextWord(words[j].substring(c.run.first, c.run.last + 1))) ConfusableModel.Look.NEXT else ConfusableModel.Look.NONE
                 val q = model.probability(c.pair.name, near, slice, j - s, bos) ?: continue
-                if ((if (c.cls == 0) q else 1 - q) < c.pair.flipConfidence(c.cls)) continue
+                if ((if (c.cls == 0) q else 1 - q) < c.pair.flipConfidence(c.cls, near)) continue
             }
             val target = 1 - c.cls
             val original = words[j]
-            val token = original.substring(c.run.first, c.run.last + 1)
             val moved = c.pair.convert(token, target) ?: continue
             val fixed = original.substring(0, c.run.first) + moved + original.substring(c.run.last + 1)
             words[j] = fixed              // 다음 어절은 고친 말을 앞 문맥으로 본다
@@ -144,6 +152,13 @@ class ConfusableClassifier internal constructor(
         return out.toString()
     }
 
+    /** 다음 어절 없이 앞말만으로 [ConfusablePair.earlyConfidence] 이상 확신하나. 그 짝이 이른 판정을 안 하면 false. */
+    private fun earlyFlip(c: Candidate, slice: List<String>, i: Int, bos: Boolean): Boolean {
+        val early = c.pair.earlyConfidence(c.cls) ?: return false
+        val p = model.probability(c.pair.name, ConfusableModel.Look.NONE, slice, i, bos) ?: return false
+        return (if (c.cls == 0) p else 1 - p) >= early
+    }
+
     private class Candidate(val index: Int, val pair: ConfusablePair, val cls: Int, val run: IntRange)
 
     companion object {
@@ -154,7 +169,10 @@ class ConfusableClassifier internal constructor(
         private val ONE_RUN = Regex("""[^가-힣]*([가-힣]+)[^가-힣]*""")
         private val SENTENCE_ENDERS = setOf('.', '!', '?', '…')
 
-        val DEFAULT_PAIRS: List<ConfusablePair> = listOf(NatNah)
+        val DEFAULT_PAIRS: List<ConfusablePair> = listOf(NatNah, Jebal, Yaegi)
+
+        /** 어절의 한글만(부호·자모·영문을 뗀 것). 보호 말을 견줄 때 쓴다. */
+        private fun hangulRun(word: String): String = word.filter { it in '가'..'힣' }
 
         @Volatile
         private var bundled: ConfusableClassifier? = null
@@ -207,11 +225,132 @@ interface ConfusablePair {
      */
     fun flipConfidence(from: Int): Double
 
+    /** [look] 으로 본 판정에서 고치는 문턱. 기본은 보는 범위와 상관없이 [flipConfidence] 다. */
+    fun flipConfidence(from: Int, look: ConfusableModel.Look): Double = flipConfidence(from)
+
     /**
      * 글 전체를 고칠 때 [from] 쪽으로 쓴 것을 뒤집으려면, 뒤까지 본 판정에 더해 **앞만 본 판정도** 같은 쪽이어야 하나.
      * 뒤까지 보는 모델이 한쪽으로 쏠리는 버릇이 있는 방향에만 건다([ConfusableClassifier] 의 "글 전체를 고칠 때").
      */
     fun crossCheck(from: Int): Boolean = false
+
+    /**
+     * [needsNextWord] 인 꼴을 입력 중에 다음 어절 없이 고치려면 앞말만 본 모델이 이만큼 확신해야 한다. null 이면 늘 다음 어절을 기다린다.
+     * 다음 어절이 끝내 안 오는 메시지 끝('…애기했어')을 확실할 때만 잡으려는 것이다. 이렇게 고친 것은 뒤에 [protectedBy] 말이 와도 되돌리지 못한다.
+     */
+    fun earlyConfidence(from: Int): Double? = null
+
+    /** 다음 어절(한글만)이 이 짝의 드문 쪽 뜻에만 붙는 말이라 고치면 안 되나('재발 방지'). 모델이 드물게 본 말을 지킨다. */
+    fun protectedBy(next: String): Boolean = false
+}
+
+/**
+ * 오타가 우연히 **다른 진짜 낱말**이 되는 짝(2026-10-11). 0 = 드문 말(오타로 잘 나는 꼴, 재발), 1 = 흔한 말(제발).
+ *
+ * 문맥 교정기는 진짜 낱말을 다른 진짜 낱말로 바꾸는 데 아주 조심한다(멀쩡한 말을 딴 말로 바꾸는 오교정을 막느라 — 큰 시험지 2026-10-11).
+ * 그래서 '재발 그만해' 를 못 고쳤다(제발이 80배 흔한데도). 이 짝들은 앞뒤 말을 말뭉치에서 배운 모델로 가린다.
+ *
+ * - **0→1 만 고친다**. 흔한 말을 드문 말로 바꾸는 일은 없다.
+ * - **다음 어절을 기다린다**: '재발 방지' 인지 '재발 좀' 인지는 뒷말이 정한다(문턱 [FLIP_NEXT]). 짝에 따라 앞말만으로 [EARLY] 이상
+ *   확실하면 기다리지 않고 고친다(애기/얘기). 글 전체를 고칠 때는 앞뒤 두 어절씩 보고 [FLIP].
+ * - 학습: `tools/confusable/train.py` 의 같은 이름 짝(두 쪽 무게를 맞춤). [classOf] 는 그쪽 함수와 똑같아야 한다.
+ */
+abstract class TypoPair(
+    override val name: String,
+    /** 드문 쪽(0)의 갈리는 앞부분. */
+    private val rare: String,
+    /** 흔한 쪽(1)의 갈리는 앞부분. */
+    private val common: String
+) : ConfusablePair {
+
+    override fun convert(token: String, to: Int): String? {
+        val from = classOf(token) ?: return null
+        if (from == to) return null
+        return if (to == 1) common + token.substring(rare.length) else rare + token.substring(common.length)
+    }
+
+    override fun needsNextWord(token: String): Boolean = true
+
+    override fun flipConfidence(from: Int): Double = if (from == 0) FLIP else NEVER
+
+    override fun flipConfidence(from: Int, look: ConfusableModel.Look): Double = when {
+        from != 0 -> NEVER
+        look == ConfusableModel.Look.NEXT -> FLIP_NEXT
+        else -> FLIP
+    }
+
+    override fun earlyConfidence(from: Int): Double? = if (from == 0) EARLY else null
+
+    companion object {
+        /** 드문 말을 흔한 말로 고치는 문턱(글 전체를 볼 때, 앞말만 볼 때). 학습 도구의 TYPO_FLIP 과 같다. */
+        const val FLIP = 0.95
+
+        /**
+         * 입력 중 다음 어절이 막 나왔을 때의 문턱. 한 어절 뒤까지 보는 모델은 글 전체 모델보다 확신이 덜 뾰족해서, 0.95 면
+         * '재발 그만해'(0.93) 같은 뻔한 오타를 놓쳤다. 0.90 으로 내려도 멀쩡한 '재발' 을 건드리는 것은 거의 안 늘었다
+         * (시험지 값은 docs/HANDOFF.md). 글 전체 쪽은 0.90 이면 건드림이 늘어서 0.95 로 둔다.
+         */
+        const val FLIP_NEXT = 0.90
+
+        /**
+         * 다음 어절 없이 앞말만으로 고치는 문턱('애기했어' 로 끝나는 메시지 — 어절 안의 '했어' 가 이미 단서다). 학습에서 뺀 문장으로 재 보니
+         * 애기/얘기 는 이걸로 오타 52개 중 8개를 더 고치고 멀쩡한 말은 더 건드리지 않았다. 재발/제발 은 앞말만으로는 고치지 않는다([Jebal]).
+         */
+        const val EARLY = 0.95
+
+        /** 흔한 말을 드문 말로는 고치지 않는다. */
+        const val NEVER = 1.01
+    }
+}
+
+/** 재발(0) ↔ 제발(1). 홀로 선 꼴만 — '제발' 은 '요' 말고는 붙는 말이 없어서 '재발을·재발했다' 는 오타일 수가 없다. */
+object Jebal : TypoPair("jebal", "재발", "제발") {
+    override fun classOf(token: String): Int? = when (token) {
+        "제발", "제발요" -> 1
+        "재발", "재발요" -> 0
+        else -> null
+    }
+
+    /** '재발요' 는 늘 제발요다 — 기다리지 않는다. */
+    override fun needsNextWord(token: String): Boolean = token == "재발"
+
+    /**
+     * '재발' 은 **늘 다음 어절을 기다린다**(앞말만으로 고치지 않는다). 앞말만 보고 고치면 뒤에 '방지·할 수' 가 와도 되돌릴 수 없는데,
+     * 청원 문장('엄중하게 처벌해주시고 재발 방지')은 앞말이 부탁하는 꼴이라 모델이 제발 쪽으로 확신한다 — 학습에서 뺀 문장으로 재 보니
+     * 앞말만으로 고친 것 7개 중 4개가 그런 것이었고, 문턱을 0.99 로 올려도 3개는 그대로였다. 그래서 메시지 끝의 '아 재발' 은
+     * 입력 중에는 못 고치고 전체교정에서 고친다.
+     */
+    override fun earlyConfidence(from: Int): Double? = null
+
+    override fun protectedBy(next: String): Boolean =
+        next in JAEBAL_SINGLE || JAEBAL_PREFIX.any { next.startsWith(it) }
+
+    /**
+     * 병·사고가 다시 생긴다는 뜻의 '재발' 뒤에 오는 말. 모델이 드물게 본 문맥이라도 이 말이 뒤에 오면 안 고친다.
+     *
+     * - 말뭉치에서 '재발' 뒤에 가장 많이 온 말(방지·가능성·위험·우려·시·확률 …)과 병원에서 쓰는 말(진단·검사·판정·환자 …).
+     * - **'재발하다·재발되다' 를 띄어 쓴 꼴**('재발 할 수 있습니다', '재발 된 것'). 모델이 '제발 해 줘' 와 헷갈려 '제발 할 수' 로 바꿨다.
+     *   '제발 해·하지·한 번' 처럼 부탁에 쓰는 꼴은 넣지 않았다 — 그쪽은 모델이 가린다.
+     * - **'재발이다·재발 없다' 를 띄어 쓴 꼴**('세 번째 재발 이야', '수술 후에 재발 없었어'). '제발' 은 어찌씨라 '이다·없다' 를 받지 않는다
+     *   ('제발 없어져' 처럼 부탁하는 꼴은 넣지 않았다).
+     */
+    private val JAEBAL_PREFIX = listOf(
+        "방지", "가능성", "위험", "우려", "여부", "없이", "걱정", "소식", "판정", "진단", "검사", "확률", "예방", "환자", "사례",
+        "이력", "억제", "징후", "대책", "막으", "막기", "막는", "막을", "률", "율",
+        "되", "된", "될", "됐", "됨", "했", "하였", "한다", "하는", "할", "함", "하기", "하여", "하면",
+        "이야", "이라", "이래", "이었", "이에", "이예", "이네", "이다", "이지", "인데", "인가", "인지", "일까", "일지", "였",
+        "없었", "없는", "없음", "없다", "없고", "없으", "없을", "없어요", "없어서"
+    )
+    private val JAEBAL_SINGLE = setOf("시", "후", "전", "때", "땐", "인", "임")
+}
+
+/** 애기(0, 아기) ↔ 얘기(1, 이야기). */
+object Yaegi : TypoPair("yaegi", "애기", "얘기") {
+    override fun classOf(token: String): Int? = when {
+        token.startsWith("애기") -> 0
+        token.startsWith("얘기") -> 1
+        else -> null
+    }
 }
 
 /**

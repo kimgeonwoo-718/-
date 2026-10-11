@@ -64,8 +64,8 @@ internal object EngineFiles {
      * 사용자는 키보드를 켜기 전에 앱 첫 화면에서 켜는 법을 읽는다. 그 30초~1분 동안 풀어 두면, 처음 키보드를 띄울 때는
      * 이미 풀려 있어서 사전과 언어모델이 바로 올라온다. 풀기만 하고 올리지는 않는다 — Kiwi 를 올리는 100MB 는 키보드 몫이다.
      *
-     * **두 갈래로 동시에 푼다.** 사전·언어모델(작다)과 Kiwi(105MB)는 폴더도 자물쇠도 달라서 서로 기다릴 이유가 없다.
-     * 한 줄로 풀면 Kiwi 가 끝날 때까지 키보드가 사전 열기를 기다리는 일은 없지만, 두 갈래가 겹치면 그만큼 일찍 끝난다.
+     * **갈래를 나눠 동시에 푼다.** 사전·언어모델(작다)과 Kiwi(105MB), 헷갈리는 말 모델은 폴더도 자물쇠도 달라서 서로 기다릴 이유가 없다.
+     * 한 줄로 풀면 Kiwi 가 끝날 때까지 키보드가 사전 열기를 기다리는 일은 없지만, 갈래가 겹치면 그만큼 일찍 끝난다.
      * **우선순위를 낮추지 않는다**([SpellKeyboardService.loadSpacingDictionary] 주석 — 갓 깐 직후엔 낮은 스레드가 굶는다).
      *
      * 실패는 삼킨다. 못 풀었으면 키보드가 뜰 때 다시 시도한다. 프로세스당 한 번만 한다.
@@ -73,10 +73,11 @@ internal object EngineFiles {
     fun warmUp(context: Context) {
         if (!warmedUp.compareAndSet(false, true)) return
         val app = context.applicationContext
+        // 헷갈리는 말 모델(640KB — 낫/낳·재발/제발·애기/얘기, PC 에서 읽는 데 0.2초)도 미리 읽는다. 안 읽어 두면 처음 '낳/재발' 이
+        // 나온 스페이스에서 읽느라 키가 멈칫한다. 사전 풀기를 늦추지 않게 따로 돈다.
+        background("confusable") { runCatching { ConfusableClassifier.bundled() } }
         background("dictionary") {
             val target = dir(app)
-            // 헷갈리는 말 모델(220KB)은 작아서 먼저 읽는다. 안 읽어 두면 처음 '낳/낫' 이 나온 스페이스에서 읽느라 키가 멈칫한다.
-            runCatching { ConfusableClassifier.bundled() }
             runCatching { openSpacing(target) }
             runCatching { openLanguageModel(target) }
         }

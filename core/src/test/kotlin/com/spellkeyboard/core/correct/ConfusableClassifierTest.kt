@@ -196,6 +196,79 @@ class ConfusableClassifierTest {
         assertEquals("이게 나아 저게 나아", run(c, "이게 낳아 저게 낳아"))
     }
 
+    // ── 오타 짝(재발 → 제발) ─────────────────────────────────────────────────────────────────────────────
+    //
+    // '아' 뒤는 제발 0.998(앞말만으로 확실), '빨리' 뒤는 0.912(앞말만으론 문턱 0.95 에 모자라고, 다음 어절이 나온 뒤의 문턱 0.90 은 넘는다),
+    // '암' 뒤는 재발. 다음 어절 '그만해' 는 제발 쪽, '방지' 는 재발 쪽. 'E:요' 는 '재발요'(늘 제발요).
+    private fun typoFake(): ConfusableClassifier = fakeOf(
+        "model\tjebal\trt\t2\t0\t0\t2", "w\tL1:아\t400", "w\tL1:빨리\t150", "w\tL1:암\t-400", "w\tE:요\t400",
+        "model\tjebal\trt1\t2\t1\t0\t2", "w\tL1:아\t400", "w\tL1:빨리\t150", "w\tR1:그만해\t400", "w\tR1:방지\t-400", "w\tL1:암\t-400",
+        "model\tjebal\tall\t2\t2\t0\t2", "w\tL1:아\t400", "w\tL1:빨리\t150", "w\tR1:그만해\t400", "w\tR1:방지\t-400", "w\tL1:암\t-400",
+        // 애기/얘기: 어절 안의 '했어' 가 얘기 쪽 단서(0.998)
+        "model\tyaegi\trt\t2\t0\t0\t2", "w\tE:했어\t400",
+        "model\tyaegi\trt1\t2\t1\t0\t2", "w\tE:했어\t400",
+        "model\tyaegi\tall\t2\t2\t0\t2", "w\tE:했어\t400",
+    )
+
+    @Test
+    fun `오타 짝은 다음 어절을 보고 고친다`() {
+        val c = typoFake()
+        assertEquals("제발 그만해", run(c, "재발 그만해"))
+        assertEquals("빨리 제발 와", run(c, "빨리 재발 와"))           // 0.912 — 다음 어절이 막 나온 뒤의 문턱(0.90)은 넘는다
+        assertEquals("재발 방지", run(c, "재발 방지"))
+        assertEquals("암 재발 그만해", run(c, "암 재발 그만해"))       // 앞뒤가 맞서면(0.5) 안 건드린다
+        // 글 전체 교정은 문턱이 0.95 다
+        assertEquals("제발 그만해", run(c, "재발 그만해", lookahead = true))
+        assertEquals("빨리 재발 와", run(c, "빨리 재발 와", lookahead = true))
+        assertEquals("재발 방지", run(c, "재발 방지", lookahead = true))
+    }
+
+    @Test
+    fun `재발 은 앞말이 아무리 확실해도 다음 어절을 기다린다`() {
+        val c = typoFake()
+        // 앞말만으로 고쳤다가 뒤에 '방지' 가 오면 되돌릴 수 없다. 메시지 끝의 '아 재발' 은 전체교정 몫이다.
+        assertEquals("아 재발", run(c, "아 재발"))
+        assertEquals("아 제발 와", run(c, "아 재발 와"))
+        assertEquals("아 제발", run(c, "아 재발", lookahead = true))
+        assertEquals("빨리 재발", run(c, "빨리 재발"))
+        // '재발요' 는 기다릴 것 없이 늘 제발요다
+        assertEquals("제발요", run(c, "재발요"))
+    }
+
+    @Test
+    fun `애기 는 어절 안에 단서가 있으면 다음 어절 없이 고친다`() {
+        val c = typoFake()
+        assertEquals("걔랑 얘기했어", run(c, "걔랑 애기했어"))         // 0.998 ≥ 0.95
+        assertEquals("걔랑 애기", run(c, "걔랑 애기"))                 // 단서 없음 — 기다린다
+    }
+
+    @Test
+    fun `오타 짝은 드문 뜻에만 붙는 뒷말이면 모델이 확신해도 안 고친다`() {
+        // '재발 할 수', '재발 이야' — 띄어 쓴 '재발하다·재발이다'. 모델이 제발 쪽(0.998)이어도 그대로 둔다.
+        val c = fakeOf(
+            "model\tjebal\trt\t2\t0\t400\t2", "model\tjebal\trt1\t2\t1\t400\t2", "model\tjebal\tall\t2\t2\t400\t2",
+        )
+        for (s in listOf("사고는 재발 할 수 있어", "세 번째 재발 이야", "재발 방지 대책", "재발 시 연락 주세요", "재발 없이 지내")) {
+            assertEquals(s, run(c, s), s)
+            assertEquals(s, run(c, s, lookahead = true), s)
+        }
+        assertEquals("제발 좀 와", run(c, "재발 좀 와"))
+    }
+
+    @Test
+    fun `오타 짝은 흔한 말을 드문 말로 바꾸지 않는다`() {
+        val c = typoFake()
+        assertEquals("제발 방지", run(c, "제발 방지"))
+        assertEquals("암 제발", run(c, "암 제발"))
+        assertEquals("제발 방지", run(c, "제발 방지", lookahead = true))
+    }
+
+    @Test
+    fun `오타 짝의 꼴 바꾸기`() {
+        assertEquals("제발", Jebal.convert("재발", 1)); assertEquals("제발요", Jebal.convert("재발요", 1))
+        assertNull(Jebal.convert("제발", 1)); assertNull(Jebal.classOf("재발했다")); assertNull(Jebal.classOf("재발을"))
+    }
+
     // ── 진짜 모델 ─────────────────────────────────────────────────────────────────────────────────────
 
     private val engine = CorrectionEngine()
@@ -273,6 +346,41 @@ class ConfusableClassifierTest {
             assertEquals(s, engine.correctAll(s).text)
         }
         assertEquals("이게 나아 저게 나아", engine.correctAll("이게 낳아 저게 낳아").text)
+    }
+
+    // 오타 짝(2026-10-11, 사용자 제보 '재발을 제발로 안 고친다'). 앞말·뒷말이 뚜렷한 문장만 넣었다 — '재발 그만해' 는 0.93 으로
+    // 문턱(0.90) 근처라 다시 구우면 흔들릴 수 있어 뺐다.
+    @Test
+    fun `재발을 제발로 — 부탁하는 자리`() {
+        assertEquals("아 제발 그만", type("아 재발 그만"))
+        assertEquals("나 좀 제발 도와줘", type("나 좀 재발 도와줘"))
+        assertEquals("제발 나 좀 살려줘", type("재발 나 좀 살려줘"))
+        assertEquals("제발 이번 한 번만", type("재발 이번 한 번만"))
+        assertEquals("제발 나 좀 살려줘", engine.correctAll("재발 나 좀 살려줘").text)
+        // 메시지 끝의 '재발' 은 입력 중에는 뒷말을 기다리다 끝나고, 전체교정이 고친다
+        assertEquals("아 진짜 재발", type("아 진짜 재발"))
+        assertEquals("아 진짜 제발", engine.correctAll("아 진짜 재발").text)
+    }
+
+    @Test
+    fun `병이 다시 생긴 재발 은 그대로 둔다`() {
+        for (s in listOf(
+            "재발 방지 대책을 세워야 한다", "암 재발 판정을 받았어", "디스크 재발 때문에 운동을 못 해", "위염 재발 각이다",
+            "또 재발 했어", "엄마 암 재발", "수술 후에 재발 없었어", "제발 그만해",
+        )) {
+            assertEquals(s, type(s), s)
+            assertEquals(s, engine.correctAll(s).text, s)
+        }
+    }
+
+    @Test
+    fun `애기를 얘기로 — 이야기하는 자리만`() {
+        assertEquals("걔랑 얘기해 봤어?", type("걔랑 애기해 봤어?"))
+        assertEquals("그건 다른 얘기지", type("그건 다른 애기지"))
+        for (s in listOf("애기 기저귀 갈아야 돼", "울 애기 너무 예뻐", "애기 낳고 처음 외출했어")) {
+            assertEquals(s, type(s), s)
+            assertEquals(s, engine.correctAll(s).text, s)
+        }
     }
 
     @Test

@@ -1,5 +1,5 @@
 #!/bin/bash
-# 헷갈리는 말(낫/낳)을 규칙표만(R)·학습 모델만(M)·둘 다(RM) 로 재서 견준다. Confusable.kt 참고.
+# 헷갈리는 말(낫/낳, 오타 짝 재발/제발·애기/얘기)을 규칙표만(R)·학습 모델만(M)·둘 다(RM) 로 재서 견준다. Confusable.kt 참고.
 #
 #   tools/localcheck/confusable.sh                              시험지 전부(tools/confusable/eval/*.tsv)
 #   LIVE_SHOW=20 CONF_SHOW=RM tools/localcheck/confusable.sh     틀린 것을 찍는다(설정 R/M/RM 중 하나)
