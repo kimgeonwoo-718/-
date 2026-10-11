@@ -26,7 +26,7 @@ import {
   userTextOf,
   tooDifferent,
   keepOriginal,
-  dropAddedPunctuation,
+  tidyCorrection,
   capPrompt,
   upstreamErrorMessage,
   KO_SYSTEM_PROMPT,
@@ -103,9 +103,9 @@ export function fromGeminiReply(status, text, user = '', options = {}) {
     return keepOriginal(user, parsed?.usageMetadata ?? {});
   }
 
-  // 원문에 없던 문장부호는 뗀다(openai.js 의 dropAddedPunctuation). 교정일 때만.
+  // 원문에 없던 문장부호는 떼고 붙여 쓴 숫자+단위는 지킨다(openai.js 의 tidyCorrection). 교정일 때만.
   if (user && !options.translateTo) {
-    const kept = dropAddedPunctuation(user, corrected);
+    const kept = tidyCorrection(user, corrected);
     if (kept !== corrected) {
       return {
         status: 200,

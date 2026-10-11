@@ -21,7 +21,7 @@ import {
   userTextOf,
   tooDifferent,
   keepOriginal,
-  dropAddedPunctuation,
+  tidyCorrection,
   cleanTranslation,
   translationProblem,
   capPrompt,
@@ -85,10 +85,10 @@ export function fromClaudeReply(status, text, user = '', options = {}) {
     .map((block) => block.text ?? '')
     .join('')
     .trim();
-  // 원문에 없던 문장부호는 뗀다(openai.js 의 dropAddedPunctuation). 교정일 때만. 번역이면 군더더기를 뗀다.
+  // 원문에 없던 문장부호는 떼고 붙여 쓴 숫자+단위는 지킨다(openai.js 의 tidyCorrection). 교정일 때만. 번역이면 군더더기를 뗀다.
   const corrected = options.translateTo
     ? cleanTranslation(raw)
-    : user ? dropAddedPunctuation(user, raw) : raw;
+    : user ? tidyCorrection(user, raw) : raw;
 
   const usage = parsed?.usage ?? {};
   const usageMetadata = {

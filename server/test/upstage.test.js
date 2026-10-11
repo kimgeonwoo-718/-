@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { handle } from '../src/index.js';
 import { toUpstageRequest, reasoningOff, UPSTAGE_URL, DEFAULT_UPSTAGE_MODEL, UPSTAGE_EXTRA_RULES } from '../src/upstage.js';
-import { KO_SYSTEM_PROMPT, tooDifferent, dropAddedPunctuation, outputCap, utf8Bytes } from '../src/openai.js';
+import { KO_SYSTEM_PROMPT, tooDifferent, dropAddedPunctuation, keepAttachedNumbers, outputCap, utf8Bytes } from '../src/openai.js';
 import { fakeDb } from './fakeDb.js';
 import { CASES, answers } from '../bench/cases-data.mjs';
 
@@ -145,6 +145,28 @@ test('서버 경로에서도 뗀다 — 교정만, 번역은 그대로', async (
   const { fetchImpl } = upstream(solarReply('혹시 내일 시간 되시면 연락 주세요. 기다릴게요.'));
   const res = await handle(generate(body), env(), { fetch: fetchImpl });
   assert.equal((await res.json()).candidates[0].content.parts[0].text, '혹시 내일 시간 되시면 연락 주세요 기다릴게요');
+});
+
+test('붙여 쓴 숫자+단위를 모델이 띄우면 도로 붙인다 — 원문에 띄어 썼으면 그대로', () => {
+  // 2026-10-11 사용자 제보: '3개' 를 '3 개' 로 바꿨다. 숫자와 어울려 쓰는 단위는 붙여 써도 된다(맞춤법 43항 다만).
+  assert.equal(keepAttachedNumbers('사과 3개 샀어', '사과 3 개 샀어'), '사과 3개 샀어');
+  assert.equal(keepAttachedNumbers('5천원이야 10분만', '5천 원이야 10 분만'), '5천원이야 10분만');
+  assert.equal(keepAttachedNumbers('5만원', '5 만원'), '5만원');
+  assert.equal(keepAttachedNumbers('1,000원짜리', '1,000 원짜리'), '1,000원짜리');
+  assert.equal(keepAttachedNumbers('사과 3 개', '사과 3 개'), '사과 3 개', '원문이 띄어 쓴 것');
+  assert.equal(keepAttachedNumbers('3시에 와 2 명이야', '3시에 와 2 명이야'), '3시에 와 2 명이야', '원문에 없는 붙임은 만들지 않는다');
+  assert.equal(keepAttachedNumbers('세개 줘', '세 개 줘'), '세 개 줘', '한글 수사는 띄우는 게 맞다');
+  assert.equal(keepAttachedNumbers('오늘 날씨', '오늘 날씨'), '오늘 날씨');
+});
+
+test('서버 경로에서도 숫자+단위를 지킨다 — 문장부호 떼기와 같이', async () => {
+  const body = JSON.stringify({
+    system_instruction: { parts: [{ text: '너는 교정기다' }] },
+    contents: [{ role: 'user', parts: [{ text: '사과 3개 샀는데 5천원이였어' }] }],
+  });
+  const { fetchImpl } = upstream(solarReply('사과 3 개 샀는데 5천 원이었어.'));
+  const res = await handle(generate(body), env(), { fetch: fetchImpl });
+  assert.equal((await res.json()).candidates[0].content.parts[0].text, '사과 3개 샀는데 5천원이었어');
 });
 
 test('줄임말을 풀어 버린 답도 원문으로 — 왜케 → 왜 이렇게', () => {

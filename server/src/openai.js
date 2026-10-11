@@ -813,6 +813,25 @@ export function dropAddedPunctuation(user, corrected) {
 }
 
 /**
+ * 원문에 **붙여 쓴** 숫자+단위(3개·5천원·10분)를 모델이 띄웠으면 도로 붙인다.
+ *
+ * 숫자와 어울려 쓰는 단위는 붙여 써도 된다(한글 맞춤법 제43항 다만). 모델은 원칙대로 '3 개'·'5천 원' 으로 띄우는데,
+ * 맞게 쓴 것을 바꾸는 것은 교정이 아니다(2026-10-11 사용자 제보 '3개 → 3 개'). 폰 안 교정도 붙인 채로 둔다.
+ * 원문에 띄어 쓴 그대로('3 개')면 손대지 않는다. 지시문으로 막으면 매번 토큰이 들고 새기도 한다 — 서버가 하면 공짜다.
+ */
+const SPACED_NUMBER = /(\d[\d,.]*[십백천만억조]*) +([가-힣])/g;
+
+export function keepAttachedNumbers(user, corrected) {
+  if (!/\d/.test(user)) return corrected;
+  return corrected.replace(SPACED_NUMBER, (whole, number, next) => (user.includes(number + next) ? number + next : whole));
+}
+
+/** 교정문 뒷손질: 원문에 없던 문장부호를 떼고([dropAddedPunctuation]), 붙여 쓴 숫자+단위를 지킨다([keepAttachedNumbers]). */
+export function tidyCorrection(user, corrected) {
+  return keepAttachedNumbers(user, dropAddedPunctuation(user, corrected));
+}
+
+/**
  * 교정이 아닌 답을 받았을 때 앱에 돌려줄 것 — **원문 그대로, 200 으로.**
  *
  * 예전에는 502 로 실패를 알렸다. 그런데 앱은 502 를 "잠깐 붐빈 것" 으로 보고 다른 모델로 옮겨 보거나
@@ -840,10 +859,10 @@ export function toGeminiReply(status, text, user = '', options = {}) {
 
   const choice = parsed?.choices?.[0];
   const raw = (choice?.message?.content ?? '').trim();
-  // 교정일 때만 뗀다. 번역문의 부호는 그 언어의 것이다. 번역이면 군더더기(머리말·따옴표)를 뗀다.
+  // 교정일 때만 뒷손질한다([tidyCorrection]). 번역문의 부호는 그 언어의 것이다. 번역이면 군더더기(머리말·따옴표)를 뗀다.
   const corrected = options.translateTo
     ? cleanTranslation(raw)
-    : user ? dropAddedPunctuation(user, raw) : raw;
+    : user ? tidyCorrection(user, raw) : raw;
 
   const usage = parsed?.usage ?? {};
   const reasoning = num(usage.completion_tokens_details?.reasoning_tokens);
