@@ -1144,7 +1144,7 @@ ${operator}${contact}
 
 /** 문서별 시행일. 그 문서의 내용을 바꾸면 그 날짜만 올린다. */
 const PRIVACY_EFFECTIVE = '2026-10-10';
-const TERMS_EFFECTIVE = '2026-10-10';
+const TERMS_EFFECTIVE = '2026-10-11';
 
 function privacyPage(env) {
   // 어느 회사로 보내는지는 방침의 핵심이라 실제 설정을 그대로 따라가게 둔다.
@@ -1295,7 +1295,7 @@ function termsPage(env) {
 <ul>
 <li>요금은 월 2,990원이며 Google Play 로 결제되고 해지할 때까지 매달 자동으로 갱신됩니다.</li>
 <li>해지는 Google Play 스토어 → 결제 및 정기 결제 → 정기 결제에서 언제든 할 수 있습니다. 해지해도 이미 결제한 기간이 끝날 때까지는 계속 쓸 수 있습니다.</li>
-<li>환불은 Google Play 환불 정책을 따릅니다.</li>
+<li>청약철회와 환불은 전자상거래법과 Google Play 환불 정책에 따르며, 결제 후 7일 안에는 고객센터로 요청할 수 있습니다.</li>
 <li>과도한 사용으로 서비스 운영이 어려워지는 것을 막기 위해 하루 사용량 한도가 있습니다. 한도에 닿으면 다음 날까지 AI 기능이 제한될 수 있습니다.</li>
 </ul>
 

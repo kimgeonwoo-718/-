@@ -813,7 +813,7 @@ test('개인정보 처리방침은 화면 세부를 적지 않고, 공개 파일
 
 test('이용약관의 시행일은 방침과 따로 간다', async () => {
   const body = await (await handle(new Request('https://spell.test/terms'), env({ GEMINI_API_KEY: '' }))).text();
-  assert.match(body, /시행일: 2026-10-10/);
+  assert.match(body, /시행일: 2026-10-11/);
 });
 
 test('이용약관은 PC 프로그램과 무료 기기 번역, 두 곳의 탈퇴를 적는다 (2026-10-10)', async () => {
@@ -822,6 +822,9 @@ test('이용약관은 PC 프로그램과 무료 기기 번역, 두 곳의 탈퇴
   assert.match(body, /기기 안 번역은 무료로 제공/);
   assert.match(body, /PC 프로그램의 계정 창에서/);
   assert.match(body, /요금이 오르면 Google Play 가 구독자에게 따로 동의를 받습니다/);
+  // 청약철회 7일은 약관으로 줄일 수 없다 — "플레이 정책만 따른다" 고만 적지 않는다(사용자 결정 2026-10-11).
+  assert.match(body, /결제 후 7일 안에는 고객센터로 요청할 수 있습니다/);
+  assert.ok(!body.includes('<li>환불은 Google Play 환불 정책을 따릅니다.</li>'), '옛 환불 문장이 남았다');
 });
 
 test('이용약관 페이지가 뜬다', async () => {
