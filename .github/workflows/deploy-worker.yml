@@ -199,6 +199,7 @@ jobs:
           UPSTAGE_API_KEY: ${{ secrets.UPSTAGE_API_KEY }}
           PLAY_SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT }}
           TEST_INSTALL_IDS: ${{ secrets.TEST_INSTALL_IDS }}
+          FEEDBACK_TOKEN: ${{ secrets.FEEDBACK_TOKEN }}
         run: |
           set -euo pipefail
           # OPENAI_API_KEY 가 있으면 서버는 그쪽으로 간다. 되돌리려면 이 비밀값만 지우면
@@ -251,6 +252,14 @@ jobs:
           else
             echo "TEST_INSTALL_IDS: 없음 — 결제한 사람만 구독자다 (출시 때 맞는 상태)"
             echo "  이미 넣어 둔 값을 지우려면: npx wrangler secret delete TEST_INSTALL_IDS"
+          fi
+          # 받은 의견(앱의 고객센터)을 여는 운영자 열쇠 — /feedback?token=… 이 이 값과 같아야 열린다(src/feedback.js).
+          # 없으면 STATS_TOKEN 으로 열리고, 둘 다 없으면 /feedback 은 404 로 숨는다. 값은 찍지 않는다.
+          if [ -n "${FEEDBACK_TOKEN:-}" ]; then
+            printf '%s' "$FEEDBACK_TOKEN" | npx --yes wrangler@3.114.17 secret put FEEDBACK_TOKEN
+            echo "FEEDBACK_TOKEN: 넣음 — 받은 의견은 서버주소/feedback?token=(그 값) 에서 본다"
+          else
+            echo "FEEDBACK_TOKEN: 비어 있음 — 이미 넣어 둔 값이 있으면 그대로 남는다(없으면 STATS_TOKEN 으로 열린다)"
           fi
 
       - name: 주소 확인
@@ -314,6 +323,10 @@ jobs:
             "$url/v1beta/models/gemini-3.5-flash-lite:generateContent" || true
           grep -i '^x-upstream-ms' gen.head || true
           head -c 1200 gen.json; echo
+
+          # 의견 받는 길이 새 코드로 떴는지. 설치 ID 없이 보내 400 을 받는다 — 아무것도 저장하지 않고 횟수도 안 센다.
+          code=$(curl -sS --max-time 20 -o fb.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' "$url/v1/feedback" || echo 000)
+          echo "의견 받는 길(/v1/feedback, 설치 ID 없이): HTTP $code $(head -c 200 fb.json 2>/dev/null) — 400 invalid_install_id 가 정상"
 
           # 날짜별 사용량(/stats)은 여기서 찍지 않는다. 2026-10-08 부터 STATS_TOKEN 없이는 숨겨 두었고,
           # 이 로그는 공개 저장소라 누구나 본다 — 찍으면 숨긴 것이 도로 드러난다.

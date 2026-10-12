@@ -145,4 +145,5 @@ crons = ["0 18 * * *"]
 #   PLAY_SERVICE_ACCOUNT   Play Developer API 서비스 계정 JSON (없으면 전부 무료로 본다)
 #   TEST_INSTALL_IDS       결제 없이 구독자로 칠 설치 ID들 (쉼표로 구분, 출시 전 삭제)
 #   STATS_TOKEN            /stats 를 열 열쇠 (없으면 /stats 는 404 로 숨는다)
+#   FEEDBACK_TOKEN         받은 의견(/feedback)을 열 열쇠 (없으면 STATS_TOKEN, 둘 다 없으면 404 로 숨는다)
 #   AI_DISABLED            비상 정지 (1 이면 AI 교정·번역을 통째로 막는다)

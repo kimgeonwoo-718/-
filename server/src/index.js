@@ -69,6 +69,7 @@ import {
   fromClaudeReply,
 } from './anthropic.js';
 import { UPSTAGE_URL, DEFAULT_UPSTAGE_MODEL, toUpstageRequest } from './upstage.js';
+import { receiveFeedback, feedbackAdmin, sweepFeedback, KEEP_DAYS as FEEDBACK_KEEP_DAYS } from './feedback.js';
 
 /**
  * 바깥으로 나가는 요청을 보내는 자리.
@@ -156,6 +157,10 @@ export async function handle(request, env, deps = {}) {
   // Play 는 키보드 앱에 개인정보 처리방침 주소를 요구한다. 따로 호스팅할 데가 없어 여기서 낸다.
   if (request.method === 'GET' && url.pathname === '/privacy') return privacyPage(env);
   if (request.method === 'GET' && url.pathname === '/terms') return termsPage(env);
+  // 고객센터 의견(글·사진)과 그것을 읽는 운영자 화면. AI 와 상관없는 길이라 아래 키 검사보다 앞에 둔다 —
+  // AI 키가 없거나 비상 정지해도 의견은 받는다(feedback.js).
+  if (request.method === 'POST' && url.pathname === '/v1/feedback') return receiveFeedback(request, env, now());
+  if (url.pathname === '/feedback' || url.pathname.startsWith('/feedback/')) return feedbackAdmin(request, env, url);
   // 지금 쓰기로 한 쪽의 키가 있어야 한다. 둘 중 아무거나 있으면 되는 게 아니다 —
   // 구글로 돌려 놓고 구글 키가 없으면 교정마다 401 을 받으면서 이유는 안 보인다.
   if (!env[providerKeyName(env)]) {
@@ -1094,12 +1099,13 @@ function safeUserLength(body) {
   }
 }
 
-/** 이틀 지난 사용량과 만료된 캐시를 치운다. 크론이 하루 한 번 부른다. */
+/** 이틀 지난 사용량과 만료된 캐시, 보관 기간이 지난 의견을 치운다. 크론이 하루 한 번 부른다. */
 async function sweep(env) {
   const nowMs = Date.now();
   await env.DB.prepare('DELETE FROM usage WHERE day < ?').bind(kstDay(nowMs - 2 * 86_400_000)).run();
   await env.DB.prepare('DELETE FROM cache WHERE expires_at < ?').bind(nowMs).run();
   await env.DB.prepare('DELETE FROM tokens WHERE day < ?').bind(kstDay(nowMs - 90 * 86_400_000)).run();
+  await sweepFeedback(env.DB, nowMs);
 }
 
 // --- 응답 -----------------------------------------------------------------------
@@ -1143,7 +1149,7 @@ ${operator}${contact}
 }
 
 /** 문서별 시행일. 그 문서의 내용을 바꾸면 그 날짜만 올린다. */
-const PRIVACY_EFFECTIVE = '2026-10-10';
+const PRIVACY_EFFECTIVE = '2026-10-12';
 const TERMS_EFFECTIVE = '2026-10-11';
 
 function privacyPage(env) {
@@ -1211,11 +1217,12 @@ function privacyPage(env) {
 
 <h2>3. 서버가 보관하는 것</h2>
 <ul>
-<li><strong>설치 식별자</strong>: 앱이나 PC 프로그램을 설치할 때 만들어지는 무작위 값입니다. 요청을 구분하는 데 쓰이며, 이름·전화번호 같은 개인 정보와 연결되지 않습니다. 하루 사용량 기록에 쓰인 경우 그 기록과 함께 이틀 뒤 삭제됩니다.</li>
+<li><strong>설치 식별자</strong>: 앱이나 PC 프로그램을 설치할 때 만들어지는 무작위 값입니다. 요청을 구분하는 데 쓰이며, 이름·전화번호 같은 개인 정보와 연결하지 않습니다(고객센터 의견에 이메일을 적으신 경우에만 그 의견과 함께 보관됩니다). 하루 사용량 기록에 쓰인 경우 그 기록과 함께 이틀 뒤 삭제됩니다.</li>
 <li><strong>하루 사용량</strong>: 구독 하나당 하루에 쓴 글자 수. 이틀 뒤 삭제됩니다.</li>
 <li><strong>접속 IP 주소</strong>: 짧은 시간에 요청이 몰리는 남용을 막기 위해 요청 횟수를 셉니다. IP 주소는 그대로 저장하지 않고 바꾼 값(해시)으로 세며, 이틀 뒤 삭제됩니다.</li>
 <li><strong>구독 확인</strong>: 구독한 경우 Google Play 구매 토큰으로 Google Play 에 구독 상태를 조회합니다. 조회 결과는 1시간 동안만 보관합니다. 결제는 Google Play 가 처리하며 앱과 서버는 카드 정보 등을 다루지 않습니다.</li>
-<li><strong>계정 (로그인한 경우에만)</strong>: 구글 계정 고유 번호를 <strong>되돌릴 수 없게 바꾼 값(해시)</strong>, 계정에 연결된 구매 토큰, 로그인한 기기 목록(기기 이름과 마지막 사용 시각). 한 구독을 휴대폰·PC 등 여러 기기에서 같이 쓰게 하는 데만 쓰입니다. 로그인할 때 구글이 서명한 로그인 증명에는 이메일도 들어 있지만, 서버는 계정 고유 번호만 읽어 해시로 바꿔 저장합니다. <strong>이름·이메일·프로필 사진은 서버에 저장하지 않습니다.</strong> 회원 탈퇴하면 바로 삭제됩니다.</li>
+<li><strong>계정 (로그인한 경우에만)</strong>: 구글 계정 고유 번호를 <strong>되돌릴 수 없게 바꾼 값(해시)</strong>, 계정에 연결된 구매 토큰, 로그인한 기기 목록(기기 이름과 마지막 사용 시각). 한 구독을 휴대폰·PC 등 여러 기기에서 같이 쓰게 하는 데만 쓰입니다. 로그인할 때 구글이 서명한 로그인 증명에는 이메일도 들어 있지만, 서버는 계정 고유 번호만 읽어 해시로 바꿔 저장합니다. <strong>구글 계정의 이름·이메일·프로필 사진은 서버에 저장하지 않습니다.</strong> 회원 탈퇴하면 바로 삭제됩니다.</li>
+<li><strong>고객센터 의견 (보낸 경우에만)</strong>: 앱의 고객센터에서 보낸 글과 사진, 적으신 경우 답장 받을 이메일, 그리고 문제를 찾는 데 쓰는 앱 버전·기기 모델·안드로이드 버전·설치 식별자. 답변하고 문제를 고치는 데만 쓰며, 늦어도 받은 날로부터 ${FEEDBACK_KEEP_DAYS}일 뒤 삭제됩니다. 사진에 다른 사람의 개인 정보가 보이지 않게 해 주십시오.</li>
 </ul>
 
 <h2>4. 기기에만 저장되는 것</h2>
@@ -1240,10 +1247,10 @@ ${aiAbroad}${aiProcessor}
 <p>이용자(만 14세 미만이면 법정대리인)는 언제든 자기 개인정보의 <strong>열람, 정정, 삭제, 처리 정지</strong>를 요구할 수 있습니다.</p>
 <ul>
 <li><strong>계정 삭제(회원 탈퇴)</strong>: 앱 → 오른쪽 위 ☰ → 더보기 → <strong>회원 탈퇴</strong>, 또는 PC 프로그램의 계정 창 → <strong>회원 탈퇴</strong>를 누르면 서버의 계정 정보(3번의 계정 항목)가 즉시 삭제됩니다.</li>
-<li><strong>그 밖의 요구</strong>: 앱의 더보기 → 고객센터로 메일을 보내 주십시오. 메일 밑에 붙는 설치 식별자로 해당 기기의 기록을 찾아 <strong>10일 안에</strong> 처리하고 결과를 알려 드립니다. 앱을 쓸 수 없으면 아래 문의처로 직접 보내셔도 됩니다.</li>
+<li><strong>그 밖의 요구</strong>: 앱의 더보기 → 고객센터에서 보내 주십시오(결과를 받으실 이메일을 함께 적어 주십시오). 함께 전송되는 설치 식별자로 해당 기기의 기록을 찾아 <strong>10일 안에</strong> 처리하고 결과를 알려 드립니다. 앱을 쓸 수 없으면 아래 연락처로 메일을 보내셔도 됩니다.</li>
 <li><strong>AI 전송을 멈추려면</strong>: AI 기능을 쓰지 않으면 글은 전송되지 않습니다. 기기 안 교정·번역만으로도 쓸 수 있습니다.</li>
 </ul>
-<p>본인 확인이 필요한 경우 요청한 기기에서 보낸 메일인지(설치 식별자) 또는 로그인한 구글 계정인지 확인할 수 있습니다.</p>
+<p>본인 확인이 필요한 경우 요청한 기기에서 보낸 것인지(설치 식별자) 또는 로그인한 구글 계정인지 확인할 수 있습니다.</p>
 <p><strong>구독은 회원 탈퇴로 해지되지 않습니다.</strong> 해지는 Google Play 스토어 → 결제 및 정기 결제 → 정기 결제에서 해 주십시오.</p>
 
 <h2>7. 파기</h2>
@@ -1260,7 +1267,7 @@ ${aiAbroad}${aiProcessor}
 </ul>
 
 <h2>9. 만 14세 미만 아동</h2>
-<p>서비스는 이름·연락처·생년월일을 받지 않으며, 로그인과 구독은 Google 계정과 Google Play 를 통해서만 이루어집니다. <strong>만 14세 미만 아동은 법정대리인의 동의를 받은 경우에만 로그인·구독 기능을 이용할 수 있습니다.</strong> 만 14세 미만 아동의 Google 계정은 Google 정책에 따라 법정대리인의 동의를 받아 만들어지고 법정대리인이 관리하며(Google 가족 링크), 서비스는 이 절차로 법정대리인의 동의를 확인합니다. 법정대리인의 동의 없이 만 14세 미만 아동의 개인정보가 처리된 사실을 알게 되면 지체 없이 파기합니다.</p>
+<p>서비스는 이름·생년월일을 받지 않고 연락처는 고객센터 의견에 직접 적으신 경우에만 받으며, 로그인과 구독은 Google 계정과 Google Play 를 통해서만 이루어집니다. <strong>만 14세 미만 아동은 법정대리인의 동의를 받은 경우에만 로그인·구독 기능을 이용할 수 있습니다.</strong> 만 14세 미만 아동의 Google 계정은 Google 정책에 따라 법정대리인의 동의를 받아 만들어지고 법정대리인이 관리하며(Google 가족 링크), 서비스는 이 절차로 법정대리인의 동의를 확인합니다. 법정대리인의 동의 없이 만 14세 미만 아동의 개인정보가 처리된 사실을 알게 되면 지체 없이 파기합니다.</p>
 
 <h2>10. 개인정보 보호책임자</h2>
 ${'' /* 법(개인정보 보호법 30조)은 책임자 "성명 또는 담당 부서의 명칭" 과 연락처를 요구한다.
@@ -1280,6 +1287,7 @@ ${env.CONTACT_EMAIL ? `<li>연락처: ${escapeHtml(env.CONTACT_EMAIL)}</li>` : '
 <h2>11. 변경</h2>
 <p>이 방침이 바뀌면 이 페이지에 갱신하고 시행일을 고칩니다.</p>
 <ul>
+<li>2026-10-12: 앱 안에서 보내는 고객센터 의견(글·사진)과 그 보관 기간을 더했습니다.</li>
 <li>2026-10-10: 기기 안 번역(고성능 번역·PC 번역 파일)과 번역 기능별 전송 여부, PC 프로그램 설명을 고치고 문서를 간결하게 정리했습니다.</li>
 <li>2026-10-08: PC 프로그램 내용, 접속 IP 주소 처리, 국외 이전 세부, 파기와 복구용 기록, 만 14세 미만 동의 절차, 클립보드 기록 암호화를 보완했습니다.</li>
 <li>2026-09-26: 처음 시행.</li>

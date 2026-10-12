@@ -787,7 +787,7 @@ test('개인정보 처리방침은 PC 프로그램·IP·국외 이전·백업·1
   assert.match(body, /최대 30일/);
   // 만 14세 미만: 법정대리인 동의.
   assert.match(body, /법정대리인의 동의를 받은 경우에만/);
-  assert.match(body, /시행일: 2026-10-10/);
+  assert.match(body, /시행일: 2026-10-12/);
   // 탈퇴 경로는 휴대폰·PC 둘 다(Play·법이 요구).
   assert.match(body, /더보기 → <strong>회원 탈퇴<\/strong>/);
   assert.match(body, /PC 프로그램의 계정 창 → <strong>회원 탈퇴<\/strong>/);

@@ -63,6 +63,16 @@
             android:exported="false"
             android:process=":llm" />
 
+        <!--
+          고객센터(의견 보내기). 더보기 서랍에서만 열리므로 밖으로 내보내지 않는다. 자판이 올라오면 아래의 보내기 단추가
+          가려지지 않게 창을 줄인다(adjustResize).
+        -->
+        <activity
+            android:name=".FeedbackActivity"
+            android:exported="false"
+            android:label="@string/feedback_title"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- 결제 화면. 첫 화면 안에서만 열리므로 밖으로 내보내지 않는다. -->
         <activity
             android:name=".PaywallActivity"

@@ -8,4 +8,6 @@ object ActivityResultContracts {
     class PickVisualMedia : ActivityResultContract<Any, Uri?> {
         companion object { val ImageOnly: Any = Any() }
     }
+
+    class PickMultipleVisualMedia(maxItems: Int = 0) : ActivityResultContract<Any, List<Uri>>
 }

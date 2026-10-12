@@ -8,6 +8,8 @@ export function fakeDb() {
   const tokens = new Map();
   const accounts = new Map();  // id -> { purchase_token, store, created_at, updated_at }
   const devices = new Map();   // token_hash -> { account_id, label, created_at, seen_at }
+  const feedback = new Map();  // id -> { created_at, install_id, body, reply_to, app_version, device, os, photos }
+  const feedbackPhotos = new Map(); // `${feedback_id}|${idx}` -> { feedback_id, idx, type, size, data }
 
   const key = (id, day) => `${id}|${day}`;
 
@@ -17,6 +19,14 @@ export function fakeDb() {
     tokens,
     accounts,
     devices,
+    feedback,
+    feedbackPhotos,
+    // D1 의 batch: 차례로 돌린다(진짜는 한 트랜잭션이다).
+    async batch(statements) {
+      const out = [];
+      for (const statement of statements) out.push(await statement.run());
+      return out;
+    },
     prepare(sql) {
       // D1 은 bind 없이도 first/all/run 을 부를 수 있다 (인자 없는 문장).
       const bound = (args) => ({
@@ -67,6 +77,22 @@ export function fakeDb() {
                 for (const d of devices.values()) if (d.account_id === args[0]) n++;
                 return { n };
               }
+              if (sql.startsWith('SELECT COALESCE(SUM(size), 0) AS chars FROM feedback_photos')) {
+                let chars = 0;
+                for (const p of feedbackPhotos.values()) chars += p.size;
+                return { chars };
+              }
+              if (sql.startsWith('SELECT COUNT(*) AS n FROM feedback')) {
+                return { n: feedback.size };
+              }
+              if (sql.startsWith('SELECT type, data FROM feedback_photos WHERE feedback_id = ? AND idx = ?')) {
+                const p = feedbackPhotos.get(`${args[0]}|${args[1]}`);
+                return p ? { type: p.type, data: p.data } : null;
+              }
+              if (sql.startsWith('SELECT id, created_at, body FROM feedback WHERE id = ?')) {
+                const row = feedback.get(args[0]);
+                return row ? { id: args[0], created_at: row.created_at, body: row.body } : null;
+              }
               throw new Error(`fakeDb: unexpected first(): ${sql}`);
             },
             async all() {
@@ -74,6 +100,14 @@ export function fakeDb() {
                 const results = [...tokens.entries()]
                   .sort((a, b) => (a[0] < b[0] ? 1 : -1))
                   .map(([day, v]) => ({ day, ...v }));
+                return { results };
+              }
+              if (sql.startsWith('SELECT id, created_at, install_id, body, reply_to, app_version, device, os, photos FROM feedback WHERE created_at < ? ORDER BY created_at DESC LIMIT ?')) {
+                const results = [...feedback.entries()]
+                  .filter(([, row]) => row.created_at < args[0])
+                  .sort((a, b) => b[1].created_at - a[1].created_at)
+                  .slice(0, args[1])
+                  .map(([id, row]) => ({ id, ...row }));
                 return { results };
               }
               throw new Error(`fakeDb: unexpected all(): ${sql}`);
@@ -169,6 +203,38 @@ export function fakeDb() {
               }
               if (sql.startsWith('DELETE FROM cache')) {
                 for (const [k, v] of [...cache]) if (v.expires_at < args[0]) cache.delete(k);
+                return;
+              }
+              if (sql.startsWith('INSERT INTO feedback_photos (feedback_id, idx, type, size, data)')) {
+                const [feedback_id, idx, type, size, data] = args;
+                const k = `${feedback_id}|${idx}`;
+                if (feedbackPhotos.has(k)) throw new Error('UNIQUE constraint failed: feedback_photos');
+                feedbackPhotos.set(k, { feedback_id, idx, type, size, data });
+                return;
+              }
+              if (sql.startsWith('INSERT INTO feedback (id, created_at, install_id, body, reply_to, app_version, device, os, photos)')) {
+                const [id, created_at, install_id, body, reply_to, app_version, device, os, photos] = args;
+                for (const v of args) if (v === undefined) throw new Error('D1_TYPE_ERROR: undefined 는 넣을 수 없다');
+                feedback.set(id, { created_at, install_id, body, reply_to, app_version, device, os, photos });
+                return;
+              }
+              if (sql.startsWith('DELETE FROM feedback_photos WHERE feedback_id IN (SELECT id FROM feedback WHERE created_at < ?)')) {
+                for (const [k, p] of [...feedbackPhotos]) {
+                  const owner = feedback.get(p.feedback_id);
+                  if (owner && owner.created_at < args[0]) feedbackPhotos.delete(k);
+                }
+                return;
+              }
+              if (sql.startsWith('DELETE FROM feedback_photos WHERE feedback_id = ?')) {
+                for (const [k, p] of [...feedbackPhotos]) if (p.feedback_id === args[0]) feedbackPhotos.delete(k);
+                return;
+              }
+              if (sql.startsWith('DELETE FROM feedback WHERE created_at < ?')) {
+                for (const [id, row] of [...feedback]) if (row.created_at < args[0]) feedback.delete(id);
+                return;
+              }
+              if (sql.startsWith('DELETE FROM feedback WHERE id = ?')) {
+                feedback.delete(args[0]);
                 return;
               }
               throw new Error(`fakeDb: unexpected run(): ${sql}`);

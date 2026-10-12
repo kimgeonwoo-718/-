@@ -113,6 +113,34 @@
     <string name="support_subject">[맞춤법 키보드] 문의</string>
     <string name="support_body">\n\n\n---\n아래 정보는 문제를 찾는 데 쓰입니다. 지우지 말아 주십시오.\n앱 버전: %1$s\n기기: %2$s (Android %3$s)\n설치 ID: %4$s</string>
 
+    <!--
+      고객센터 화면(FeedbackActivity). 글과 사진을 적어 앱 안에서 바로 보낸다 — 서버가 받아 두고 운영자가 읽는다.
+      메일은 맨 아래 "메일로 보내기" 로 남는다.
+    -->
+    <string name="feedback_title">고객센터</string>
+    <string name="feedback_intro">궁금한 점이나 불편한 점, 바라는 점을 적어 보내 주십시오. 잘못 고친 글이 있으면 어떤 글을 쳤는지 적고 화면을 찍어 붙여 주시면 더 빨리 고칠 수 있습니다.</string>
+    <string name="feedback_text_hint">여기에 적어 주십시오</string>
+    <string name="feedback_count">%1$d / %2$d</string>
+    <string name="feedback_photo_add">+\n사진 추가\n%1$d/%2$d</string>
+    <string name="feedback_photo_preparing">사진 준비 중…</string>
+    <string name="feedback_photo_remove">사진 빼기</string>
+    <string name="feedback_photo_failed">사진을 불러오지 못했습니다. 다른 사진을 골라 주십시오.</string>
+    <string name="feedback_photo_limit">사진은 %1$d장까지 붙일 수 있습니다.</string>
+    <string name="feedback_reply_hint">답장 받을 이메일 (선택)</string>
+    <string name="feedback_notice">보내실 때 앱 버전·기기 모델·안드로이드 버전·설치 ID가 함께 전송됩니다. 사진에 이름·전화번호 같은 개인 정보가 보이지 않게 해 주십시오.</string>
+    <string name="feedback_send">보내기</string>
+    <string name="feedback_sending">보내는 중…</string>
+    <string name="feedback_sent">보냈습니다. 고맙습니다!</string>
+    <string name="feedback_sent_without_photos">글은 보냈습니다. 사진은 지금 받을 수 없어 빠졌습니다.</string>
+    <string name="feedback_empty">내용을 적거나 사진을 붙여 주십시오.</string>
+    <string name="feedback_reply_invalid">이메일 주소를 다시 확인해 주십시오.</string>
+    <string name="feedback_failed_network">보내지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주십시오.</string>
+    <string name="feedback_failed_limit">오늘은 더 보낼 수 없습니다. 내일 다시 보내 주시거나 메일로 보내 주십시오.</string>
+    <string name="feedback_failed_too_large">사진이 너무 큽니다. 사진을 빼고 다시 보내 주십시오.</string>
+    <string name="feedback_failed_photo_full">지금은 사진을 받을 수 없습니다. 글로 적어 보내 주십시오.</string>
+    <string name="feedback_failed_server">보내지 못했습니다(%1$s). 잠시 뒤 다시 눌러 주십시오.</string>
+    <string name="feedback_by_email">메일로 보내기</string>
+
     <!-- 로그인. 구독을 폰 밖(윈도우·아이폰)에서도 쓰게 하는 칸이다. -->
     <string name="account_signin_sub">윈도우·아이폰에서도 같은 구독을 쓰려면 로그인하십시오.</string>
     <string name="account_signin">구글로 로그인</string>

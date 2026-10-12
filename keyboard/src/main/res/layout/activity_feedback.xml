@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  고객센터(FeedbackActivity). 뒤로 가기, 제목, 한 줄 안내, 글 칸(글자 수), 사진 줄(코드가 채운다), 답장 받을 이메일, 무엇이 같이
+  가는지 안내. 아래 고정: 실패했을 때 까닭, 보내기, 메일로 보내기.
+
+  autofill 은 끈다 — 이메일 칸에 비밀번호 관리자가 끼어들지 않게(첫 화면과 같은 까닭).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/toss_card"
+    android:fitsSystemWindows="true"
+    android:importantForAutofill="noExcludeDescendants"
+    android:orientation="vertical">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="20dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp">
+
+            <TextView
+                android:id="@+id/feedback_back"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@drawable/bg_circle_button"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:text="@string/paywall_back"
+                android:textColor="@color/toss_text"
+                android:textSize="24sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="@string/feedback_title"
+                android:textColor="@color/toss_text"
+                android:textSize="26sp"
+                android:textStyle="bold" />
+
+            <TextView
+                style="@style/Caption"
+                android:layout_marginTop="8dp"
+                android:text="@string/feedback_intro"
+                android:textColor="@color/toss_text2"
+                android:textSize="15sp" />
+
+            <EditText
+                android:id="@+id/feedback_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:background="@drawable/bg_input"
+                android:gravity="top|start"
+                android:hint="@string/feedback_text_hint"
+                android:inputType="textMultiLine|textCapSentences"
+                android:maxLength="2000"
+                android:minLines="6"
+                android:padding="14dp"
+                android:textColor="@color/toss_text"
+                android:textColorHint="@color/toss_text3"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/feedback_count"
+                style="@style/Caption"
+                android:layout_marginTop="4dp"
+                android:gravity="end" />
+
+            <LinearLayout
+                android:id="@+id/feedback_photos"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal" />
+
+            <EditText
+                android:id="@+id/feedback_reply"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="18dp"
+                android:background="@drawable/bg_input"
+                android:hint="@string/feedback_reply_hint"
+                android:inputType="textEmailAddress"
+                android:maxLength="120"
+                android:paddingHorizontal="14dp"
+                android:singleLine="true"
+                android:textColor="@color/toss_text"
+                android:textColorHint="@color/toss_text3"
+                android:textSize="16sp" />
+
+            <TextView
+                style="@style/Caption"
+                android:layout_marginTop="12dp"
+                android:text="@string/feedback_notice" />
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- 아래 고정: 까닭 · 보내기 · 메일로 보내기 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/toss_card"
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="12dp">
+
+        <TextView
+            android:id="@+id/feedback_status"
+            style="@style/Caption"
+            android:layout_marginBottom="8dp"
+            android:gravity="center"
+            android:textColor="@color/toss_red"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/feedback_send"
+            style="@style/PrimaryButton"
+            android:text="@string/feedback_send" />
+
+        <TextView
+            android:id="@+id/feedback_email"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="4dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingHorizontal="16dp"
+            android:text="@string/feedback_by_email"
+            android:textColor="@color/toss_text3"
+            android:textSize="14sp" />
+    </LinearLayout>
+</LinearLayout>

@@ -6,7 +6,6 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.ImageView
@@ -198,7 +197,7 @@ class MoreDrawer(private val activity: Activity) {
         }
         activity.findViewById<View>(R.id.menu_privacy).setOnClickListener { openServerPage("/privacy") }
         activity.findViewById<View>(R.id.menu_terms).setOnClickListener { openServerPage("/terms") }
-        activity.findViewById<View>(R.id.menu_support).setOnClickListener { writeToSupport() }
+        activity.findViewById<View>(R.id.menu_support).setOnClickListener { openSupport() }
         activity.findViewById<View>(R.id.menu_guide).setOnClickListener { onGuide?.invoke() }
     }
 
@@ -212,30 +211,30 @@ class MoreDrawer(private val activity: Activity) {
     }
 
     /**
-     * 고객센터: 메일 앱을 열어 받는 사람·제목을 채워 둔다.
+     * 고객센터: 앱 안에서 글·사진을 적어 바로 보내는 화면([FeedbackActivity]). 예전엔 메일 앱을 열었는데 "메일이라 부담스럽다" 는
+     * 말에 바꿨다(2026-10-12). 서버 주소가 없는 빌드는 받을 곳이 없어 예전처럼 메일을 연다.
+     */
+    private fun openSupport() {
+        if (Prefs.serverAvailable()) {
+            open(Intent(activity, FeedbackActivity::class.java))
+        } else {
+            writeToSupport()
+        }
+    }
+
+    /**
+     * 메일 앱을 열어 받는 사람·제목을 채워 둔다([Feedback.emailIntent]).
      *
      * 본문 밑에 앱 버전·기기·설치 ID 를 붙인다. "안 돼요" 한 줄만 오면 어느 기기의 무슨
      * 판인지부터 되물어야 한다. 설치 ID 는 무작위 값이라 개인 정보가 아니다.
      */
     private fun writeToSupport() {
-        val to = activity.getString(R.string.support_email).trim()
-        if (to.isEmpty()) {
+        val intent = Feedback.emailIntent(activity)
+        if (intent == null) {
             toast(activity.getString(R.string.support_not_ready))
             return
         }
-        val body = activity.getString(
-            R.string.support_body,
-            versionName(),
-            "${Build.MANUFACTURER} ${Build.MODEL}",
-            Build.VERSION.RELEASE,
-            Prefs.installId(activity),
-        )
-        open(
-            Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
-                .putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
-                .putExtra(Intent.EXTRA_SUBJECT, activity.getString(R.string.support_subject))
-                .putExtra(Intent.EXTRA_TEXT, body)
-        )
+        open(intent)
     }
 
     private fun open(intent: Intent) {
