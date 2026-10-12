@@ -82,6 +82,12 @@ class ContextCorrector(
             size > UNKNOWN_CACHE_SIZE
     }
 
+    /** 자를 자리에서 높임 선어말어미가 시작하는지([honorificAt]). 같은 (어절, 자리)는 한 번만. */
+    private val endingJunctions = object : LinkedHashMap<String, Boolean>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?): Boolean =
+            size > UNKNOWN_CACHE_SIZE
+    }
+
     /**
      * 천지인 자판으로 치고 있는가. 켜면 **말뭉치가 모르는 어절**에 천지인 오타 편집을 더 본다 —
      * 같은 키를 한 번 덜·더 눌러 이웃 글자가 된 자음(ㅅ↔ㅎ, ㄴ↔ㄹ, ㅇ↔ㅁ…)과 ㆍ를 반대쪽에 찍은
@@ -639,6 +645,15 @@ class ContextCorrector(
                 if (endsWithAEo(prevKey) && isWellFormed(core) && spacer?.tagAt(core, offset) == null) return null
                 // 체언 뒤의 '받다·당하다·시키다·드리다' 는 한 낱말이다('발급받았다', '인계받았다').
                 if (ATTACHABLE_VERBS.any { text.startsWith(it) } && endsNominal(prevKey)) return null
+            } else if (honorificAt(core, offset)) {
+                // 형태소 사전이 나눈 자리라도, 그 자리가 **용언 줄기와 높임의 '-시-' 사이**면 자르지 않는다. 위의 매인 형태소 검사
+                // ([boundAt])가 사전이 나눈 자리에서는 안 돌아서 샜다: '공유해주시기' 는 공유/해/주/시(높임)/기 인데 사전 나눔이
+                // '공유해 주 시기'(시기 = 때)를 내서 '공유해주 시기' 가 됐다('연락해주시기'·'참석해주시기를' 도, 윈도우 보고 2026-10-12).
+                //
+                // 좁게 잡은 까닭(큰 시험지·띄어쓰기 자로 쟀다): 어미 전부로 넓히면 한 어절 분석이 '더자고' 를 더(용언)+자고(어미)로
+                // 읽어 '더 자고' 가르기를 막았고, 선어말어미 전부로 넓히면 분석 사전이 '있' 을 선어말어미로도 읽어(감동/이/있/으면서)
+                // '감동이 있으면서'·'선약이 있어' 가르기를 막았다. 조사도 같은 까닭('학교가기싫어' 의 '가')으로 넣지 않는다.
+                return null
             }
             cost += SPLIT_COST
         }
@@ -745,6 +760,22 @@ class ContextCorrector(
      * 쉬프트를 놓친 것(햇→했, 가→까), 겹받침 한쪽을 빠뜨린 것(괜찬→괜찮, 업→없)은 멀쩡한 말에도 그대로 고친다.
      */
     private fun isRealWord(core: String): Boolean = lm.lnCount(core) != null
+
+    /**
+     * [text] 의 [syllableIndex] 음절이 **높임의 '-시-'** 인가 — 한 어절로 무리 없이 읽었을 때 거기서 선어말어미가 시작하고, 그 음절이
+     * '시·셨·셔·세…' 이고, 앞 음절에 받침이 없다(줄기 뒤의 '-시-' 는 늘 받침 없는 음절 뒤에 온다: 주시·하시·가시·받으시).
+     * 받침을 보는 것은 분석 사전의 헛읽기를 거르려는 것이다 — '관련된시나' 를 관련/된/시(높임)/나 로 읽는데, '된' 뒤에는 '-시-' 가 못 온다.
+     */
+    private fun honorificAt(text: String, syllableIndex: Int): Boolean {
+        if (syllableIndex !in 1 until text.length || text[syllableIndex] !in HONORIFIC_SYLLABLES) return false
+        if (Hangul.hasJongseong(text[syllableIndex - 1])) return false
+        val spacer = this.spacer ?: return false
+        val key = "$syllableIndex\u0001$text"
+        synchronized(endingJunctions) { endingJunctions[key] }?.let { return it }
+        val honorific = spacer.tagAt(text, syllableIndex) == "EP"
+        synchronized(endingJunctions) { endingJunctions[key] = honorific }
+        return honorific
+    }
 
     private fun boundAt(text: String, syllableIndex: Int): Boolean {
         val spacer = this.spacer ?: return false
@@ -1091,6 +1122,9 @@ class ContextCorrector(
 
         /** 모르는 어절의 출발점. ln(3 / 6천만) 근처 — 표에 실리는 문턱 바로 아래다. */
         const val UNKNOWN_BASE = 17f
+
+        /** 높임의 '-시-' 가 들어 있는 음절: 시·셔(시+어)·셨(시+었)·세(시+어요)·십(시+ㅂ니다)·실·신·심. [honorificAt] 이 본다. */
+        private val HONORIFIC_SYLLABLES = setOf('시', '셔', '셨', '세', '십', '실', '신', '심')
         /**
          * 세 음절을 넘는 음절마다 더 내려간다. 세게 잡는다 — 열네 음절짜리 덩어리가 억지로
          * 한 어절로 분석된다 해도, 아는 어절 다섯으로 나뉜 가설(−30 안팎)보다는 나빠야 한다.

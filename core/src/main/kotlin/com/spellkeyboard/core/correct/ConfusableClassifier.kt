@@ -123,8 +123,9 @@ class ConfusableClassifier internal constructor(
             val p = model.probability(c.pair.name, look, slice, j - s, bos) ?: continue
             val confidence = if (c.cls == 0) p else 1 - p            // 반대쪽이라고 믿는 정도
             if (confidence < c.pair.flipConfidence(c.cls, look)) continue
-            // 다음 어절이 그 짝의 드문 뜻에만 붙는 말이면 안 고친다('재발 방지', '재발 없이').
+            // 다음 어절이 그 짝의 드문 뜻에만 붙는 말이면 안 고친다('재발 방지', '재발 없이'). 앞 어절도 그런 말이 있다('무좀 재발').
             if (e > j && c.pair.protectedBy(hangulRun(words[j + 1]))) continue
+            if (j > s && c.pair.protectedAfter(hangulRun(words[j - 1]))) continue
             if (look == ConfusableModel.Look.ALL && c.pair.crossCheck(c.cls)) {
                 // 앞만 본 판정도 같은 쪽이어야 한다(위 "글 전체를 고칠 때"). 관형형은 앞만으로는 못 가리니 한 어절 뒤까지 본 것과 견준다.
                 val near = if (c.pair.needsNextWord(words[j].substring(c.run.first, c.run.last + 1))) ConfusableModel.Look.NEXT else ConfusableModel.Look.NONE
@@ -242,6 +243,9 @@ interface ConfusablePair {
 
     /** 다음 어절(한글만)이 이 짝의 드문 쪽 뜻에만 붙는 말이라 고치면 안 되나('재발 방지'). 모델이 드물게 본 말을 지킨다. */
     fun protectedBy(next: String): Boolean = false
+
+    /** 앞 어절(한글만)이 그런 말인가('무좀 재발'). */
+    fun protectedAfter(prev: String): Boolean = false
 }
 
 /**
@@ -324,6 +328,13 @@ object Jebal : TypoPair("jebal", "재발", "제발") {
 
     override fun protectedBy(next: String): Boolean =
         next in JAEBAL_SINGLE || JAEBAL_PREFIX.any { next.startsWith(it) }
+
+    /**
+     * 앞 어절이 '무좀'(발무좀·손발톱무좀)이면 안 고친다. 모델은 앞 어절의 끝 음절을 보는데, 그게 '좀 재발'(= 좀 제발)의 부사 '좀' 과
+     * 같아서 '무좀 재발 짜증나' 를 99% 제발로 봤다 — '무좀' 은 학습 글에 없었다(2026-10-12). '나무좀·업무좀' 은 띄어쓰기 규칙이 먼저
+     * '나무 좀' 으로 가르므로 여기 올 때는 '무좀' 으로 끝나는 말이 무좀뿐이다.
+     */
+    override fun protectedAfter(prev: String): Boolean = prev.endsWith("무좀")
 
     /**
      * 병·사고가 다시 생긴다는 뜻의 '재발' 뒤에 오는 말. 모델이 드물게 본 문맥이라도 이 말이 뒤에 오면 안 고친다.

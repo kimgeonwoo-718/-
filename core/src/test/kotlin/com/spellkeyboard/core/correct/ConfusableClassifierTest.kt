@@ -374,6 +374,17 @@ class ConfusableClassifierTest {
     }
 
     @Test
+    fun `무좀 재발 은 그대로 둔다 — 앞 어절 끝의 좀 은 부사 좀 이 아니다`() {
+        // 2026-10-12. 띄어쓰기가 '무좀' 을 '무 좀' 으로 가르던 것을 고치고 나서도, 모델이 앞 어절 끝 음절 '좀' 만 보고 제발로 바꿨다.
+        for (s in listOf("무좀 재발 짜증나", "아 무좀 재발 짜증나", "발무좀 재발 했어")) {
+            assertEquals(s, type(s), s)
+            assertEquals(s, engine.correctAll(s).text, s)
+        }
+        // 부사 '좀' 뒤는 여전히 제발이다.
+        assertEquals("나 좀 제발 도와줘", type("나 좀 재발 도와줘"))
+    }
+
+    @Test
     fun `애기를 얘기로 — 이야기하는 자리만`() {
         assertEquals("걔랑 얘기해 봤어?", type("걔랑 애기해 봤어?"))
         assertEquals("그건 다른 얘기지", type("그건 다른 애기지"))
