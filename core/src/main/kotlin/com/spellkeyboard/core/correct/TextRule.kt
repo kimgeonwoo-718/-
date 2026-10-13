@@ -51,20 +51,39 @@ class TextRule private constructor(
          *
          * **긴 항목이 먼저 잡히게 길이 내림차순으로 놓는다.** 안 그러면 '오랫만' 이
          * '오랫' 에서 잘린다. 정규식 선택지는 왼쪽부터 시도하기 때문이다.
+         *
+         * 항목은 **낱말 한가운데서도** 잡힌다. 그게 위험한 항목은 앞뒤에 둘러보기를 붙인다 — `"(?<![가-힣])화일"`
+         * (어절 첫머리에서만), `"제작년(?!도)"`(뒤에 '도' 가 오면 안 됨). 둘러보기는 `(?<!…)`·`(?<=…)`·`(?!…)`·`(?=…)` 넷이고
+         * 안에 괄호를 또 넣지 않는다. 바꿀 글을 찾는 열쇠는 둘러보기를 뺀 글자다. 붙이지 않았을 때 '물건들이 → 물건드리'
+         * ('건들이 → 건드리'), '문화일보 → 문파일보'('화일 → 파일') 가 났다(2026-10-13, 규칙 감사 rule-audit.sh).
          */
         fun dictionary(entries: List<Pair<String, String>>, reason: String): TextRule {
             require(entries.isNotEmpty()) { "빈 표로는 규칙을 만들 수 없다" }
             val map = HashMap<String, String>(entries.size * 2)
+            val alternatives = ArrayList<Pair<String, String>>(entries.size)
             for ((from, to) in entries) {
-                require(from.isNotEmpty()) { "빈 문자열은 바꿀 수 없다" }
-                require(map.put(from, to) == null) { "표에 '" + from + "' 이 두 번 들어 있다" }
+                val key = LOOKAROUND.replace(from, "")
+                require(key.isNotEmpty()) { "빈 문자열은 바꿀 수 없다" }
+                require(map.put(key, to) == null) { "표에 '" + key + "' 이 두 번 들어 있다" }
+                // 둘러보기는 그대로, 글자는 이스케이프해서 잇는다.
+                val pattern = StringBuilder()
+                var at = 0
+                for (look in LOOKAROUND.findAll(from)) {
+                    if (look.range.first > at) pattern.append(Regex.escape(from.substring(at, look.range.first)))
+                    pattern.append(look.value)
+                    at = look.range.last + 1
+                }
+                if (at < from.length) pattern.append(Regex.escape(from.substring(at)))
+                alternatives += key to pattern.toString()
             }
-            val pattern = entries
-                .map { it.first }
-                .sortedByDescending { it.length }
-                .joinToString("|") { Regex.escape(it) }
+            val pattern = alternatives
+                .sortedByDescending { it.first.length }
+                .joinToString("|") { it.second }
             return TextRule(Regex(pattern), reason) { match -> map[match.value] }
         }
+
+        /** [dictionary] 항목의 둘러보기. 안에 괄호를 품지 않는다. */
+        private val LOOKAROUND = Regex("""\(\?<?[=!][^()]*\)""")
 
         /** 정규식과 `$1` 형태의 치환 템플릿으로 만드는 규칙. */
         /** 바꿀 글을 매치마다 계산하는 규칙. null 이면 원문을 그대로 둔다. */

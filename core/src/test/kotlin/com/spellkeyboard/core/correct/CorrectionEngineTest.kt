@@ -99,7 +99,9 @@ class CorrectionEngineTest {
         assertEquals("깨끗이 치웠다", fix("깨끗히 치웠다"))
         assertEquals("개수를 세다", fix("갯수를 세다"))
         assertEquals("김치찌개", fix("김치찌게"))
-        assertEquals("설렘", fix("설레임"))
+        assertEquals("설렘이 가득해", fix("설레임이 가득해"))
+        // 맨 '설레임' 은 아이스크림 이름이기도 하다.
+        assertUntouched("설레임 하나 사 와")
     }
 
     @Test

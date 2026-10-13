@@ -51,6 +51,8 @@ class ConfusableRulesTest {
         assertEquals("과녁을 맞혔다", fix("과녁을 맞췄다"))
         assertEquals("퍼즐을 맞췄다", fix("퍼즐을 맞혔다"))
         assertEquals("시간을 맞췄다", fix("시간을 맞혔다"))
+        assertEquals("문제를 다 맞혔어", fix("문제를 다 맞췄어"))
+        assertEquals("과녁을 정확히 맞혔다", fix("과녁을 정확히 맞췄다"))
         // 정답을 서로 맞춰 본다(맞추다)와 정답을 맞혔다(맞히다)가 다 된다
         assertUntouched("정답을 맞췄어")
         assertUntouched("답을 맞춰 보자")

@@ -43,10 +43,18 @@ fun main(args: Array<String>) {
         val spaceGroups = HashMap<String, Group>()
         val jamoGroups = HashMap<String, Group>()
 
+        var crashed = 0
         for (line in lines) {
             val original = squeeze(line)
-            val (out, corrections) =
+            // 엔진이 죽으면 그 문장을 찍고 다음 문장으로 간다 — 폰에서는 키보드가 튕기는 일이라 맨 먼저 봐야 한다.
+            val (out, corrections) = try {
                 if (full) engine.correctAll(line).let { squeeze(it.text) to it.corrections } else typeAndCollect(engine, line)
+            } catch (e: Exception) {
+                crashed++
+                System.err.println("죽음\t$line\t$e\t${e.stackTrace.take(3).joinToString(" ← ")}")
+                tsv?.println(listOf("죽음", original, original, e.toString()).joinToString("\t"))
+                continue
+            }
             if (out == original) continue
             changed++
             val letters = strip(out) != strip(original)
@@ -76,6 +84,7 @@ fun main(args: Array<String>) {
                 changed, pct(changed, n), changed - letterChanged, pct(changed - letterChanged, n), letterChanged, pct(letterChanged, n)
             )
         )
+        if (crashed > 0) println("!! 엔진이 죽은 문장 $crashed — 표준 오류에 찍었다")
         println("단계·종류별 고침 수: " + byStage.entries.sortedByDescending { it.value }.joinToString(" · ") { "${it.key} ${it.value}" })
         section("글자를 바꾼 고침 (같은 것끼리, 많은 순)", letterGroups, top)
         section("글자 바뀜을 자모로 묶은 것", jamoGroups, top)

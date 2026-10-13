@@ -39,7 +39,7 @@ java -Dfile.encoding=UTF-8 -Djava.io.tmpdir="$WORK/live-tmp" -Xmx2g -cp "$WORK/m
 running=0
 for f in "$@"; do
   name=$(basename "$f" .txt)
-  MINE_TSV="$OUT/$name.$MODE.tsv" java -Dfile.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Djava.io.tmpdir="$WORK/live-tmp" -Xmx2g \
+  MINE_TSV="$OUT/$name.$MODE.tsv" java -Dfile.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 -Djava.io.tmpdir="$WORK/live-tmp" -Xmx2g \
        -cp "$WORK/mine-out:$WORK/mine-main:$KS" MineKt "$f" > "$OUT/$name.$MODE.txt" 2>&1 &
   running=$((running + 1))
   if [ "$running" -ge "$JOBS" ]; then wait -n; running=$((running - 1)); fi

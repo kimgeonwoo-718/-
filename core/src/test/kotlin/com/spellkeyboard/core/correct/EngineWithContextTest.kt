@@ -58,7 +58,8 @@ class EngineWithContextTest {
         // 실기기 제보. 예전에는 길이(여덟 음절 넘으면)로 걸러서 이 말이 한 글자 차이로
         // 빠져나갔다. 이제 형태소 분석 비용으로 거른다 — 자연스러운 한 낱말이면 길어도
         // 지키고, 억지로 분석되면 짧아도 가른다.
-        assertEquals("리뷰 이벤트 시에만", all("리뷰이벤트시에만"))
+        // '리뷰이벤트' 는 합성어라 붙여 쓴 대로 둔다(2026-10-13 — 긴 덩어리 나누기가 명사|명사를 가르지 않는다). 의존명사 '시' 앞은 뗀다.
+        assertEquals("리뷰이벤트 시에만", all("리뷰이벤트시에만"))
         assertEquals("본체는 기본이고", all("본체는기본이고"))
     }
 
@@ -137,6 +138,19 @@ class EngineWithContextTest {
         assertEquals("발에 무좀 생겼어", all("발에 무좀 생겼어"))
         assertEquals("발에 무좀 생겼어", tail("발에 무좀 생겼어"))
         assertEquals("나무 좀 심자", all("나무좀 심자"))
+    }
+
+    @Test
+    fun `띄어쓰기 사전이 빈 조각을 내도 죽지 않는다`() {
+        // 위키 문장을 어절마다 치다가 ArrayIndexOutOfBounds 로 죽었다 — 폰에서는 키보드가 튕긴다(2026-10-14).
+        val sentence = "이바일로가 죽었다는 헛소문이 퍼지자 터르노보는 패닉에 빠졌고"
+        val buffer = StringBuilder()
+        for (word in sentence.split(' ')) {
+            buffer.append(word)
+            engine.correctTail(buffer.toString())
+            buffer.append(' ')
+        }
+        all(sentence)
     }
 
     @Test

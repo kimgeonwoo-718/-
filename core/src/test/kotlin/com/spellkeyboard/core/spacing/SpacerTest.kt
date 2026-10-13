@@ -58,6 +58,16 @@ class SpacerTest {
         kotlin.test.assertTrue(perCall < 20.0, "너무 느리다: %.2f ms".format(perCall))
     }
 
+    @Test
+    fun `나눈 결과 끝에 빈 조각을 남기지 않는다`() {
+        // 형태소 경계가 음절 한가운데('이바일로가' 의 'ᆯ로')에 오면 글자가 먼저 바닥나 끝에 공백만 붙었다('이바일로가 ').
+        // 문맥 디코더가 그 빈 조각을 글 끝 너머의 구간으로 읽다가 죽었다(2026-10-14).
+        for (word in listOf("이바일로가", "이바일로가죽었다는", "터르노보를")) {
+            val spaced = space(word) ?: continue
+            kotlin.test.assertFalse(spaced.endsWith(" ") || spaced.contains("  "), "$word -> '$spaced'")
+        }
+    }
+
     private fun space(word: String) = spacer.space(word)
 
     private fun assertOneOf(input: String, vararg expected: String) {

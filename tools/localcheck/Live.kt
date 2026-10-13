@@ -42,6 +42,8 @@ fun main(args: Array<String>) {
         else DECORATIONS[i % DECORATIONS.size].let { deco -> typed + deco to answers.map { it + deco } }
     }
 
+    // LIVE_DUMP=경로: 줄마다 `친 글<TAB>결과<TAB>정답들<TAB>정답을 쳤을 때 결과` 를 남긴다 — score-edits.py 가 고침 하나하나를 맞다/틀리다로 센다.
+    val dump = System.getenv("LIVE_DUMP")?.let { File(it).printWriter() }
     var fixed = 0
     var kept = 0
     val misses = mutableListOf<String>()
@@ -52,7 +54,9 @@ fun main(args: Array<String>) {
         val clean = answers.first()
         val again = type(engine, clean)
         if (again in answers) kept++ else broken += "  $clean\n    → $again"
+        dump?.println(listOf(typed.trim().replace(Regex("\\s+"), " "), out, answers.joinToString(" | "), again).joinToString("\t"))
     }
+    dump?.close()
     println("고침: $fixed / ${rows.size}  (${pct(fixed, rows.size)})")
     if (System.getenv("LIVE_TIME") == "1") {
         val sorted = timings.sorted()

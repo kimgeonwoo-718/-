@@ -109,10 +109,13 @@ class ContextCorrectorTest {
     fun `천지인 오타는 천지인일 때만 고친다`() {
         // 같은 키를 한 번 덜·더 누른 자음(ㄷ↔ㅌ, ㄱ↔ㅋ)과 ㆍ를 반대쪽에 찍은 모음(ㅏ↔ㅓ).
         assertEquals("카페에서 기다리고 있을게", cheonjiin.correct("카페에서 기타리고 있을게", LanguageModel.BOS))
-        assertEquals("그때 봤던 영화 제목이 뭐였지", cheonjiin.correct("그때 봤던 양화 제목이 뭐였지", LanguageModel.BOS))
+        // '양화 → 영화'(ㅑ↔ㅕ) 예는 바꿨다 — '양화' 는 사전에 오른 명사라 이제 이름·드문 낱말로 보고 비싸게만 고친다(2026-10-13).
+        // 같은 '·' 자리 오타(ㅗ↔ㅜ)를 사전에 없는 꼴로 본다. 두벌식에서는 손대지 않는다(아래).
+        assertEquals("그 영화 너무 좋아", cheonjiin.correct("그 영화 너무 줗아", LanguageModel.BOS))
         assertEquals("조금만 기다려줘", cheonjiin.correct("조금만 기더려줘", LanguageModel.BOS))
         // 두벌식에서는 드문 오타라 손대지 않는다.
         assertUntouched("카페에서 기타리고 있을게")
+        assertUntouched("그 영화 너무 줗아")
         // 조사 '은↔을'은 한 키 차이지만 문맥으로 못 가려서 안 바꾼다.
         assertNull(cheonjiin.correct("그 선택사항들은 지루하거나 비용이 많이 든다", LanguageModel.BOS))
     }
@@ -153,7 +156,10 @@ class ContextCorrectorTest {
         // '됬어요' 도 말뭉치에 흔한 오타라 언어모델은 둘 중 하나를 고른다. 어느 쪽이든
         // 엔진의 어절 규칙('됬'→'됐')이 마무리한다.
         assertTrue(fix("됫어요") in setOf("됐어요", "됬어요"), fix("됫어요"))
-        assertFixed("너무 좋아요", "너무 조아요")
+        // '조아요' 는 말뭉치에 드물게 있는 말(ln 2.4)이라 디코더는 이제 안 바꾼다 — 어절 규칙이 '좋아요' 로 고친다(ChatRulesTest).
+        // 말뭉치에 없는 받침 빠진 오타는 흔한 말로 되살린다(2026-10-13).
+        assertFixed("지금 통화 괜찮아", "지금 통화 괘찮아")
+        assertFixed("오늘 저녁에 뭐 먹을까", "오늘 저녁애 뭐 먹을까")
     }
 
     // --- 오교정 방지 --------------------------------------------------------------

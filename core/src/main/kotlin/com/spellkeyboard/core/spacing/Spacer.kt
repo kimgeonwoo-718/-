@@ -223,6 +223,54 @@ class Spacer(private val dictionary: SpacingDictionary) {
         return null
     }
 
+    /**
+     * [word] 가 사전에 **통째로** 일반명사·고유명사로 올라 있는가('발간', '지바', '허재', '여수'). 조사가 붙은 꼴은 안 본다 — 부르는 쪽이 뗀다.
+     *
+     * 문맥 교정기가 멀쩡한 낱말을 흔한 딴 말로 바꾸지 못하게 할 때 쓴다(2026-10-13). mecab-ko-dic 에는 고유명사만 39만 개가 있어서
+     * 언어모델(말뭉치)이 모르는 이름·지명도 여기서는 안다.
+     */
+    fun isLexiconNoun(word: String): Boolean {
+        if (word.isEmpty() || word.length > MAX_SYLLABLES || word.any { it !in HANGUL_SYLLABLES }) return false
+        val jamo = StringBuilder().also { sb -> word.forEach { appendJamo(sb, it) } }.toString()
+        val bytes = jamo.toByteArray(Charsets.UTF_8)
+        val key = dictionary.find(bytes, 0, bytes.size)
+        if (key < 0) return false
+        for (morph in dictionary.morphStart(key) until dictionary.morphEnd(key)) {
+            val head = dictionary.headTag(morph)
+            if ((head == commonNoun || head == properNoun) && dictionary.tailTag(morph) == head) return true
+        }
+        return false
+    }
+
+    private val commonNoun = dictionary.tagId("NNG")
+    private val properNoun = dictionary.tagId("NNP")
+
+    /**
+     * 한 어절로 분석한 [word] 에서 [syllableIndex] 번째 음절 앞이 **형태소 경계**면 (앞 형태소의 끝 품사, 뒤 형태소의 첫 품사).
+     * 경계가 아니면 빈 쌍("" to ""). 분석이 안 되거나 믿기 어려우면 null.
+     *
+     * 나눈 자리가 낱말 한가운데('피렌|체의')인지, 조사 뒤('피렌체의|밤')인지 가를 때 쓴다. 조각을 따로 분석하면 '시에만' 의 '시' 가
+     * 일반명사로 읽히는데, 통째로 읽으면 의존명사다('리뷰이벤트시에만' = 리뷰/이벤트/시/에/만).
+     */
+    fun boundaryTags(word: String, syllableIndex: Int): Pair<String, String>? {
+        if (word.isEmpty() || word.length > MAX_SYLLABLES || syllableIndex !in 1 until word.length) return null
+        val (pieces, cost) = runAnalysisWithMorphs(word) ?: return null
+        if (cost > BOUND_TRUST_COST_PER_MORPH * pieces.size) return null
+        var target = 0
+        for (i in 0 until syllableIndex) target += jamoLength(word[i])
+        var at = 0
+        var previous = -1
+        for ((length, morph) in pieces) {
+            if (at == target && previous >= 0) {
+                return dictionary.tagName(dictionary.tailTag(previous)) to dictionary.tagName(dictionary.headTag(morph))
+            }
+            if (at > target) return "" to ""
+            at += length
+            previous = morph
+        }
+        return "" to ""
+    }
+
     /** 용언 품사인가(동사·형용사·보조용언). */
     fun isVerbTag(tag: String): Boolean = tag in VERBAL
 
@@ -257,6 +305,65 @@ class Spacer(private val dictionary: SpacingDictionary) {
         if (cost > BOUND_TRUST_COST_PER_MORPH * pieces.size) return null
         return dictionary.tagName(dictionary.headTag(pieces.first().second)) to
             dictionary.tagName(dictionary.tailTag(pieces.last().second))
+    }
+
+    /**
+     * [word] 를 한 어절로 분석했을 때 **첫 형태소가 덮는 음절 수와 그 품사**('고새하셨어요' → 2 to "NNG"). 첫 형태소가 음절 한가운데서
+     * 끝나면('했' = 하+ㅆ) 그 음절까지 센다. 분석이 안 되거나 믿기 어려우면 null. 분석을 한 번만 한다 — [boundaryTags] 를 음절마다 부르면
+     * 그만큼 분석을 되풀이한다.
+     */
+    fun firstMorpheme(word: String): Pair<Int, String>? {
+        if (word.isEmpty() || word.length > MAX_SYLLABLES) return null
+        val (pieces, cost) = runAnalysisWithMorphs(word) ?: return null
+        if (cost > BOUND_TRUST_COST_PER_MORPH * pieces.size) return null
+        val (length, morph) = pieces.first()
+        var jamo = 0
+        var syllables = 0
+        while (syllables < word.length && jamo < length) {
+            jamo += jamoLength(word[syllables])
+            syllables++
+        }
+        return syllables to dictionary.tagName(dictionary.headTag(morph))
+    }
+
+    /**
+     * 체언 [before] 뒤에 붙여 친 [after] 가 **합성어의 뒷부분일 수 없는** 말인가 — 그러면 명사|명사 자리라도 띄운다.
+     *
+     * - 자리·때를 가리키는 명사에 조사만 붙은 꼴: '회사|앞에서', '오늘|안에', '아는 사람|중에', '학생|등'
+     * - 명사에 '-하다·-되다' 가 붙은 용언: '감기|조심해', '입금|확인되면', '추후|공지하겠습니다'
+     *
+     * 명사|명사는 합성어·이름이라 도로 붙이는데(2026-10-13), 그 막이가 이것들까지 붙여 붙여 쓴 글 되살림이 떨어졌다
+     * (공백을 다 지운 시험지 F1 93.9 → 89.9). 앞말과 합쳐 사전에 오른 낱말('눈앞', '집안', '한밤중', '자기소개')은 붙여 둔다.
+     */
+    fun startsApartFromNoun(before: String, after: String): Boolean {
+        if (before.isEmpty() || after.isEmpty() || after.length > MAX_SYLLABLES) return false
+        // 뒤가 관형사('학생등|여러 사람이'). 사전은 '여러' 한 낱말에도 높은 값을 매겨 분석을 못 믿는다고 해서 글자로 본다.
+        if (after in APART_DETERMINERS) return true
+        // 앞이 합성어 머리가 못 되는 의존명사('공부하는 데|방해가', '온 지|얼마'). 뒤가 멀쩡히 읽히는 말일 때만.
+        if (before in APART_BOUND_NOUNS) return edgeTags(after) != null
+        val (pieces, cost) = runAnalysisWithMorphs(after) ?: return false
+        if (cost > BOUND_TRUST_COST_PER_MORPH * pieces.size) return false
+        val tags = pieces.map { dictionary.tagName(dictionary.headTag(it.second)) }
+        val head = firstMorpheme(after)?.first ?: return false
+        val stem = after.substring(0, head)
+        if (isLexiconNoun(before + stem)) return false
+        val rest = tags.drop(1)
+        return when {
+            stem in APART_NOUNS && (tags[0] == "NNG" || tags[0] == "NNB") -> rest.all { it.startsWith("J") }
+            tags[0] == "NNG" && stem.length >= 2 -> rest.isNotEmpty() && (rest[0] == "XSV" || rest[0] == "XSA")
+            else -> false
+        }
+    }
+
+    /**
+     * 관형사 [before] 가 뒷말 [after] 의 첫 형태소와 합쳐 **사전에 오른 한 낱말**이 되는가 — '그|날은'(그날), '이|번에'(이번),
+     * '그|중에'(그중), '이|곳은'(이곳). 그러면 뗄 자리가 아니다. '이|사람' 은 '이사' 가 낱말이어도 첫 형태소가 '사람' 이라 뗀다.
+     */
+    fun joinsDeterminer(before: String, after: String): Boolean {
+        if (before.isEmpty() || before.length > 2 || after.isEmpty()) return false
+        val head = firstMorpheme(after)?.first ?: return false
+        val word = before + after.substring(0, head)
+        return isLexiconNoun(word) || edgeTags(word)?.let { it.first == "NP" && it.second == "NP" } == true
     }
 
     /** 체언(과 관형사) 품사인가. [edgeTags] 결과를 볼 때 쓴다. 이름 조각 앞뒤의 '이·그' 도 체언처럼 다룬다. */
@@ -476,11 +583,17 @@ class Spacer(private val dictionary: SpacingDictionary) {
         return pieces to bestCost
     }
 
-    /** 자모 길이로 나온 조각을 원문 음절로 되돌린다. */
+    /**
+     * 자모 길이로 나온 조각을 원문 음절로 되돌린다.
+     *
+     * 형태소 경계가 음절 한가운데('갔|다' 의 'ㅆ')에 오면 앞 조각이 그 음절을 통째로 가져가 글자가 먼저 바닥난다. 그때 남은 조각
+     * 앞에 공백만 찍으면 끝에 빈 조각이 생긴다('…다 ') — 문맥 디코더가 그 빈 조각을 글 끝 너머의 구간으로 읽다가 죽었다(2026-10-14).
+     */
     private fun render(word: String, pieces: List<Pair<Int, Boolean>>): String {
         val out = StringBuilder()
         var index = 0
         for ((length, spacedBefore) in pieces) {
+            if (index >= word.length) break
             if (spacedBefore && out.isNotEmpty()) out.append(' ')
             var consumed = 0
             while (consumed < length && index < word.length) {
@@ -511,6 +624,18 @@ class Spacer(private val dictionary: SpacingDictionary) {
 
         /** [boundMorphemeStartsAt] 이 분석을 믿는 형태소당 비용 상한. */
         private const val BOUND_TRUST_COST_PER_MORPH = 2000
+
+        /** 자리·때·까닭을 가리키는 명사. 앞 체언과 합성어를 이루는 일이 드물다([startsApartFromNoun]). '속·밖' 은 '마음속·창밖' 같은 합성어가 많아 뺐다. */
+        private val APART_NOUNS = setOf(
+            "앞", "뒤", "옆", "위", "아래", "안", "중", "등", "때", "전", "후", "사이", "쪽", "동안", "근처", "주변",
+            "무렵", "도중", "이후", "이전", "이내", "내내", "때문", "덕분", "대신"
+        )
+
+        /** 체언 뒤에 와도 늘 딴 어절인 관형사. '두·세·네·한' 은 '엄마두(도)·주민세·철수네·한국' 과 부딪혀 뺐다. */
+        private val APART_DETERMINERS = setOf("여러", "모든", "온갖", "무슨", "어느", "어떤", "몇")
+
+        /** 홀로 선 조각이면 늘 의존명사이고 합성어 머리가 못 되는 말. '수' 는 '수백만' 의 접두사와 부딪혀 뺐다. */
+        private val APART_BOUND_NOUNS = setOf("데", "지", "것", "줄", "바", "척", "체", "듯", "뻔", "김", "탓", "뿐", "만큼", "대로")
 
         /**
          * EC 로 태깅된 어미 중 문장을 끝내는 꼬리. 연결형('-아서', '-는데', '-고', '-면',

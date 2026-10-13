@@ -177,7 +177,7 @@ class CorrectionEngine(
         val context = this.context
         if (context != null) {
             current = applyLongSplit(current, sink)
-            current = applyContext(context, current, contextBefore, sink)
+            current = applyContext(context, current, contextBefore, protectLast = !lookahead, sink)
         } else {
             current = applySpacer(current, sink)
             current = applySpeller(current, sink)
@@ -326,10 +326,12 @@ class CorrectionEngine(
         context: ContextCorrector,
         text: String,
         contextBefore: String?,
+        protectLast: Boolean,
         sink: MutableList<Correction>
     ): String {
-        val fixed = analyse(CONTEXT_KEY + (contextBefore ?: "") + "\u0000" + text) {
-            context.correct(text, contextBefore) ?: text
+        // 실시간 창(뒤를 모름)과 전체교정은 답이 다를 수 있어 열쇠를 가른다([ContextCorrector.correct] 의 protectLast).
+        val fixed = analyse(CONTEXT_KEY + (if (protectLast) "1" else "0") + (contextBefore ?: "") + "\u0000" + text) {
+            context.correct(text, contextBefore, protectLast) ?: text
         }
         if (fixed != text) {
             val before = text.trim().split(WHITESPACE)
@@ -372,11 +374,80 @@ class CorrectionEngine(
             }
             if (!looksGlued(core)) return@mapWords word
 
-            val spaced = analyse(LONG_KEY + core) { long.space(core) ?: core }
+            val spaced = analyse(LONG_KEY + core) { long.space(core)?.let { keepClearSplits(core, it) } ?: core }
             if (spaced == core) return@mapWords word
             val whole = word.substring(0, start) + spaced + word.substring(end)
             sink += Correction(word, whole, "띄어쓰기")
             whole
+        }
+    }
+
+    /**
+     * 긴 덩어리를 나눈 결과에서 **확실한 자리만** 남긴다. 사람이 일부러 붙여 쓴 이름·합성어를 가르지 않으려는 것이다(2026-10-13).
+     *
+     * 기사·위키·대화 말뭉치 58만 문장을 실시간 길로 돌려 보니, 멀쩡한 글에서 이 단계가 5만 2천 번 띄어쓰기를 바꿨고 거의 다
+     * 이름과 합성어였다 — '국립현대미술관 → 국립 현대 미술관', '중앙재난안전대책본부', '서울중앙성원이 → 서울중앙 성원이',
+     * '피렌체의밤이라는 → 피렌 체의 밤이라는', '한국경제신문과의 → 한국경제 신문 과의', '아카펠라라는 → 아 카펠라라는'.
+     * 그래서
+     * - 조사·어미로 시작하는 조각('과의', '이라는')이 나오면 나누기 전체를 버린다 — 분석이 엉터리라는 뜻이다.
+     * - 명사|명사 자리는 도로 붙인다. 합성어·이름은 붙여 써도 된다. 다만 앞이 '오늘·내일·지금' 같은 때를 나타내는 말이면 뗀다.
+     * - '-아/-어' 뒤의 보조용언('도와|드렸습니다')도 붙여 쓴 대로 둔다(둘 다 맞다).
+     * 조사·어미 뒤, 부사 뒤, 대명사 뒤, 명사|용언('밥|먹었어'), 명사|의존명사('이벤트|시에만')는 그대로 뗀다. 공백 없이 친 문장('오늘은날씨가좋아서')은 거의 다 이 자리들이다.
+     */
+    private fun keepClearSplits(core: String, spaced: String): String {
+        val spacer = this.spacer ?: return spaced
+        val pieces = spaced.split(' ')
+        if (pieces.size < 2) return spaced
+        if (pieces.drop(1).any { spacer.startsWithBoundMorpheme(it) == true }) return core
+        val out = ArrayList<String>()
+        out += pieces[0]
+        var offset = 0
+        for (k in 1 until pieces.size) {
+            offset += pieces[k - 1].length
+            // 자리의 품사는 **덩어리를 통째로 분석한 것**에서 먼저 찾는다 — 조각만 떼어 읽으면 '시에만' 의 '시'(의존명사)가 일반명사로
+            // 읽힌다. 통째 분석에서 그 자리가 형태소 한가운데면('피렌|체의밤') 자르지 않는다. 통째 분석을 못 믿으면 조각을 본다.
+            val whole = spacer.boundaryTags(core, offset)
+            val keep = when {
+                whole == null -> clearBoundary(spacer, pieces[k - 1], pieces[k], null, null)
+                whole.first.isEmpty() -> false
+                else -> clearBoundary(spacer, pieces[k - 1], pieces[k], whole.first, whole.second)
+            } && !(leftEndsLoose(spacer, pieces[k - 1], whole) && context?.knowsWord(pieces[k]) == false && !startsWithVerb(spacer, pieces[k]))
+            if (keep) out += pieces[k] else out[out.size - 1] = out.last() + pieces[k]
+        }
+        return out.joinToString(" ")
+    }
+
+    /**
+     * 왼쪽 조각이 조사나 관형사로 끝나는가. 외국 이름·회사 이름 속의 '에·의·그'('미래에|셋운용', '그|랑드샤르트뢰즈', '슈피리어에|식스는')도
+     * 사전은 조사·관형사로 읽는다. 그런 자리는 **오른쪽 조각이 아는 말이거나 용언으로 시작할 때만** 뗀다(큰 시험지 2026-10-13).
+     */
+    private fun leftEndsLoose(spacer: Spacer, before: String, whole: Pair<String, String>?): Boolean {
+        val left = whole?.first?.takeIf { it.isNotEmpty() } ?: spacer.edgeTags(before)?.second ?: return false
+        return left.startsWith("J") || left == "MM"
+    }
+
+    /** 조각이 용언으로 시작하는가('들어가신다'). 말뭉치가 모르는 높임·활용 꼴도 이름은 아니다. */
+    private fun startsWithVerb(spacer: Spacer, piece: String): Boolean =
+        spacer.edgeTags(piece)?.first?.let { spacer.isVerbTag(it) } == true
+
+    /** [before]|[after] 가 띄어 써야 하는 것이 분명한 자리인가. [keepClearSplits] 참고. 품사를 모르면 조각을 분석해 찾는다. */
+    private fun clearBoundary(spacer: Spacer, before: String, after: String, leftTag: String?, rightTag: String?): Boolean {
+        // 사전은 '여러' 같은 관형사 한 낱말에도 높은 값을 매겨 분석을 못 믿는다고 한다 — 띄어 쓰는 관형사 목록에 있으면 그대로 관형사로 본다.
+        val left = leftTag ?: spacer.edgeTags(before)?.second ?: (if (before in CLEAR_DETERMINERS) "MM" else return false)
+        val right = rightTag ?: spacer.edgeTags(after)?.first
+        return when {
+            left.startsWith("J") -> true
+            left == "EC" && right == "VX" -> false
+            left.startsWith("E") -> true
+            left == "MAG" -> before.length >= 2 || before in CLEAR_ADVERBS
+            left == "NP" -> true
+            // 관형사와 뒷말이 합쳐 사전에 오른 낱말('그날', '이번', '그중', '이곳')이면 뗄 자리가 아니다.
+            left == "MM" -> before in CLEAR_DETERMINERS && !spacer.joinsDeterminer(before, after)
+            left == "IC" -> before in CLEAR_INTERJECTIONS
+            spacer.isNominalTag(left) ->
+                before in TIME_NOUNS || (right != null && (spacer.isVerbTag(right) || right == "MAG" || right == "NNB")) ||
+                    (right == "NP" && before.length >= 2 && after.length >= 3) || spacer.startsApartFromNoun(before, after)
+            else -> false
         }
     }
 
@@ -542,6 +613,18 @@ class CorrectionEngine(
         private const val FORCED_ANALYSIS_COST = 3500
 
         private val WHITESPACE = Regex("\\s+")
+
+        /** 긴 덩어리를 나눌 때 앞이 이것이면 띄어도 되는 말 — 때를 나타내는 명사(부사처럼 쓴다). [keepClearSplits] */
+        private val TIME_NOUNS get() = ContextCorrector.ADVERBIAL_NOUNS
+
+        /** 한 음절 부사 가운데 홀로 서는 것. 사전은 '아·이' 같은 것도 부사로 읽어서 가려 받는다('아 카펠라라는'). */
+        private val CLEAR_ADVERBS = setOf("잘", "더", "안", "못", "좀", "꼭", "딱", "막", "또", "늘", "곧", "왜", "다", "참", "덜", "확", "쭉", "푹", "꽉", "싹", "쫙")
+
+        /** 뒤와 띄어 쓰는 관형사. '새·한·전·총' 은 합성어·이름 머리('새정치연합', '한메일')와 부딪혀 뺐다. */
+        private val CLEAR_DETERMINERS = setOf("그", "이", "저", "무슨", "어느", "어떤", "모든", "다른", "딴", "웬", "몇", "첫", "온갖", "여러", "두", "세", "네")
+
+        /** 뒤와 띄어 쓰는 감탄사. '아' 는 뺐다('아 카펠라라는'). */
+        private val CLEAR_INTERJECTIONS = setOf("네", "예", "응", "어", "아니", "아니요", "그래", "맞아", "헐", "와", "오", "음", "흠", "엥", "웅", "넹", "넵", "엉", "아이고", "어머")
 
         const val DEFAULT_WINDOW_WORDS = 3
 
