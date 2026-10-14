@@ -650,8 +650,8 @@ class ContextCorrector(
         )) {
             val editedCount = lm.lnCount(edited)
             // 첫소리를 된소리로 바꾸는 편집은 고친 말이 흔할 때만 — 된소리 짝은 둘 다 진짜 말인 일이 많다('하시는 분인것 → 뿐인것',
-            // '뿐인것' 은 말뭉치에 열다섯 번뿐이었다).
-            if ((editedCount ?: 0f) < TENSE_ONSET_MIN_LN && tensedOnset(surface, edited)) continue
+            // '뿐인것' 은 말뭉치에 열다섯 번뿐이었다). 어미 '-ㄹ가 → -ㄹ까'('어떠실가요')는 쉬프트 오타라 그대로 둔다.
+            if ((editedCount ?: 0f) < TENSE_ONSET_MIN_LN && tensedOnset(surface, edited) && !shiftedEnding(surface, edited)) continue
             // 고친 말이 **아주 흔하고** 원문은 드물거나 모르는 말이면 오타가 거의 확실하다 — '저녁애 → 저녁에', '괘찮아 → 괜찮아',
             // '어재 → 어제'. 그럴 때는 멀쩡한 말 막이(끝 음절 잠금·값 더 물리기)를 걷는다. 형태소 분석은 이런 오타도 멀쩡히 읽어 내서
             // (저녁/NNG 애/NNG, 괘/NNG 찮아/XSA) 막이가 진짜 오타까지 막고 있었다 — 오타 되살리기 64.3% → 51.9%(2026-10-13).
@@ -1116,6 +1116,12 @@ class ContextCorrector(
     /** [edited] 가 일상어([EVERYDAY_WORDS])로 시작하고 고친 자리 [at] 이 그 일상어 안인가('내일은' 의 '내일'). */
     private fun everydayHead(edited: String, at: Int): Boolean =
         EVERYDAY_WORDS.any { at < it.length && edited.startsWith(it) }
+
+    /** '-ㄹ가 → -ㄹ까' 를 어절 끝이나 뒤에 '요' 가 붙은 꼴에서 고치는 것인가('할가', '어떠실가요'). */
+    private fun shiftedEnding(surface: String, edited: String): Boolean {
+        if (endingShiftMiss(surface, edited)) return true
+        return surface.endsWith("가요") && edited.endsWith("까요") && endingShiftMiss(surface.dropLast(1), edited.dropLast(1))
+    }
 
     /** 한 음절의 첫소리만 예사소리에서 된소리로(ㄱ→ㄲ, ㄷ→ㄸ, ㅂ→ㅃ, ㅅ→ㅆ, ㅈ→ㅉ) 바꾼 것인가. */
     private fun tensedOnset(surface: String, edited: String): Boolean {

@@ -248,6 +248,8 @@ class EngineWithContextTest {
         // 조사가 앞말 받침과 안 맞는 꼴의 빠진 받침도 그대로 고친다.
         assertEquals("생각보다 사람이 많네", all("생각보다 사라이 많네"))
         assertEquals("하시는 분인 것 같습니다.", all("하시는 분인것 같습니다."))
+        // 된소리 막이는 어미 '-ㄹ가 → -ㄹ까'(쉬프트 오타)는 그대로 둔다.
+        assertEquals("그럼 내일은 어떠실까요?", all("그럼 내일은 어떠실가요?"))
     }
 
     @Test
