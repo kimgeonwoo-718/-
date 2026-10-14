@@ -387,6 +387,7 @@ class ContextCorrector(
         val doubtful = IntArray(n + 1)
         // 체언·어근 + '-하다'('문송|합니다', '옴짝달싹|하지')는 늘 한 낱말이라 바로 막는다 — [Spacer.derivesWithHada].
         val blocked = BooleanArray(n + 1)
+        val nameInside = BooleanArray(n + 1)
         for ((k, core) in cores.withIndex()) {
             if (core.length < 2) continue
             val tagsAt = junctionsOf(core)
@@ -403,6 +404,10 @@ class ContextCorrector(
                 }
                 blocked[at] = before !in ADVERBIAL_NOUNS && spacer?.derivesWithHada(before, after) == true
             }
+            // 이름 조각이라 도로 붙인 덩어리([joinNameFragments]) 안을 자르는 자유 구간은 글자를 못 바꾼다 — 그 안을 자르면서 글자까지
+            // 바꾼 답이 이겼다('이번주였나요 → 이번 죽였나요', '공동어로구역의 → 공동으로 구역의', 큰 시험지 2026-10-14). 띄어쓰기만
+            // 넣는 것은 둔다 — 붙여 친 글의 사전 조각이 엉뚱해도('날씨가안좋을' = 날씨 가안 좋을) 디코더가 제대로 가른다.
+            for (p in joinedBreaks(core)) nameInside[starts[k] + p] = true
         }
         val candidates = HashMap<Long, List<Candidate>>()
         for (span in spans) {
@@ -426,7 +431,8 @@ class ContextCorrector(
             val swallowsSyllable = !withinOne && cores[firstOwner].length >= 2 && cores[lastOwner].length == 1 &&
                 ends[lastOwner] == span.end && starts[firstOwner] == span.start
             val edits = !(protectedTail && firm[last]) && !swallowsSyllable &&
-                !(span.kind == KIND_FREE && (insideRealWord(span.start) || insideRealWord(span.end) || span.end - span.start == 1))
+                !(span.kind == KIND_FREE && (insideRealWord(span.start) || insideRealWord(span.end) || span.end - span.start == 1 ||
+                    nameInside[span.start] || nameInside[span.end]))
             // 끝 음절 잠금은 명사뿐 아니라 **한 어절로 읽히는 말 전부**에 건다 — 어미를 딴 어미로 바꾸면 뜻이 바뀐다('처리되었으며 →
             // 처리되었으면', '선수이자 → 선수이다', '사용하지마 → 사용하지만', '흡연자라 → 흡연자가'). 조사 짝('을↔를')만 바꾼다.
             val fresh = candidatesFor(
@@ -451,14 +457,20 @@ class ContextCorrector(
         var (best, tokens) = search(n, candidates, layout, initialKey) { _, _, _ -> true } ?: return null
         trace?.let { traceTokens(it, "최선", best, tokens, candidates, layout, contextBefore) }
         // 의심 자리를 처음 보는 두 조각으로 자른 답이면 그 자리를 막고 다시 찾는다. 새 답이 또 딴 의심 자리를 자를 수 있어 몇 번 되풀이한다.
+        // 처음 답이 띄어쓰기만 고친 것이었으면 다시 찾을 때도 글자는 못 바꾼다 — 막힌 자리 대신 글자를 바꾼 답이 끼어들었다
+        // ('이번주였나요 → 이번 죽였나요', '공동어로구역의 → 공동으로 구역의', 큰 시험지 2026-10-14).
         val refused = BooleanArray(n + 1)
+        val spacingOnly = tokens.joinToString("") == text
         var rounds = 0
         while (rounds++ < MAX_REFUSAL_ROUNDS) {
             val unseen = unseenSplits(tokens, layout, text, doubtful)
             if (unseen.isEmpty()) break
             for (p in unseen) refused[p] = true
             trace?.append("처음 보는 두 조각으로 자른 자리 ${unseen.joinToString()} 를 막고 다시 찾는다\n")
-            val again = search(n, candidates, layout, initialKey) { i, j, _ -> !refused[i] && !refused[j] } ?: return null
+            val again = search(n, candidates, layout, initialKey) { i, j, candidate ->
+                !refused[i] && !refused[j] &&
+                    (!spacingOnly || (candidate.text.length == j - i && text.regionMatches(i, candidate.text, 0, j - i)))
+            } ?: return null
             best = again.first
             tokens = again.second
             trace?.let { traceTokens(it, "최선", best, tokens, candidates, layout, contextBefore) }
@@ -1469,6 +1481,32 @@ class ContextCorrector(
         if ((morphCost(piece) ?: Int.MAX_VALUE) > NAME_FRAGMENT_COST && !tail.startsWith("J")) return true
         // 명사로 끝나도 사전에 통째로 오른 명사('격조')는 이름 조각이 아니다 — 말뭉치에 어절로 드물 뿐이다.
         return tail in NOUN_TAILS && spacer?.isLexiconNoun(piece) != true
+    }
+
+    /** [text] 에서 이름 조각을 도로 붙여 생긴 덩어리([joinNameFragments]) 안쪽의 모든 자리(음절 위치). */
+    private fun joinedBreaks(text: String): Set<Int> {
+        if (text.length < 3) return emptySet()
+        val (rejoined, joined) = splitsOf(text)
+        if (rejoined == null || rejoined == joined) return emptySet()
+        val removed = breaksOf(rejoined) - breaksOf(joined)
+        val out = HashSet<Int>()
+        var start = 0
+        for (piece in (joined ?: text).split(' ')) {
+            val end = start + piece.length
+            if (removed.any { it in start + 1 until end }) for (p in start + 1 until end) out += p
+            start = end
+        }
+        return out
+    }
+
+    private fun breaksOf(spaced: String?): Set<Int> {
+        val out = HashSet<Int>()
+        var at = 0
+        spaced?.split(' ')?.dropLast(1)?.forEach { piece ->
+            at += piece.length
+            out += at
+        }
+        return out
     }
 
     /** 다듬은 조각([pieces])마다, 그것을 이루는 사전 첫 조각([raw]) 가운데 말뭉치가 모르는 것이 있는가([joinNameFragments]). */
