@@ -366,6 +366,39 @@ class Spacer(private val dictionary: SpacingDictionary) {
         return isLexiconNoun(word) || edgeTags(word)?.let { it.first == "NP" && it.second == "NP" } == true
     }
 
+    /**
+     * [word] 를 한 어절로 읽은 최선의 분석이 **고유명사만으로** 이뤄졌는가('배스킨라빈스' = 배스킨/라빈/스). 분석값이 높아 다른 데서는
+     * 못 믿는다고 버리는 분석이라도, 조사·어미 하나 없이 이름 조각만 나왔다면 통째로 이름이다 — 가를 자리가 없다(2026-10-14).
+     */
+    fun isProperNounChunk(word: String): Boolean {
+        if (word.isEmpty() || word.length > MAX_SYLLABLES) return false
+        val (pieces, _) = runAnalysisWithMorphs(word) ?: return false
+        return pieces.size >= 2 && pieces.all { dictionary.headTag(it.second) == properNoun && dictionary.tailTag(it.second) == properNoun }
+    }
+
+    /**
+     * [word] 를 한 어절로 읽은 최선의 분석에서 **두 음절 넘는 일반·고유명사 형태소**가 덮는 음절 자리들('비서시장' → [0,2), [2,4)).
+     * 형태소 경계가 음절 한가운데에 오는 것은 뺀다. 분석값이 높아도 쓴다 — 부르는 쪽이 말뭉치 빈도로 다시 거른다.
+     */
+    fun nounMorphemeRanges(word: String): List<IntRange> {
+        if (word.length < 2 || word.length > MAX_SYLLABLES) return emptyList()
+        val (pieces, _) = runAnalysisWithMorphs(word) ?: return emptyList()
+        val syllableStart = IntArray(word.length + 1)
+        for (i in word.indices) syllableStart[i + 1] = syllableStart[i] + jamoLength(word[i])
+        val out = ArrayList<IntRange>()
+        var at = 0
+        for ((length, morph) in pieces) {
+            val head = dictionary.headTag(morph)
+            if ((head == commonNoun || head == properNoun) && dictionary.tailTag(morph) == head) {
+                val from = syllableStart.indexOf(at)
+                val to = syllableStart.indexOf(at + length)
+                if (from >= 0 && to > from && to - from >= 2) out += from until to
+            }
+            at += length
+        }
+        return out
+    }
+
     /** 체언(과 관형사) 품사인가. [edgeTags] 결과를 볼 때 쓴다. 이름 조각 앞뒤의 '이·그' 도 체언처럼 다룬다. */
     fun isNominalTag(tag: String): Boolean = tag in NOMINAL || tag == "MM"
 

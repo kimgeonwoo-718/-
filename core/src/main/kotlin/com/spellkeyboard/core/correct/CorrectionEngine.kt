@@ -399,6 +399,8 @@ class CorrectionEngine(
         val pieces = spaced.split(' ')
         if (pieces.size < 2) return spaced
         if (pieces.drop(1).any { spacer.startsWithBoundMorpheme(it) == true }) return core
+        // 통째로 읽은 분석이 이름 조각뿐이면 이름이다('배스킨라빈스 → 배스킨라 빈스').
+        if (spacer.isProperNounChunk(core)) return core
         val out = ArrayList<String>()
         out += pieces[0]
         var offset = 0
@@ -411,7 +413,9 @@ class CorrectionEngine(
                 whole == null -> clearBoundary(spacer, pieces[k - 1], pieces[k], null, null)
                 whole.first.isEmpty() -> false
                 else -> clearBoundary(spacer, pieces[k - 1], pieces[k], whole.first, whole.second)
-            } && !(leftEndsLoose(spacer, pieces[k - 1], whole) && context?.knowsWord(pieces[k]) == false && !startsWithVerb(spacer, pieces[k]))
+            } && !(leftEndsLoose(spacer, pieces[k - 1], whole) && context?.knowsWord(pieces[k]) == false && !startsWithVerb(spacer, pieces[k])) &&
+                // 양쪽 조각을 말뭉치가 **둘 다 모르면** 이름 한가운데다('드지|에칸스키를' — '드지' 를 어미 '-지' 로 읽었다, 2026-10-14).
+                !(context?.knowsWord(pieces[k - 1]) == false && context?.knowsWord(pieces[k]) == false)
             if (keep) out += pieces[k] else out[out.size - 1] = out.last() + pieces[k]
         }
         return out.joinToString(" ")

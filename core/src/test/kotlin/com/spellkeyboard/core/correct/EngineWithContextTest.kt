@@ -21,6 +21,18 @@ class EngineWithContextTest {
 
     private fun all(text: String): String = engine.correctAll(text).text
 
+    /** 어절마다 스페이스를 누르며 친다(실시간 길). */
+    private fun typed(sentence: String): String {
+        val buffer = StringBuilder()
+        for (word in sentence.split(' ')) {
+            buffer.append(word)
+            val before = buffer.toString()
+            engine.correctTail(before)?.let { buffer.replace(before.length - it.deleteBefore, buffer.length, it.replacement) }
+            buffer.append(' ')
+        }
+        return buffer.toString().trim().replace(Regex("\\s+"), " ")
+    }
+
     @Test
     fun `사용자가 실기기에서 잡은 문장들`() {
         assertEquals("여기 있는데요", tail("여기 있는대요"))
@@ -151,6 +163,48 @@ class EngineWithContextTest {
             buffer.append(' ')
         }
         all(sentence)
+    }
+
+    @Test
+    fun `띄어 친 보조용언을 붙이지 않고 이름 덩어리를 가르지 않는다`() {
+        // 보조용언은 띄어 쓰는 것이 원칙이고 붙여 써도 된다 — 사람이 띄어 친 것을 붙이면 맞는 걸 고친 것이다(2026-10-14).
+        assertEquals("카카오톡으로 보내 줘", all("카카오톡으로 보내 줘"))
+        assertEquals("카카오톡으로 보내 줘", tail("카카오톡으로 보내 줘"))
+        // 통째 분석이 이름 조각뿐인 덩어리('배스킨/라빈/스')는 이름이다.
+        assertEquals("배스킨라빈스 31", all("배스킨라빈스 31"))
+    }
+
+    @Test
+    fun `기사에서 진짜 낱말을 흔한 딴 말로 바꾸지 않는다`() {
+        // 큰 시험지(기사·제목)에서 실시간 길로 바뀌던 것(2026-10-14).
+        for (text in listOf(
+            "회의록이 대통령기록관으로 이관되지 않은 것도",   // 흔한 명사 줄기 안(이관 → 일관)
+            "드라마에 시대의 메시지를 담다",                   // 어미 끝 음절에 받침 채우기(담다 → 담당)
+            "베네수엘라 카드 결제기 사용 급증",                // 명사 + 한 음절의 끝을 조사로(결제기 → 결제가)
+            "총을 든 로버트 드지에칸스키를 보자",              // 둘 다 모르는 조각 사이를 가르기(드지 → 들지)
+            "삼성 빅스비로 AI 비서시장 도전장",                 // 합성어 속 흔한 명사(시장 → 실장)
+            "모스크바국제도서전에 한국관 설치",                 // 합성어 속 흔한 명사(도서전 → 도 선전)
+            "美 전 국방장관들 미국의 힘은 동맹에서",            // 흔한 명사 합성어 + 들(→ 을)
+            "노벨상 작가 르 클레지오 황석영 만나",             // 두 음절 어절 + 한 음절 어절을 붙이며 고치기(→ 작가를)
+            "정부는 방식을 바꾸었으며, 새로운 제도를 만들었다", // 연결 어미 '-며' → '-면'
+            "그는 일자리가 줄어든다며 걱정했다",               // '-다며' → '-다면'
+            "드라마 속 장면을 설명하다 결국 울었다",            // 기본형 '-하다' → '-한다'
+            "그녀의 직업은 요양보호사다."                      // 문장 부호 앞 끝 음절(다 → 가)
+        )) {
+            assertEquals(text, typed(text), text)
+        }
+    }
+
+    @Test
+    fun `붙여 친 글에서 합성어가 아닌 자리는 뗀다`() {
+        assertEquals("회사 앞에서 보자", all("회사앞에서보자"))
+        assertEquals("감기 조심해", all("감기조심해"))
+        assertEquals("공부하는 데 방해가 됐어", all("공부하는 데방해가 됐어"))
+        // 관형사와 뒷말이 합쳐 사전에 오른 낱말은 붙여 둔다.
+        assertEquals("그날은 선약이 있어", all("그날은선약이있어"))
+        assertEquals("이 사람이 누구야", all("이사람이누구야"))
+        // 합성어는 붙여 써도 맞다.
+        assertEquals("눈앞에서 사라졌어", all("눈앞에서사라졌어"))
     }
 
     @Test

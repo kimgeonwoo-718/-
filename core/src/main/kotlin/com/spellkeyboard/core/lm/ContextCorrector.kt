@@ -76,6 +76,11 @@ class ContextCorrector(
             size > UNKNOWN_CACHE_SIZE
     }
 
+    private val nounRangeCache = object : LinkedHashMap<String, List<IntRange>>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<IntRange>>?): Boolean =
+            size > UNKNOWN_CACHE_SIZE
+    }
+
     /** 명사 뒤 조각이 합성어 뒷부분일 수 없는 말인지([apartFromNoun]). 같은 (앞, 뒤)는 한 번만. */
     private val apart = object : LinkedHashMap<String, Boolean>(256, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?): Boolean =
@@ -183,7 +188,9 @@ class ContextCorrector(
             }
             // 이 묶음 뒤에 남은 것이 공백뿐이면 묶음의 마지막 어절이 창의 마지막 어절이다.
             val endsWindow = (cursor until pieces.size).all { pieces[it].whitespace }
-            val decoded = decode(segment.map { it.core }, prev, protectLast = protectLast && endsWindow)
+            // 문장 부호('바꾸었으며,', '미래에셋대우다.')가 바로 붙은 어절의 끝 음절은 쓴 사람이 일부러 고른 어미다.
+            val punctuated = segment.last().suffix.any { it in SENTENCE_MARKS }
+            val decoded = decode(segment.map { it.core }, prev, protectLast = protectLast && endsWindow, punctuatedLast = punctuated)
             val first = segment.first()
             val last = segment.last()
             out.append(first.prefix)
@@ -296,7 +303,8 @@ class ContextCorrector(
         cores: List<String>,
         contextBefore: String?,
         trace: StringBuilder? = null,
-        protectLast: Boolean = false
+        protectLast: Boolean = false,
+        punctuatedLast: Boolean = false
     ): List<String>? {
         val text = cores.joinToString("")
         val n = text.length
@@ -323,6 +331,12 @@ class ContextCorrector(
         // 붙여 쓴 덩어리의 조각이 멀쩡한 말이면 그 조각 길이를 **음수로** 적는다 — 받침 넣기는 그쪽만 막는다.
         // 붙여 쓴 덩어리는 형태소 사전이 나눈 조각마다 본다 — '운전하는거' 의 '운전하는'·'거' 는 멀쩡한 말이라 '거 → 건' 으로 받침을
         // 넣지 않는다(큰 시험지 2026-10-11: '운전하는거 재미있어요 → 운전하는건').
+        // 음절 자리마다, 사람이 친 어절 안에서 **말뭉치에 흔한 두 음절 넘는 명사**('비서시장' 의 비서·시장, '이관되지' 의 이관) 속인가.
+        // 거기 글자는 바꾸지 않는다 — 고치면 딴 낱말이 된다('AI 비서시장 → 비서실장', '국제도서전에 → 국제도 선전에', 2026-10-14).
+        val commonNounAt = BooleanArray(n)
+        for ((k, core) in cores.withIndex()) {
+            for (range in nounRanges(core)) for (p in range) commonNounAt[starts[k] + p] = true
+        }
         val realLength = IntArray(n)
         for ((k, core) in cores.withIndex()) {
             if (isRealWord(core)) {
@@ -359,7 +373,12 @@ class ContextCorrector(
             // 실시간 창의 마지막 어절(뒤를 모름). 명사면 안 고치고, 한 어절로 읽히는 말이면 쉬프트 오타(ㅅ→ㅆ)만.
             val protectedTail = protectLast && withinOne && firstOwner == last
             // 자유롭게 떼어 낸 **한 음절** 조각은 글자를 바꾸지 않는다 — '서울아산병원서 → 서울아산병원 써'(2026-10-13).
-            val edits = !(protectedTail && firm[last]) &&
+            // 두 음절 넘는 어절에 뒤의 **한 음절 어절**을 붙이면서 글자까지 바꾸지 않는다 — 이름 앞 조각을 조사로 먹었다('노벨상 작가 르
+            // 클레지오 → 작가를', 2026-10-14). 앞이 한 음절 조각인 '뭐 하 새요 → 하세요'(사용자 제보)는 그대로 고친다.
+            val lastOwner = owner[span.end - 1]
+            val swallowsSyllable = !withinOne && cores[firstOwner].length >= 2 && cores[lastOwner].length == 1 &&
+                ends[lastOwner] == span.end && starts[firstOwner] == span.start
+            val edits = !(protectedTail && firm[last]) && !swallowsSyllable &&
                 !(span.kind == KIND_FREE && (insideRealWord(span.start) || insideRealWord(span.end) || span.end - span.start == 1))
             // 끝 음절 잠금은 명사뿐 아니라 **한 어절로 읽히는 말 전부**에 건다 — 어미를 딴 어미로 바꾸면 뜻이 바뀐다('처리되었으며 →
             // 처리되었으면', '선수이자 → 선수이다', '사용하지마 → 사용하지만', '흡연자라 → 흡연자가'). 조사 짝('을↔를')만 바꾼다.
@@ -369,9 +388,12 @@ class ContextCorrector(
                 // '서명하였다 → 설명하였다', '업어 → 없어'). 쉬프트 오타(ㅅ→ㅆ, -ㄹ가 → -ㄹ까)는 이 값을 물리지 않는다.
                 extraCost = if (wellFormed) FIRM_EDIT_COST else 0f,
                 lockLast = wellFormed && span.end == ends[firstOwner],
+                endingFixed = punctuatedLast && span.end == n,
                 slipsOnly = protectedTail && wellFormed,
                 evidentAllowed = !(withinOne && firstOwner < last && titleWord(cores[firstOwner + 1])),
-                firmNoun = withinOne && firm[firstOwner]
+                firmNoun = withinOne && firm[firstOwner],
+                firmStem = if (withinOne && firm[firstOwner] && span.start == starts[firstOwner]) layout.nounLength[firstOwner] else 0,
+                insideCommonNoun = { commonNounAt[span.start + it] }
             ) { realLength[span.start + it] }
             candidates[key] = if (list == null) fresh else merge(list, fresh)
         }
@@ -391,9 +413,13 @@ class ContextCorrector(
             }
             if (plain != null) {
                 trace?.let { traceTokens(it, "글자 그대로 최선", plain.first, plain.second, candidates, layout, contextBefore) }
-                if (best.score - plain.first.score < MARGIN) {
+                // 한 어절을 **가르면서 그 안의 글자까지** 바꾸는 답은 두 번 고친 셈이라 문턱을 두 배로 둔다 — 이름·새말('검언유착 →
+                // 검은 유착', '드지에칸스키를 → 들지 에칸스키를')이 그렇게 바뀌었다(2026-10-14). 붙여 친 오타('저녁애밥먹자')는 고친 말이
+                // 훨씬 흔해서 넘는다.
+                val needed = if (splitWithEdit(tokens, layout, text)) MARGIN * 2 else MARGIN
+                if (best.score - plain.first.score < needed) {
                     trace?.append("글자를 바꾼 답이 글자 그대로 읽기보다 %.2f 낫다 — 문턱 %.2f 를 못 넘어 글자 그대로를 쓴다\n"
-                        .format(best.score - plain.first.score, MARGIN))
+                        .format(best.score - plain.first.score, needed))
                     best = plain.first
                     tokens = plain.second
                 }
@@ -402,6 +428,26 @@ class ContextCorrector(
         trace?.append("차이 %.2f (문턱 %.2f)\n".format(best.score - identity, MARGIN))
         if (best.score - identity < MARGIN) return null
         return if (tokens == cores) null else tokens
+    }
+
+    /**
+     * 답 [tokens] 가 원래 어절 하나를 **가르고 그 조각의 글자도 바꿨거나**, 어절 둘을 **붙이면서 글자도 바꿨는가**('작가 르 클레지오 →
+     * 작가를'). 두 번 고친 셈이다. 글자 수가 바뀐 답이면 자리를 못 맞춰 false.
+     */
+    private fun splitWithEdit(tokens: List<String>, layout: Layout, text: String): Boolean {
+        if (tokens.sumOf { it.length } != text.length) return false
+        var at = 0
+        for (token in tokens) {
+            val end = at + token.length
+            if (!text.regionMatches(at, token, 0, token.length)) {
+                val k = layout.owner[at]
+                val coreEnd = layout.starts[k] + layout.cores[k].length
+                if (layout.owner[end - 1] != k) return true
+                if (at != layout.starts[k] || end != coreEnd) return true
+            }
+            at = end
+        }
+        return false
     }
 
     /**
@@ -560,6 +606,9 @@ class ContextCorrector(
         slipsOnly: Boolean = false,
         evidentAllowed: Boolean = true,
         firmNoun: Boolean = false,
+        firmStem: Int = 0,
+        endingFixed: Boolean = false,
+        insideCommonNoun: (Int) -> Boolean = { false },
         realLength: (Int) -> Int = { 0 }
     ): List<Candidate> {
         val identityCount = lm.lnCount(surface)
@@ -580,6 +629,7 @@ class ContextCorrector(
         val penalty = knownPenalty(identityCount) + EDIT_BASE_COST
         // 고친 자리가 **드문 명사 줄기** 안이면(고새하셨어요·화인해볼게·개마) 그 줄기가 오타일 가능성이 크다. 막이가 걸릴 때만 잰다.
         val rareStem by lazy { if (lockLast || slipsOnly || extraCost > 0f) rareNounStemLength(surface, identityCount) else 0 }
+        val commonStem by lazy { commonNounStemLength(surface) }
         for ((edited, cost) in singleEdits(
             surface,
             // 받침 넣기는 드문 말에만, 그리고 형태소 분석이 **아주 자연스러운** 말에는 안 한다 — '후련하고 → 훈련하고',
@@ -608,9 +658,13 @@ class ContextCorrector(
             // 없으면 흔한 말로 바뀌었다('수애 → 수에', '지단 → 집단', '지바 → 지방'). '어재 → 어제', '계소 → 계속', '중애 → 중에' 는 연다.
             // 첫소리만 바꾸는 편집('개어 → 깨어', '다졌습니다 → 따졌습니다')은 열지 않는다 — 된소리 짝이 둘 다 진짜 움직씨인 일이 흔하다.
             // 끝 음절(조사·어미)을 바꾸는 것은 받침을 채우거나 소리 같은 모음을 바꿀 때만 연다 — '결제기 → 결제가', '무승 → 무슨'.
+            // 받침 채우기라도 끝 음절이 **어미**인 말이면 열지 않는다 — '메시지를 담다 → 담당'(용언이 명사가 됐다, 2026-10-14).
             val lastSafe = !lockLast || firstDifference(surface, edited) < surface.length - 1 ||
-                sameSoundSwap(surface, edited) || codaGain(surface, edited)
-            val evident = evidentAllowed && editedCount != null && (!firmNoun || edited in EVERYDAY_WORDS) && lastSafe && (
+                sameSoundSwap(surface, edited) || (codaGain(surface, edited) && tagsOf(surface)?.second?.startsWith("E") != true)
+            // 고친 자리가 **흔한 명사 줄기 안**이면 딴 낱말로 바꾸는 것이다 — '이관되지 → 일관되지'(이관 ln 6.4, 2026-10-14). 줄기 뒤의
+            // 조사·어미 자리('저녁애 → 저녁에', '작성헤서 → 작성해서')는 그대로 연다.
+            val insideCommonStem = firstDifference(surface, edited) < commonStem
+            val evident = evidentAllowed && editedCount != null && (!firmNoun || edited in EVERYDAY_WORDS) && lastSafe && !insideCommonStem && (
                 (common && !onsetOnly(surface, edited)) ||
                     (identityCount == null && sameSoundSwap(surface, edited)) ||
                     ((!slipsOnly || identityCount == null) && firstDifference(surface, edited) < rareStem)
@@ -619,6 +673,35 @@ class ContextCorrector(
                 !endingShiftMiss(surface, edited)
             ) continue
             if (!evident && slipsOnly && !isShiftSlip(surface, edited) && !endingShiftMiss(surface, edited)) continue
+            // 사전 명사(또는 흔한 명사들로 된 합성어) + 한 음절로 된 모르는 말('결제기' = 결제/기, '국방장관들')의 끝 음절을 딴 음절로
+            // 바꾸지 않는다 — 합성어 꼬리를 조사나 딴 명사로 바꿨다('카드 결제기 → 결제가 → 결제시', '전 국방장관들 → 국방장관을',
+            // 2026-10-14). 소리 같은 모음('저녁애 → 저녁에')·받침 채우기는 그대로 둔다.
+            if (identityCount == null && firstDifference(surface, edited) == surface.length - 1 && edited.length == surface.length &&
+                !sameSoundSwap(surface, edited) && !codaGain(surface, edited) &&
+                surface.last() !in PARTICLE_SYLLABLES && surface.length >= 3 &&
+                (spacer?.isLexiconNoun(surface.dropLast(1)) == true || (0 until surface.length - 1).all { insideCommonNoun(it) })
+            ) continue
+            // 문장 부호 앞 끝 음절은 바꾸지 않는다([decode] 의 punctuatedLast). 쉬프트 오타('햇다.')는 끝 음절이 아니라 그대로 고친다.
+            if (endingFixed && edited.length == surface.length && edited.last() != surface.last()) continue
+            // 연결 어미 '-며'(바꾸었으며·간다며)를 '-면' 으로, 기본형 '-하다' 를 '-한다' 로 바꾸지 않는다 — 둘 다 멀쩡한 말이고 뜻이 바뀐다
+            // (기사 2026-10-14: '발전되었으며 → 발전되었으면', '걱정된다며 → 걱정된다면', '설명하다 → 설명한다').
+            if (edited.length == surface.length && surface.last() == '며' && edited.last() == '면' && surface.dropLast(1) == edited.dropLast(1)) continue
+            if (edited.length == surface.length && surface.length >= 2 && surface.last() == '다' && edited.last() == '다' &&
+                firstDifference(surface, edited) == surface.length - 2 && codaGain(surface, edited) &&
+                Hangul.jongseongOf(edited[surface.length - 2]) == 'ㄴ'
+            ) continue
+            // 자연스럽게 읽히는 말의 흔한 명사 줄기는 아예 안 바꾼다 — 값만 더 물리면 뒷말이 센 쪽('일관되지 않은')이 이겼다.
+            if (insideCommonStem && extraCost > 0f && !isShiftSlip(surface, edited)) continue
+            // 사전 명사(+조사)의 명사 자리 **모음·첫소리**는 오타가 뻔할 때([EVERYDAY_WORDS] 로 바뀔 때)만 바꾼다 — 값만 더 물리면 말뭉치에
+            // 더 흔한 비표준 표기가 이겼다('포트 로열에서 → 로얄에서', 2026-10-14). 빠진 받침 채우기('그 사라이 → 사람이')와 소리 같은 모음
+            // ('네일 → 내일', '재품 → 제품')은 값으로 겨룬다 — 사전에 드문 낱말로 오른 오타가 많다.
+            if (!evident && firstDifference(surface, edited) < firmStem && !isShiftSlip(surface, edited) && !codaGain(surface, edited) &&
+                !sameSoundSwap(surface, edited)
+            ) continue
+            // 사람이 친 어절 속의 흔한 명사 글자도 안 바꾼다(합성어·이름 속까지 — [commonNounAt]).
+            if (edited.length == surface.length && firstDifference(surface, edited) < surface.length &&
+                insideCommonNoun(firstDifference(surface, edited)) && !isShiftSlip(surface, edited)
+            ) continue
             if (editedCount != null && !(kind == KIND_FREE && startsBound(edited)) &&
                 !hearsayToConnective(surface, edited)
             ) {
@@ -798,6 +881,12 @@ class ContextCorrector(
             if (layout.starts[right] == p && layout.cores[right] in STANDALONE_VERBS) return null
             // 수관형사('한·두·몇')와 뒤의 단위는 붙이지 않는다 — '올 한 해 → 올 한해', '한 해 동안 → 한해 동안'(2026-10-13).
             if (layout.cores[layout.owner[p - 1]] in NUMERAL_DETERMINERS) return null
+            // '-아/-어' 뒤의 보조용언('보내 줘', '먹어 봐')은 띄어 쓰는 것이 원칙이고 붙여 써도 된다. 사람이 띄어 친 것을 붙이지
+            // 않는다 — '카카오톡으로 보내 줘 → 보내줘'(2026-10-14).
+            // 분석 사전은 '보내줘' 를 보내/VV 줘/EC 로도 읽어서 품사로는 못 가린다 — 앞 어절의 '-아/-어' 와 뒤 어절의 머리를 본다.
+            if (layout.starts[right] == p && endsWithAEo(layout.cores[layout.owner[p - 1]]) &&
+                AUXILIARY_HEADS.any { layout.cores[right].startsWith(it) }
+            ) return null
             cost += BOUND_MERGE_COST
             merged = true
         }
@@ -1003,6 +1092,42 @@ class ContextCorrector(
         val (end, head) = spacer?.firstMorpheme(surface) ?: return 0
         if (head != "NNG" && head != "NNP") return 0
         return if ((lm.lnCount(surface.substring(0, end)) ?: 0f) < RARE_STEM_LN) end else 0
+    }
+
+    /**
+     * [surface] 의 첫 형태소가 **말뭉치에 흔한** 두 음절 넘는 명사면 그 길이('이관되지' → 2, 이관 ln 6.4). 아니면 0. 그 안을 고치면
+     * 딴 낱말이 된다 — 오타가 뻔해 보여도([rareNounStemLength] 의 반대쪽) 막이를 걷지 않는다.
+     */
+    private fun commonNounStemLength(surface: String): Int {
+        val (end, head) = spacer?.firstMorpheme(surface) ?: return 0
+        if (end < 2 || end > surface.length || (head != "NNG" && head != "NNP")) return 0
+        val stem = surface.substring(0, end)
+        if ((lm.lnCount(stem) ?: 0f) < COMMON_STEM_LN) return 0
+        // 줄기 뒤가 '-하다·-되다' 면 그 움직씨가 말뭉치에 **있어야** 진짜 말이다 — '이관되지'(이관된·이관하는 이 있다)는 지키고,
+        // '가사합니다'(가사하다는 없다 — 감사합니다 오타)는 연다(2026-10-14).
+        return if (verbAttested(surface, end)) end else 0
+    }
+
+    /** [surface] 의 앞 [end] 음절(명사) 뒤가 '-하다·-되다' 꼴이면 그 움직씨가 말뭉치에 있는가. 그런 꼴이 아니면 true. */
+    private fun verbAttested(surface: String, end: Int): Boolean {
+        if (end >= surface.length) return true
+        if (surface[end] !in VERB_SUFFIX_HEADS) return true
+        val stem = surface.substring(0, end)
+        return VERB_PROBES.any { lm.lnCount(stem + it) != null }
+    }
+
+    /** [core] 속의 흔한 명사 자리([Spacer.nounMorphemeRanges] 중 말뭉치 빈도 [COMMON_STEM_LN] 넘는 것). 같은 어절은 한 번만. */
+    private fun nounRanges(core: String): List<IntRange> {
+        val spacer = this.spacer ?: return emptyList()
+        synchronized(nounRangeCache) { nounRangeCache[core]?.let { return it } }
+        // 두 음절 넘는 명사 조각이 **모두** 흔해야 한다. 하나라도 드물면 분석이 억지다 — 천지인 오타 '기타리고'(기다리고)를 기타/리고
+        // (리고 ln 3.9)로 읽는다. 그러면 아무것도 지키지 않는다.
+        val all = spacer.nounMorphemeRanges(core).map { it to (lm.lnCount(core.substring(it.first, it.last + 1)) ?: 0f) }
+        // 명사 하나 + '-하다·-되다' 인데 그 움직씨가 말뭉치에 없으면('가사합니다' — 감사합니다 오타) 지키지 않는다([verbAttested]).
+        val unattestedVerb = all.size == 1 && all[0].first.first == 0 && !verbAttested(core, all[0].first.last + 1)
+        val ranges = if (unattestedVerb || all.any { it.second < COMMON_STEM_LN }) emptyList() else all.map { it.first }
+        synchronized(nounRangeCache) { nounRangeCache[core] = ranges }
+        return ranges
     }
 
     /** 직함·호칭인가([TITLES]) — 한 음절짜리('씨·님')는 그 말 하나일 때만, 두 음절 넘는 것은 조사가 붙어도('감독이·선수는'). */
@@ -1420,12 +1545,27 @@ class ContextCorrector(
         const val EVIDENT_SOURCE_LN = 2.2f
 
         /** 명사 줄기가 이보다 드물면(ln 빈도, 약 20번) 그 안의 편집에 막이를 걷는다([rareNounStemLength]). '서명'(6.4)은 흔하다. */
+        /** '-하다·-되다' 활용의 첫 음절. */
+        private val VERB_SUFFIX_HEADS = setOf('하', '합', '한', '할', '해', '했', '함', '되', '돼', '된', '됐', '될', '됨')
+
+        /** 명사 + '-하다·-되다' 가 진짜 움직씨인지 말뭉치에서 확인할 꼴들([commonNounStemLength]). */
+        private val VERB_PROBES = listOf("하는", "한", "했다", "하고", "하기", "하여", "해", "된", "되는", "됐다", "되어", "되고", "할", "될")
+
+        /** 어절 끝에 붙으면 그 어절의 어미를 굳히는 문장 부호. */
+        private val SENTENCE_MARKS = setOf(',', '.', '!', '?', ';', ':', '…')
+
+        /** [commonNounStemLength] 가 흔한 명사로 보는 줄기 빈도(ln). '이관' 6.4. */
+        const val COMMON_STEM_LN = 4.5f
+
         const val RARE_STEM_LN = 3.0f
 
         /** 끝 음절 잠금([decode])이 "자연스럽게 한 어절로 읽힌다" 고 보는 형태소 분석 비용 상한. '있너'(3,609)는 그 위다. */
         const val LOCK_MAX_COST = 2500
 
         /** 멀쩡한 낱말의 끝 음절을 바꿔도 되는 짝 — 받침에 맞춘 조사 고치기뿐이다. 어미('-며 → -면', '-자 → -다')는 안 바꾼다. */
+        /** 한 음절 조사. [candidatesFor] 의 '명사 끝 → 조사' 막이. */
+        private val PARTICLE_SYLLABLES = setOf('가', '이', '을', '를', '은', '는', '의', '에', '도', '와', '과', '로', '만')
+
         private val PARTICLE_SWAPS = setOf(
             '을' to '를', '를' to '을', '은' to '는', '는' to '은', '이' to '가', '가' to '이', '과' to '와', '와' to '과'
         )
@@ -1454,6 +1594,12 @@ class ContextCorrector(
 
         /** 조사와 겉모양이 같은 한 음절 용언. 띄어 쳤으면 앞말에 붙이지 않는다. */
         private val STANDALONE_VERBS = setOf("가", "와")
+
+        /** '-아/-어' 뒤에 오는 보조용언의 머리. 띄어 친 것을 붙이지 않는다([boundaryCost]). */
+        private val AUXILIARY_HEADS = listOf(
+            "줘", "줬", "주", "줄", "준", "봐", "봤", "보", "볼", "본", "놔", "놨", "놓", "둬", "뒀", "두", "둘", "둔",
+            "버", "드려", "드렸", "드리", "드릴", "드린", "드립", "가", "갈", "간", "갔", "와", "올", "온", "왔", "오", "있", "내", "냈", "낼"
+        )
 
         /** 붙여서 만든 어절이 최소한 이만큼은 흔해야 한다. ln(100). */
         const val MERGE_MIN_LN_COUNT = 4.6f
@@ -1627,7 +1773,8 @@ class ContextCorrector(
         private val SLANG_STEMS = listOf(
             "핵노잼", "핵꿀잼", "알잘딱", "갑분싸", "스불재", "자만추", "중꺾마", "얼죽아", "오운완",
             "존맛탱", "대존맛", "쌉가능", "퇴근각", "킹받", "갓생", "뇌절", "킹정", "꾸안꾸", "머선",
-            "많관부", "억텐", "찐텐", "갑통알", "혼코노", "별다줄", "사바사", "케바케"
+            "많관부", "억텐", "찐텐", "갑통알", "혼코노", "별다줄", "사바사", "케바케",
+            "어쩔티비", "저쩔티비", "점메추", "만반잘부", "넘사벽", "답정너", "솔까말", "엄근진", "핵인싸", "띵작", "내돈내산"
         )
 
         /** 이 음절 뒤의 '-는대'는 없는 꼴이다(과거형·있다·없다). */
