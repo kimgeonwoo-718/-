@@ -55,9 +55,9 @@ class ContextCorrector(
             size > UNKNOWN_CACHE_SIZE
     }
 
-    /** 형태소 사전이 어절을 어떻게 나누는지. 같은 어절은 한 번만. 값이 null 이면 안 나눈다. */
-    private val splits = object : LinkedHashMap<String, String?>(256, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>?): Boolean =
+    /** 형태소 사전이 어절을 어떻게 나누는지([splitsOf]). 같은 어절은 한 번만. 값이 null 이면 안 나눈다. */
+    private val splits = object : LinkedHashMap<String, Pair<String?, String?>>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String?, String?>>?): Boolean =
             size > UNKNOWN_CACHE_SIZE
     }
 
@@ -1389,7 +1389,7 @@ class ContextCorrector(
         // 형태소 사전이 "이건 여러 어절이다" 라고 나누는 것도 분석 안 되는 것과 같이 본다.
         // mecab-ko-dic 에는 '은'·'가' 같은 한 음절 명사가 많아서 웬만한 덩어리는 명사 나열로
         // 억지 분석이 되는데, 사전의 나누기 판단은 그 억지 경로와 제대로 된 경로를 비교한 결과다.
-        if (cost >= Spacer.UNANALYZABLE || (text.length >= 3 && splitOf(text) != null)) {
+        if (cost >= Spacer.UNANALYZABLE || (text.length >= 3 && splitsOf(text).first != null)) {
             return -(UNKNOWN_BASE + UNANALYZABLE_PER_SYLLABLE * maxOf(0, text.length - 2))
         }
         // 무리 없이 한 어절로 분석되는 모르는 말('대문만이', '닮을')은 그냥 드문 낱말일 가능성이
@@ -1412,15 +1412,24 @@ class ContextCorrector(
      * - '-아/-어' 뒤의 용언 ('좋아|했다', '들어|봤다', '남아|있다'): 합성동사거나 보조용언이라
      *   붙여 써도 된다.
      */
-    private fun splitOf(text: String): String? {
-        val spacer = this.spacer ?: return null
-        synchronized(splits) { if (splits.containsKey(text)) return splits[text] }
+    private fun splitOf(text: String): String? = splitsOf(text).second
+
+    /**
+     * (다듬은 나누기, 거기서 이름 조각까지 도로 붙인 나누기). 앞의 것은 모르는 어절의 값을 매길 때([unknownScore]) 쓴다 —
+     * 이름 조각을 붙였다고 그 어절을 '한 낱말' 로 매기면 오타 덩어리('데러와서' → 데려와서, '법무무장관')도 한 낱말이 되어 고친 말이
+     * 문턱을 못 넘었다(2026-10-14). 뒤의 것은 디코더 조각([KIND_PIECE])과 멀쩡한 조각 자리에 쓴다.
+     */
+    private fun splitsOf(text: String): Pair<String?, String?> {
+        val spacer = this.spacer ?: return null to null
+        synchronized(splits) { splits[text]?.let { return it } }
         val raw = spacer.space(text)
-        val spaced = raw?.let { rejoinOptional(text, it) }?.split(' ')
+        val rejoined = raw?.let { rejoinOptional(text, it) }
+        val joined = rejoined?.split(' ')
             ?.let { pieces -> joinNameFragments(pieces, holdsUnknown(raw.split(' '), pieces)) }
             ?.takeIf { it.size >= 2 }?.joinToString(" ")
-        synchronized(splits) { splits[text] = spaced }
-        return spaced
+        val both = rejoined to joined
+        synchronized(splits) { splits[text] = both }
+        return both
     }
 
     /**
