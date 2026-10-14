@@ -1,5 +1,6 @@
 package com.spellkeyboard.core.correct
 
+import com.spellkeyboard.core.hangul.Hangul
 import com.spellkeyboard.core.lm.ContextCorrector
 import com.spellkeyboard.core.lm.LanguageModel
 import com.spellkeyboard.core.spacing.LongSpacer
@@ -415,10 +416,21 @@ class CorrectionEngine(
                 else -> clearBoundary(spacer, pieces[k - 1], pieces[k], whole.first, whole.second)
             } && !(leftEndsLoose(spacer, pieces[k - 1], whole) && context?.knowsWord(pieces[k]) == false && !startsWithVerb(spacer, pieces[k])) &&
                 // 양쪽 조각을 말뭉치가 **둘 다 모르면** 이름 한가운데다('드지|에칸스키를' — '드지' 를 어미 '-지' 로 읽었다, 2026-10-14).
-                !(context?.knowsWord(pieces[k - 1]) == false && context?.knowsWord(pieces[k]) == false)
+                !(context?.knowsWord(pieces[k - 1]) == false && context?.knowsWord(pieces[k]) == false) &&
+                // 이 자리부터 덩어리 끝까지가 말뭉치가 모르는 **이름**('뱅뮤지엄' = 뱅/뮤지엄 고유명사)이면 떼어 내지 않는다 —
+                // '그레뱅뮤지엄 → 그레 뱅뮤지엄' 다음에 디코더가 '그레' 를 '그래' 로 바꿨다(2026-10-14).
+                core.substring(offset).let { rest -> !(context?.knowsWord(rest) == false && spacer.isProperNounChunk(rest)) }
             if (keep) out += pieces[k] else out[out.size - 1] = out.last() + pieces[k]
         }
         return out.joinToString(" ")
+    }
+
+    /** 연결어미로 끝난 [before] 뒤의 보조용언을 띄울 것인가. '-아/-어' 꼴이 아닌 것만 — 끝 음절이 '고·지·치·게·까' 거나 목적의 '-러'. */
+    private fun auxiliaryApart(before: String): Boolean {
+        val last = before.lastOrNull() ?: return false
+        if (last in "고지치게까") return true
+        // '하러·보러·먹으러' 는 목적. '불러·몰라' 처럼 앞 음절에 ㄹ 받침이 있으면 '-어' 다.
+        return last == '러' && (before.length < 2 || Hangul.jongseongOf(before[before.length - 2]) != 'ㄹ')
     }
 
     /**
@@ -439,9 +451,12 @@ class CorrectionEngine(
         // 사전은 '여러' 같은 관형사 한 낱말에도 높은 값을 매겨 분석을 못 믿는다고 한다 — 띄어 쓰는 관형사 목록에 있으면 그대로 관형사로 본다.
         val left = leftTag ?: spacer.edgeTags(before)?.second ?: (if (before in CLEAR_DETERMINERS) "MM" else return false)
         val right = rightTag ?: spacer.edgeTags(after)?.first
+        // 홀로 서는 한 음절 부사는 사전이 이름으로 읽어도('푹쉬는게' 의 푹/NNP) 뒤가 용언이면 뗀다.
+        if (before in CLEAR_ADVERBS && startsWithVerb(spacer, after)) return true
         return when {
             left.startsWith("J") -> true
-            left == "EC" && right == "VX" -> false
+            // 보조용언은 '-아/-어' 뒤에서만 붙여 써도 된다('먹어보다'). '-고 싶다·-지 않다·-게 되다·-ㄹ까 싶다·-러 가다' 는 뗀다.
+            left == "EC" && right == "VX" -> auxiliaryApart(before)
             left.startsWith("E") -> true
             left == "MAG" -> before.length >= 2 || before in CLEAR_ADVERBS
             left == "NP" -> true
