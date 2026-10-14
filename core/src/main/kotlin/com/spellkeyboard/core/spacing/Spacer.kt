@@ -271,6 +271,50 @@ class Spacer(private val dictionary: SpacingDictionary) {
         return "" to ""
     }
 
+    /**
+     * 한 어절로 분석한 [word] 의 음절 자리마다 [boundaryTags] 의 답(길이 word.length + 1, 안쪽 자리만 채운다). 형태소 경계면
+     * (앞 형태소의 끝 품사, 뒤 형태소의 첫 품사), 형태소 한가운데면 null. 음절마다 분석을 되풀이하지 않고 한 번으로 낸다.
+     * 분석이 안 되거나 믿기 어려우면 null.
+     */
+    fun junctionTags(word: String): Array<Pair<String, String>?>? {
+        if (word.isEmpty() || word.length > MAX_SYLLABLES) return null
+        val (pieces, cost) = runAnalysisWithMorphs(word) ?: return null
+        if (cost > BOUND_TRUST_COST_PER_MORPH * pieces.size) return null
+        val tagsAt = HashMap<Int, Pair<String, String>>()
+        var at = 0
+        var previous = -1
+        for ((length, morph) in pieces) {
+            if (previous >= 0) tagsAt[at] = dictionary.tagName(dictionary.tailTag(previous)) to dictionary.tagName(dictionary.headTag(morph))
+            at += length
+            previous = morph
+        }
+        val out = arrayOfNulls<Pair<String, String>>(word.length + 1)
+        var jamo = 0
+        for (i in 0 until word.length) {
+            if (i > 0) out[i] = tagsAt[jamo]
+            jamo += jamoLength(word[i])
+        }
+        return out
+    }
+
+    /**
+     * [before]|[after] 가 **체언·어근 + '-하다'** 한 낱말을 가른 자리인가('문송|합니다', '옴짝달싹|하지', '티격태격|하지만').
+     * '-하다' 는 접미사라 앞말에 붙여 쓴다. 부사 뒤의 '하다'('같이 하자', '안 해')는 딴 낱말이라 뗀다 — 다만 네 음절 이상인
+     * 흉내말 한 낱말('옴짝달싹', '티격태격')에는 '-하다' 가 붙는다. 때를 나타내는 명사('오늘 하자')는 부르는 쪽이 거른다.
+     */
+    fun derivesWithHada(before: String, after: String): Boolean {
+        if (before.isEmpty() || after.isEmpty() || after[0] !in HADA_SYLLABLES) return false
+        val head = edgeTags(after)?.first ?: return false
+        if (head != "VV" && head != "XSV" && head != "XSA" && head != "VX") return false
+        // 분석이 안 되는 앞말은 대개 신조어·이름 같은 체언이다('문송').
+        val left = edgeTags(before) ?: return true
+        return when (left.second) {
+            "NNG", "NNP", "XR" -> true
+            "MAG" -> before.length >= 4 && firstMorpheme(before)?.first == before.length && before.last() !in "이히로게"
+            else -> false
+        }
+    }
+
     /** 용언 품사인가(동사·형용사·보조용언). */
     fun isVerbTag(tag: String): Boolean = tag in VERBAL
 
@@ -657,6 +701,9 @@ class Spacer(private val dictionary: SpacingDictionary) {
 
         /** [boundMorphemeStartsAt] 이 분석을 믿는 형태소당 비용 상한. */
         private const val BOUND_TRUST_COST_PER_MORPH = 2000
+
+        /** '-하다' 활용꼴의 첫 음절. [derivesWithHada] */
+        private const val HADA_SYLLABLES = "하해했합한할함"
 
         /** 자리·때·까닭을 가리키는 명사. 앞 체언과 합성어를 이루는 일이 드물다([startsApartFromNoun]). '속·밖' 은 '마음속·창밖' 같은 합성어가 많아 뺐다. */
         private val APART_NOUNS = setOf(

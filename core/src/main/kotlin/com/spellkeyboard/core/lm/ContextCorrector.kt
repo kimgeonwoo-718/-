@@ -61,6 +61,18 @@ class ContextCorrector(
             size > UNKNOWN_CACHE_SIZE
     }
 
+    /** [junctionsOf] — 어절을 한 어절로 읽은 분석의 음절 자리별 품사. */
+    private val junctions = object : LinkedHashMap<String, Array<Pair<String, String>?>?>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Array<Pair<String, String>?>?>?): Boolean =
+            size > UNKNOWN_CACHE_SIZE
+    }
+
+    /** [rawBreaks] — 형태소 사전이 다듬지 않고 띄운 자리. */
+    private val rawSplits = object : LinkedHashMap<String, Set<Int>>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Set<Int>>?): Boolean =
+            size > UNKNOWN_CACHE_SIZE
+    }
+
     /** 어절이 매인 형태소로 시작하는지 / 한 어절로 무리 없이 분석되는지. 같은 어절은 한 번만. */
     private val boundStarts = object : LinkedHashMap<String, Boolean>(256, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?): Boolean =
@@ -362,9 +374,40 @@ class ContextCorrector(
         // ('을↔를' …) 말고는 안 바꾼다. 실시간 창의 마지막 어절이면 아예 안 바꾼다([protectLast]).
         val firm = BooleanArray(cores.size) { isFirmWord(cores[it]) }
         val last = cores.lastIndex
+        // 사람이 친 어절 안에서 **자르기를 의심할 자리**(깨끗한 글 띄어쓰기 오교정, 2026-10-14). 어절을 한 어절로 읽은 분석에서
+        // - 형태소 한가운데('국가대표팀에|서는', '얘|기해주시기')이거나
+        // - 명사|명사('대한|상공회의소는', '육군과|학교를', '상임위|별로' — 합성어·이름. 앞이 때를 나타내는 말이거나 뒤가 자리·때를
+        //   가리키는 명사면('초반|동안', '개헌|후') 뺀다)인 자리.
+        // 붙여 친 글은 통째 분석이 엉뚱할 수 있어서('그때보자' = 그때/보자 를 명사|명사로, '길이막혀서' = 길/이막/혀서) 바로 막지
+        // 않는다 — 답이 이 자리를 자르는데 **언어모델이 두 조각을 잇달아 본 적이 없을 때만** 막고 다시 찾는다([unseenSplits]).
+        // 형태소 사전이 스스로 띄우는 자리([rawBreaks])거나 어절이 붙여 친 덩어리로 보이면([ONE_WORD_MAX_COST] 위 — 통째 분석을 덜
+        // 믿는다) 더 아껴 막는다(값 1): 잘린 조각 하나가 말뭉치에 드물 때만('대한|변협은', '보도사진|전'). 둘 다면 막지 않는다(값 0).
+        // 한 낱말로 자연스럽게 읽히는 어절을 사전이 한 군데도 안 띄우면 값 2. 사전이 어디든 띄우는 어절은 통째 분석의 틀이 틀렸을 수
+        // 있어 값 1 이다 — '아버지가방에'(사전: 아버지 가방에)를 '아버지가 방에' 로 가르는 것은 막지 않는다.
+        val doubtful = IntArray(n + 1)
+        // 체언·어근 + '-하다'('문송|합니다', '옴짝달싹|하지')는 늘 한 낱말이라 바로 막는다 — [Spacer.derivesWithHada].
+        val blocked = BooleanArray(n + 1)
+        for ((k, core) in cores.withIndex()) {
+            if (core.length < 2) continue
+            val tagsAt = junctionsOf(core)
+            // 두 음절 어절은 형태소 사전이 띄우지 않는다([Spacer.space]) — 사전이 띄우는 자리처럼 아껴 막는다('두번 → 두 번').
+            val spacerBreaks = if (tagsAt == null) emptySet() else if (core.length < 3) (1 until core.length).toSet() else rawBreaks(core)
+            val oneWord by lazy { (morphCost(core) ?: Int.MAX_VALUE) <= ONE_WORD_MAX_COST }
+            for (p in 1 until core.length) {
+                val at = starts[k] + p
+                val before = core.substring(0, p)
+                val after = core.substring(p)
+                if (tagsAt != null && tagsAt[p]?.let { compoundJunction(before, after, it) } != false) {
+                    val spacerSplits = p in spacerBreaks
+                    doubtful[at] = if (!spacerSplits && oneWord && spacerBreaks.isEmpty()) 2 else if (!spacerSplits || oneWord) 1 else 0
+                }
+                blocked[at] = before !in ADVERBIAL_NOUNS && spacer?.derivesWithHada(before, after) == true
+            }
+        }
         val candidates = HashMap<Long, List<Candidate>>()
         for (span in spans) {
             if (span.start >= span.end || span.end > n) continue
+            if ((span.kind == KIND_FREE || span.kind == KIND_PIECE) && (blocked[span.start] || blocked[span.end])) continue
             val key = spanKey(span.start, span.end)
             val list = candidates[key]
             val firstOwner = owner[span.start]
@@ -407,6 +450,19 @@ class ContextCorrector(
         val identity = identityScore(cores, contextBefore, trace)
         var (best, tokens) = search(n, candidates, layout, initialKey) { _, _, _ -> true } ?: return null
         trace?.let { traceTokens(it, "최선", best, tokens, candidates, layout, contextBefore) }
+        // 의심 자리를 처음 보는 두 조각으로 자른 답이면 그 자리를 막고 다시 찾는다. 새 답이 또 딴 의심 자리를 자를 수 있어 몇 번 되풀이한다.
+        val refused = BooleanArray(n + 1)
+        var rounds = 0
+        while (rounds++ < MAX_REFUSAL_ROUNDS) {
+            val unseen = unseenSplits(tokens, layout, text, doubtful)
+            if (unseen.isEmpty()) break
+            for (p in unseen) refused[p] = true
+            trace?.append("처음 보는 두 조각으로 자른 자리 ${unseen.joinToString()} 를 막고 다시 찾는다\n")
+            val again = search(n, candidates, layout, initialKey) { i, j, _ -> !refused[i] && !refused[j] } ?: return null
+            best = again.first
+            tokens = again.second
+            trace?.let { traceTokens(it, "최선", best, tokens, candidates, layout, contextBefore) }
+        }
 
         // **글자를 바꾼 답은 띄어쓰기만 고친 읽기보다도 확실히 나아야 한다.** 원문 덩어리를 통째로 모르는 말로 매기면
         // 한 글자 고친 '아는 말' 이 쉽게 이긴다 — '밥 먹은거지' 가 '먹은건지'(→ 먹은 건지) 가 됐다(2026-10-11 사용자).
@@ -414,7 +470,7 @@ class ContextCorrector(
         // 견줘 [MARGIN] 만큼 못 이기면 그 읽기를 쓴다(그것도 원문보다 [MARGIN] 만큼 나을 때만).
         if (tokens.joinToString("") != text) {
             val plain = search(n, candidates, layout, initialKey) { i, j, candidate ->
-                candidate.text.length == j - i && text.regionMatches(i, candidate.text, 0, j - i)
+                !refused[i] && !refused[j] && candidate.text.length == j - i && text.regionMatches(i, candidate.text, 0, j - i)
             }
             if (plain != null) {
                 trace?.let { traceTokens(it, "글자 그대로 최선", plain.first, plain.second, candidates, layout, contextBefore) }
@@ -434,6 +490,25 @@ class ContextCorrector(
         if (best.score - identity < MARGIN) return null
         return if (tokens == cores) null else tokens
     }
+
+    /**
+     * 답 [tokens] 가 사람이 친 어절 안의 [doubtful] 자리를 자르는데, 언어모델이 그 앞뒤 두 조각을 **잇달아 본 적이 없는** 자리들.
+     * 본 적이 있으면 붙여 친 글을 푼 것이라 그대로 둔다. 글자 수가 바뀐 답이면 자리를 못 맞춰 빈 목록.
+     */
+    private fun unseenSplits(tokens: List<String>, layout: Layout, text: String, doubtful: IntArray): List<Int> {
+        if (tokens.sumOf { it.length } != text.length) return emptyList()
+        val out = ArrayList<Int>()
+        var at = 0
+        for (k in tokens.indices) {
+            if (k > 0 && doubtful[at] > 0 && !layout.boundary[at] && lm.lnBigramCount(tokens[k - 1], tokens[k]) == null &&
+                (doubtful[at] == 2 || rarePiece(tokens[k - 1]) || rarePiece(tokens[k]))
+            ) out += at
+            at += tokens[k].length
+        }
+        return out
+    }
+
+    private fun rarePiece(token: String): Boolean = (lm.lnCount(token) ?: Float.NEGATIVE_INFINITY) < RARE_PIECE_LN
 
     /**
      * 답 [tokens] 가 원래 어절 하나를 **가르고 그 조각의 글자도 바꿨거나**, 어절 둘을 **붙이면서 글자도 바꿨는가**('작가 르 클레지오 →
@@ -1340,9 +1415,98 @@ class ContextCorrector(
     private fun splitOf(text: String): String? {
         val spacer = this.spacer ?: return null
         synchronized(splits) { if (splits.containsKey(text)) return splits[text] }
-        val spaced = spacer.space(text)?.let { rejoinOptional(text, it) }
+        val raw = spacer.space(text)
+        val spaced = raw?.let { rejoinOptional(text, it) }?.split(' ')
+            ?.let { pieces -> joinNameFragments(pieces, holdsUnknown(raw.split(' '), pieces)) }
+            ?.takeIf { it.size >= 2 }?.joinToString(" ")
         synchronized(splits) { splits[text] = spaced }
         return spaced
+    }
+
+    /**
+     * 말뭉치가 모르는 데다 한 낱말로도 안 읽히는 조각은 이름 한가운데를 자른 것이다 — 이웃 조각에 도로 붙인다
+     * ('배스킨라|빈스는', '스빈후부|드는', '펜실이니|아주' — 깨끗한 글 띄어쓰기 오교정, 2026-10-14). 긴 덩어리 나누기
+     * ([com.spellkeyboard.core.correct.CorrectionEngine])와 이 디코더의 사전 조각([splitOf])이 같이 쓴다.
+     * 붙여 친 구어체 시험지의 정답 어절 658개 가운데 말뭉치가 모르는 28개는 다 활용형('예매해뒀어', '속상했겠네')이라
+     * 여기 안 걸린다 — 분석값이 [NAME_FRAGMENT_COST] 아래고 명사로 끝나지 않는다.
+     *
+     * [holdsUnknown] 은 조각마다 사전이 처음 나눈 조각 가운데 말뭉치가 모르는 것을 품었는가다. 다 아는 조각을 도로 붙여 생긴
+     * 덩어리('어제|산옷이|너무' 의 산옷이, '주신자료')는 붙여 친 글이라 보지 않는다. 붙인 덩어리를 다시 보지도 않는다 — 그러면
+     * 붙여 친 문장이 통째로 도로 붙었다. 앞 조각이 아는 말이고 조사·어미·부사·관형사로 끝나면('오늘은|배스킨라빈스에') 그 자리는
+     * 뗀 대로 둔다. 모르는 조각이 조사·어미로 끝나고 뒤가 아는 용언이면('체사피크뿐만|아니라') 그 자리도 뗀 대로 둔다.
+     */
+    fun joinNameFragments(pieces: List<String>, holdsUnknown: List<Boolean>): List<String> {
+        if (pieces.size < 2 || spacer == null) return pieces
+        val fragment = pieces.indices.map { holdsUnknown[it] && nameFragment(pieces[it]) }
+        if (fragment.none { it }) return pieces
+        val out = arrayListOf(pieces[0])
+        for (k in 1 until pieces.size) {
+            val before = pieces[k - 1]
+            val after = pieces[k]
+            val join = (fragment[k - 1] && !(endsLoose(before) && knowsWord(after) && startsWithVerb(after))) ||
+                (fragment[k] && !(knowsWord(before) && endsLoose(before, alsoModifier = true)))
+            if (join) out[out.size - 1] = out.last() + after else out += after
+        }
+        return out
+    }
+
+    private fun nameFragment(piece: String): Boolean {
+        if (knowsWord(piece)) return false
+        if (!isWellFormed(piece)) return true
+        val (head, tail) = tagsOf(piece) ?: return true
+        // 수로 시작하면 수 + 단위를 붙여 친 것이다('이십분정도').
+        if (head == "NR" || head == "MM") return false
+        // 분석값이 높아도 조사로 끝나면 붙여 친 낱말 + 조사이기 쉽다('이십분정도', '산옷이').
+        if ((morphCost(piece) ?: Int.MAX_VALUE) > NAME_FRAGMENT_COST && !tail.startsWith("J")) return true
+        // 명사로 끝나도 사전에 통째로 오른 명사('격조')는 이름 조각이 아니다 — 말뭉치에 어절로 드물 뿐이다.
+        return tail in NOUN_TAILS && spacer?.isLexiconNoun(piece) != true
+    }
+
+    /** 다듬은 조각([pieces])마다, 그것을 이루는 사전 첫 조각([raw]) 가운데 말뭉치가 모르는 것이 있는가([joinNameFragments]). */
+    private fun holdsUnknown(raw: List<String>, pieces: List<String>): List<Boolean> {
+        val out = ArrayList<Boolean>()
+        var r = 0
+        for (piece in pieces) {
+            var covered = 0
+            var unknown = false
+            while (covered < piece.length && r < raw.size) {
+                unknown = unknown || !knowsWord(raw[r])
+                covered += raw[r].length
+                r++
+            }
+            out += unknown
+        }
+        return out
+    }
+
+    /** 조각이 조사·어미로 끝나는가. [alsoModifier] 면 부사·관형사로 끝나는 것도 친다. */
+    private fun endsLoose(piece: String, alsoModifier: Boolean = false): Boolean {
+        val tail = tagsOf(piece)?.second ?: return false
+        return tail.startsWith("J") || tail.startsWith("E") || (alsoModifier && (tail == "MAG" || tail == "MM"))
+    }
+
+    private fun startsWithVerb(piece: String): Boolean = tagsOf(piece)?.first?.let { spacer?.isVerbTag(it) } == true
+
+    private fun junctionsOf(core: String): Array<Pair<String, String>?>? {
+        val spacer = this.spacer ?: return null
+        synchronized(junctions) { if (junctions.containsKey(core)) return junctions[core] }
+        val tags = spacer.junctionTags(core)
+        synchronized(junctions) { junctions[core] = tags }
+        return tags
+    }
+
+    /** 형태소 사전이 [text] 를 다듬지 않고 띄운 자리(음절 위치). 붙여 친 글('그때보자' → 그때 보자)의 경계는 거의 다 여기 든다. */
+    private fun rawBreaks(text: String): Set<Int> {
+        val spacer = this.spacer ?: return emptySet()
+        synchronized(rawSplits) { rawSplits[text]?.let { return it } }
+        val breaks = HashSet<Int>()
+        var at = 0
+        spacer.space(text)?.split(' ')?.forEach { piece ->
+            at += piece.length
+            breaks += at
+        }
+        synchronized(rawSplits) { rawSplits[text] = breaks }
+        return breaks
     }
 
     private fun rejoinOptional(whole: String, spaced: String): String? {
@@ -1390,6 +1554,10 @@ class ContextCorrector(
         if (knowsWord(after) || (isWellFormed(after) && (morphCost(after) ?: Int.MAX_VALUE) < LOCK_MAX_COST)) return false
         return tagsOf(after)?.first?.let { spacer.isVerbTag(it) } != true
     }
+
+    /** 통째 분석에서 명사|명사인 자리를 붙여 둘 것인가. 앞이 때를 나타내는 말·대명사거나 뒤가 자리·때를 가리키는 명사면 뗀다. */
+    private fun compoundJunction(before: String, after: String, tags: Pair<String, String>): Boolean =
+        tags.first in COMPOUND_TAGS && tags.second in COMPOUND_TAGS && !adverbialNoun(before) && !apartFromNoun(before, after)
 
     private fun suffixNounJunction(whole: String, junction: Int, before: String, after: String): Boolean {
         val spacer = this.spacer ?: return false
@@ -1603,6 +1771,12 @@ class ContextCorrector(
 
         /** 낱말 머리로도 흔한 관형사 — '한메일·이사진·새해·전국'. 이것 뒤에서만 아는 한 낱말을 안 가른다. */
         private val WORD_HEAD_DETERMINERS = setOf("한", "이", "새", "전", "총", "각", "본", "동", "현", "구", "신", "순", "대", "두", "세", "네")
+
+        /**
+         * 통째 분석에서 이 품사끼리 맞붙은 자리는 합성어·이름 속이다([compoundJunction]). 접미사('상임위|별로' 의 별)도 넣는다.
+         * 수사(NR)는 뺀다 — 수 + 단위는 띄어 쓴다('삼십|대', '열|시').
+         */
+        private val COMPOUND_TAGS = setOf("NNG", "NNP", "XSN")
 
         /** 두 음절짜리 조사 — 앞말과 늘 붙는다. 한 음절 조사는 용언과 헷갈려 뺐다. */
         private val LONG_PARTICLES = listOf(
@@ -1839,6 +2013,28 @@ class ContextCorrector(
 
         const val MAX_TOKEN_SYLLABLES = 14
         const val MAX_FREE_SYLLABLES = 8
+
+        /** 처음 보는 두 조각으로 자른 의심 자리를 막고 다시 찾는 횟수 상한([unseenSplits]). */
+        private const val MAX_REFUSAL_ROUNDS = 3
+
+        /**
+         * 어절의 형태소 분석값이 이 아래면 붙여 친 덩어리가 아니라 한 낱말로 읽힌다([unseenSplits] 의 값 1 자리). 긴 덩어리를 가를지 정하는
+         * [com.spellkeyboard.core.correct.CorrectionEngine] 의 문지방과 같은 값이다.
+         */
+        private const val ONE_WORD_MAX_COST = 3500
+
+        /**
+         * 말뭉치가 모르는 조각의 분석값이 이보다 크면 이름 조각으로 본다([joinNameFragments]). 붙여 친 구어체 시험지의 정답
+         * 어절 가운데 말뭉치가 모르는 것은 제일 큰 값이 '적어둘게'(3,170)였고, 깨끗한 글에서 잘못 가른 이름 조각은
+         * '무어데'(3,454)·'인디펜던트지'(3,696)·'블레이드앤'(3,804)처럼 그 위였다.
+         */
+        private const val NAME_FRAGMENT_COST = 3300
+
+        /** 이 품사로 끝나면 낱말 끝이 명사다 — 말뭉치가 모르면 이름 조각이다('표도로브', '우파디의'). */
+        private val NOUN_TAILS = setOf("NNG", "NNP", "NNB", "NR", "NP")
+
+        /** 말뭉치에 어절로 이만큼(ln) 못 나온 조각은 드물다 — 이름 조각('변협은', '사진|전' 의 보도사진)이기 쉽다([unseenSplits]). */
+        private const val RARE_PIECE_LN = 3.0f
         const val MAX_DOUBLE_EDIT_SYLLABLES = 8
         const val MAX_SEGMENT_SYLLABLES = 48
         private const val BEAM = 12

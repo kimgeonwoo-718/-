@@ -404,6 +404,8 @@ class CorrectionEngine(
         if (spacer.isProperNounChunk(core)) return core
         val out = ArrayList<String>()
         out += pieces[0]
+        // 조각마다, 사전이 나눈 조각 가운데 말뭉치가 모르는 것을 품었는가([ContextCorrector.joinNameFragments]).
+        val holdsUnknown = arrayListOf(context?.knowsWord(pieces[0]) == false)
         var offset = 0
         for (k in 1 until pieces.size) {
             offset += pieces[k - 1].length
@@ -419,10 +421,20 @@ class CorrectionEngine(
                 !(context?.knowsWord(pieces[k - 1]) == false && context?.knowsWord(pieces[k]) == false) &&
                 // 이 자리부터 덩어리 끝까지가 말뭉치가 모르는 **이름**('뱅뮤지엄' = 뱅/뮤지엄 고유명사)이면 떼어 내지 않는다 —
                 // '그레뱅뮤지엄 → 그레 뱅뮤지엄' 다음에 디코더가 '그레' 를 '그래' 로 바꿨다(2026-10-14).
-                core.substring(offset).let { rest -> !(context?.knowsWord(rest) == false && spacer.isProperNounChunk(rest)) }
-            if (keep) out += pieces[k] else out[out.size - 1] = out.last() + pieces[k]
+                core.substring(offset).let { rest -> !(context?.knowsWord(rest) == false && spacer.isProperNounChunk(rest)) } &&
+                // 체언·어근 + '-하다' 는 한 낱말이다('티격태격|하지만'). 때를 나타내는 말 뒤('오늘|하자')는 뗀다.
+                !(pieces[k - 1] !in TIME_NOUNS && spacer.derivesWithHada(pieces[k - 1], pieces[k]))
+            val unknown = context?.knowsWord(pieces[k]) == false
+            if (keep) {
+                out += pieces[k]
+                holdsUnknown += unknown
+            } else {
+                out[out.size - 1] = out.last() + pieces[k]
+                holdsUnknown[holdsUnknown.size - 1] = holdsUnknown.last() || unknown
+            }
         }
-        return out.joinToString(" ")
+        // 말뭉치가 모르는 이름 조각은 이웃에 도로 붙인다('배스킨라|빈스는') — [ContextCorrector.joinNameFragments].
+        return (context?.joinNameFragments(out, holdsUnknown) ?: out).joinToString(" ")
     }
 
     /** 연결어미로 끝난 [before] 뒤의 보조용언을 띄울 것인가. '-아/-어' 꼴이 아닌 것만 — 끝 음절이 '고·지·치·게·까' 거나 목적의 '-러'. */

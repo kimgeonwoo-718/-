@@ -384,6 +384,28 @@ class CorrectionEngineTest {
     }
 
     @Test
+    fun `수 단위 뒤에 딴 글자가 이어지면 이름이라 가르지 않는다`() {
+        // 깨끗한 글 띄어쓰기 오교정(2026-10-14 넷째 판). 꼬리가 조사·수량 꼬리일 때만 뗀다.
+        assertUntouched("한명숙 전 총리")
+        assertUntouched("구조단들이 두알라에서 준비했다")
+        assertEquals("열 시보다는 아홉 시에", fix("열시보다는 아홉시에"))
+        assertEquals("삼십 대일까요", fix("삼십대일까요"))
+        assertEquals("세 개라서", fix("세개라서"))
+    }
+
+    @Test
+    fun `낱말 속이나 조사 뒤의 조사꼴은 건드리지 않는다`() {
+        // 깨끗한 글 띄어쓰기 오교정(2026-10-14 넷째 판).
+        assertUntouched("안젤리나 졸리, 비욘세 등이 뒤를 이었다.")
+        assertUntouched("파트너를 지정해주는 등")
+        assertUntouched("주류 도·소매 업체")
+        assertUntouched("통신 및 도·감청")
+        assertUntouched("세계타이틀전에 나선다")
+        // 앞말에 붙는 '-ㄹ지' 는 그대로 고친다.
+        assertEquals("갈지 모르겠다", fix("갈 지 모르겠다"))
+    }
+
+    @Test
     fun `홀로 떨어진 조사를 앞말에 붙인다`() {
         assertEquals("학교에서 만나자", fix("학교 에서 만나자"))
         assertEquals("나는 간다", fix("나 는 간다"))

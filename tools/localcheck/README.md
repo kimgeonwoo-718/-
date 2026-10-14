@@ -10,7 +10,7 @@
 
 | | 무엇을 | 얼마나 |
 |---|---|---|
-| `test-core.sh` | 코어 단위 시험 441개 | 1초 |
+| `test-core.sh` | 코어 단위 시험 444개 | 1초 |
 | `typecheck-keyboard.sh` | 키보드 모듈 코틀린 타입 검사 | 30초 |
 | `try.sh` | **진짜 엔진에 글을 넣어 보고 결과를 본다** | 40초 |
 | `confusable.sh` | **헷갈리는 말(낫/낳, 오타 짝 재발/제발·애기/얘기)** 을 규칙표(R)·학습 모델(M)·둘 다(RM)로 재서 견준다. 시험지는 `tools/confusable/eval/` (모델 학습은 `tools/confusable/train.py`) | 20초 |
