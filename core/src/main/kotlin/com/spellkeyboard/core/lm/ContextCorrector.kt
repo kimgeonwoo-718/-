@@ -695,11 +695,11 @@ class ContextCorrector(
             // 문장 부호 앞 끝 음절은 바꾸지 않는다([decode] 의 punctuatedLast). 쉬프트 오타('햇다.')는 끝 음절이 아니라 그대로 고친다.
             if (endingFixed && edited.length == surface.length && edited.last() != surface.last()) continue
             // 연결 어미 '-며'(바꾸었으며·간다며)를 '-면' 으로, 기본형 '-하다' 를 '-한다' 로 바꾸지 않는다 — 둘 다 멀쩡한 말이고 뜻이 바뀐다
-            // (기사 2026-10-14: '발전되었으며 → 발전되었으면', '걱정된다며 → 걱정된다면', '설명하다 → 설명한다').
+            // (기사 2026-10-14: '발전되었으며 → 발전되었으면', '걱정된다며 → 걱정된다면', '설명하다 → 설명한다'). '다' 앞에 ㄴ 을 넣는
+            // 것은 어미 가운데서도 막는다 — '원하시다면 → 원하신다면'(둘 다 바른 말, 큰 시험지 2026-10-14).
             if (edited.length == surface.length && surface.last() == '며' && edited.last() == '면' && surface.dropLast(1) == edited.dropLast(1)) continue
-            if (edited.length == surface.length && surface.length >= 2 && surface.last() == '다' && edited.last() == '다' &&
-                firstDifference(surface, edited) == surface.length - 2 && codaGain(surface, edited) &&
-                Hangul.jongseongOf(edited[surface.length - 2]) == 'ㄴ'
+            if (edited.length == surface.length && codaGain(surface, edited) && firstDifference(surface, edited) + 1 < surface.length &&
+                surface[firstDifference(surface, edited) + 1] == '다' && Hangul.jongseongOf(edited[firstDifference(surface, edited)]) == 'ㄴ'
             ) continue
             // 자연스럽게 읽히는 말의 흔한 명사 줄기는 아예 안 바꾼다 — 값만 더 물리면 뒷말이 센 쪽('일관되지 않은')이 이겼다.
             if (insideCommonStem && extraCost > 0f && !isShiftSlip(surface, edited)) continue
@@ -732,15 +732,15 @@ class ContextCorrector(
                 // 받침을 채울 때만** 깎는다('업어 → 없어' 같은 겹받침 채우기는 '엄마가 업어 줬어' 를 바꿨다).
                 // 어절을 가르면서 고치는 편집('이나자와 → 이 남자와')은 깎지 않는다.
                 // 뒤에 직함이 오는 말('태니 대법원장')도 이름이라 깎지 않는다([evidentAllowed]).
-                // 사전 명사에 **앞말 받침과 맞는 조사**가 붙은 말([nounWithParticle] — '지병에')은 받침 값을 깎지 않는다. 깎는 까닭인
-                // 오타('사라이', '야은')는 조사가 앞말과 안 맞는 꼴이었다.
+                // 받침은 **채운 자리 바로 뒤가 받침 뒤에만 오는 조사**일 때만 깎는다([particleWantsCoda] — '사라이 → 사람이', '야은 → 약은'). 조사가
+                // 앞말과 안 맞는 것이 오타라는 단서다. 맞는 꼴('지병에')이나 용언('야하다 → 약하다' — 큰 시험지 2026-10-14)은 깎지 않는다.
                 // 소리 같은 모음은 고친 말이 **일상어로 시작할 때만**([everydayHead] — '네일은 → 내일은', '중애는 → 중에는') 깎는다. 다 깎았더니
                 // 기사·위키의 진짜 낱말이 흔한 말로 바뀌었다('메주 → 매주', '헤지를 → 해지를', '문화제로 → 문화재로', '내비게이션에 →
                 // 네비게이션에', 큰 시험지 2026-10-14). 고친 말의 빈도로는 못 가른다(내일은 6.1, 매주 7.5).
                 val rareSource = wholeWord && evidentAllowed && (identityCount ?: 0f) < EVIDENT_SOURCE_LN
                 val firmCost = when {
                     rareSource && sameSoundSwap(surface, edited) && everydayHead(edited, firstDifference(surface, edited)) -> SAME_SOUND_FIRM_COST
-                    rareSource && !nounWithParticle && codaGain(surface, edited) && !Hangul.hasJongseong(surface[firstDifference(surface, edited)]) -> CODA_FIRM_COST
+                    rareSource && codaGain(surface, edited) && particleWantsCoda(surface, firstDifference(surface, edited)) -> CODA_FIRM_COST
                     else -> extraCost
                 }
                 val firm = if (!evident && extraCost > 0f && !isShiftSlip(surface, edited) && !endingShiftMiss(surface, edited) &&
@@ -1108,6 +1108,10 @@ class ContextCorrector(
         val b = Hangul.decompose(edited[at]) ?: return false
         return a.first != b.first && a.second == b.second && a.third == b.third
     }
+
+    /** [surface] 의 [at] 자리가 받침 없는 음절이고 바로 뒤가 **받침 뒤에만 오는 조사**로 끝나는가('사라|이', '야|은'). */
+    private fun particleWantsCoda(surface: String, at: Int): Boolean =
+        at < surface.length && !Hangul.hasJongseong(surface[at]) && surface.substring(at + 1) in AFTER_CONSONANT
 
     /** [edited] 가 일상어([EVERYDAY_WORDS])로 시작하고 고친 자리 [at] 이 그 일상어 안인가('내일은' 의 '내일'). */
     private fun everydayHead(edited: String, at: Int): Boolean =
