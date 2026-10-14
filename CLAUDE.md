@@ -31,7 +31,7 @@
 
 - 윈도우 일을 하는 중이면 `core/` 는 **읽기만** 해라.
 - 정말 고쳐야 하면 **사용자에게 먼저 말하고**, 고친 뒤 `tools/localcheck/test-core.sh`
-  (시험 226개)를 반드시 돌려라.
+  (시험 438개)를 반드시 돌려라.
 
 ---
 
@@ -42,7 +42,7 @@
 **`./gradlew` 가 안 돈다.** `dl.google.com` 이 막혀 있어 안드로이드 그레이들 플러그인을
 못 받는다. 대신:
 
-    tools/localcheck/test-core.sh           코어 시험 226개, 1초
+    tools/localcheck/test-core.sh           코어 시험 438개, 1초
     tools/localcheck/typecheck-keyboard.sh  키보드 타입 검사, 30초
 
 APK 가 실제로 빌드되는지는 밀어 본 뒤 CI(`build-apk.yml`)로만 확인된다.
