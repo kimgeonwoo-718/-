@@ -475,8 +475,10 @@ class ContextCorrector(
                 // '서명하였다 → 설명하였다', '업어 → 없어'). 쉬프트 오타(ㅅ→ㅆ, -ㄹ가 → -ㄹ까)는 이 값을 물리지 않는다.
                 extraCost = if (wellFormed) FIRM_EDIT_COST else 0f,
                 fakeVerb = fakeVerb,
-                // 구간이 어절 첫머리에서 시작하면 바로 앞 어절(목적어 조사·수 뒤의 진짜 말을 지킨다).
-                prevWord = if (span.start == starts[firstOwner]) (if (firstOwner > 0) cores[firstOwner - 1] else contextBefore) else null,
+                // 구간이 어절 첫머리에서 시작하면 바로 앞 어절(목적어 조사·수 뒤의 진짜 말을 지킨다). 어절 속에서 시작하면 그 어절의
+                // 앞 조각이 앞말이다('있는|데면' — 붙여 친 관형형 뒤의 '데', 2026-10-15).
+                prevWord = if (span.start == starts[firstOwner]) (if (firstOwner > 0) cores[firstOwner - 1] else contextBefore)
+                else text.substring(starts[firstOwner], span.start),
                 nextWord = if (withinOne && span.end == ends[firstOwner] && firstOwner < last) cores[firstOwner + 1] else null,
                 lockLast = wellFormed && span.end == ends[firstOwner],
                 endingFixed = punctuatedLast && span.end == n,
@@ -566,9 +568,40 @@ class ContextCorrector(
             else if (k > 0 && !layout.boundary[at] && lm.lnBigramCount(tokens[k - 1], tokens[k]) == null &&
                 (nameLike(tokens[k - 1]) || nameLike(tokens[k]))
             ) out += at
+            // 사람이 친 어절을 가르면서 한 조각의 글자를 바꿨는데 **다른 조각은 말뭉치가 모르는 말**이면 어절을 풀어낸 것이 아니다 —
+            // 모르는 이름의 앞머리만 흔한 말로 떼어 냈다('그레뱅뮤지엄이 → 그래 뱅뮤지엄이', '아게시스토라타에게 → 알게 시스토라타에게',
+            // 대화·위키 2026-10-15). 모르는 말 값은 길수록 커서 앞머리를 떼면 늘 이득이었다.
+            else if (k > 0 && !layout.boundary[at] && editedBesideUnknown(tokens[k - 1], tokens[k], at, text)) out += at
+            // 자른 **바로 그 자리의 음절**(앞 조각 끝·뒤 조각 첫머리)까지 바꿨는데 두 조각을 잇달아 본 적이 없으면, 어미·조사를 떼어 내려고
+            // 글자를 맞춘 것이다 — '달아주리라 → 달아준 리라', '만족스러우실거라고 → 만족스러운 살거라고', '힘듦에도 → 힘들 에도',
+            // '민감하신분은 → 민감한 신분은', '좁은방이었습니다 → 좁은 장이었습니다'(2026-10-15). 소리 같은 모음과 쉬프트 오타('가족들이랑|봣다가
+            // → 봤다가')는 붙여 친 오타에 흔해서 뺀다. 붙여 친 받침 빠짐('아치먹고 → 아침 먹고')은 두 조각을 본 적이 있어 그대로 고친다.
+            else if (k > 0 && !layout.boundary[at] && lm.lnBigramCount(tokens[k - 1], tokens[k]) == null &&
+                editedAtCut(tokens[k - 1], tokens[k], at, text)
+            ) out += at
             at += tokens[k].length
         }
         return out
+    }
+
+    /** [at] 에서 맞닿은 두 조각 중 하나는 원문([text])과 글자가 다르고 다른 하나는 말뭉치가 모르는 말인가([unseenSplits]). */
+    private fun editedBesideUnknown(before: String, after: String, at: Int, text: String): Boolean {
+        val beforeEdited = !text.regionMatches(at - before.length, before, 0, before.length)
+        val afterEdited = !text.regionMatches(at, after, 0, after.length)
+        return (beforeEdited && lm.lnCount(after) == null) || (afterEdited && lm.lnCount(before) == null)
+    }
+
+    /** [at] 에서 맞닿은 두 조각 중 하나가 **맞닿은 음절**을 원문([text])과 다르게 바꿨는가(소리 같은 모음·쉬프트 오타 말고 — [unseenSplits]). */
+    private fun editedAtCut(before: String, after: String, at: Int, text: String): Boolean {
+        fun changedAtCut(original: String, edited: String, index: Int) =
+            original.length == edited.length && original[index] != edited[index] &&
+                !sameSoundSwap(original, edited) && !isShiftSlip(original, edited)
+        val left = text.substring(at - before.length, at)
+        val right = text.substring(at, at + after.length)
+        // 앞 조각 끝만 고쳤고 뒤 조각이 그대로 **아주 흔한 말**이면 붙여 친 받침 빠짐이다('괜찮으곳이 → 괜찮은 곳이' — 언어모델이 두 말을
+        // 잇달아 본 적이 없었다). '달아준|리라', '민감한|신분은', '힘들|에도' 의 뒤 조각은 그만큼 흔하지 않다.
+        val commonRight = right == after && (lm.lnCount(after) ?: 0f) >= CUT_RIGHT_COMMON_LN
+        return (changedAtCut(left, before, before.length - 1) && !commonRight) || changedAtCut(right, after, 0)
     }
 
     /**
@@ -1006,6 +1039,23 @@ class ContextCorrector(
             if (firstDifference(surface, edited) == surface.length - 1 && codaGain(surface, edited) && bareStem(surface)) continue
             // 수 뒤의 단위 '군데'(네 군데의 → 군대의)는 그대로.
             if (surface.startsWith("군데") && !edited.startsWith("군데") && prevWord in COUNT_WORDS) continue
+            // 흔한 한 음절 명사 + 조사·서술격('곳일까요' = 곳 + 일까요)의 명사를 딴 한 음절 명사로 바꾸지 않는다 — '주차장이 있는
+            // 곳일까요 → 것일까요'(사람이 친 글 2026-10-15). 빠진 받침 채우기·소리 같은 모음은 그대로 겨룬다.
+            if (monoNounSwap(surface, edited)) continue
+            // 어절 첫 '아' 에 받침을 채워 부정 부사 '안' 을 만들지 않는다 — 뒤가 말뭉치가 아는 말이면 감탄사 '아' 를 붙여 친 것이다
+            // ('아그런가요 → 안 그런가요', '아그러면 → 안 그러면', 사람이 친 대화 2026-10-15). 뜻이 정반대가 된다.
+            if (surface.length >= 2 && surface[0] == '아' && edited[0] == '안' && edited.length == surface.length &&
+                firstDifference(surface, edited) == 0 && lm.lnCount(surface.substring(1)) != null
+            ) continue
+            // 용언 줄기 + '-긴'(-기는 — '댓글 달긴 또 첨이네', '먹긴 했어')의 '긴' 을 딴 어미로 바꾸지 않는다('달긴 → 달린', 영화평 2026-10-15).
+            if (surface.length >= 2 && surface.last() == '긴' && edited.length == surface.length && edited.last() != '긴' &&
+                spacer?.firstMorpheme(surface)?.let { (end, head) -> end == surface.length - 1 && spacer.isVerbTag(head) } == true
+            ) continue
+            // 자유롭게 떼어 낸 조각이 어미·조사로 시작하면('예약할|라는데요') 앞말의 꼬리다 — 그 첫 음절을 바꿔 딴 낱말로 세우지
+            // 않는다('예약할 하는데요', 사람이 친 글 2026-10-15). 자르는 자리와 고치는 자리가 겹치는 두 겹 고침이다.
+            if (kind == KIND_FREE && firstDifference(surface, edited) == 0 &&
+                (startsBound(surface) || BOUND_STARTS.any { surface.startsWith(it) })
+            ) continue
             // 말뭉치가 모르지만 **자연스럽게 읽히는** 말에 받침을 채우는 것은 고친 말이 일상어일 때만([everydayEdit] — '도차했어 →
             // 도착했어', '피고해서 → 피곤해서', '여락 → 연락'). 분석 사전에는 드문 한자어가 다 올라 있어 오타 줄기('도차·사책')와 진짜 말
             // ('시음·서임·저부')을 못 가른다 — 기사·위키에서 '시음하고 → 신음하고', '서임하고 → 선임하고' 가 났다(2026-10-15).
@@ -1583,6 +1633,21 @@ class ContextCorrector(
         return next?.let { it.startsWith("J") || it == "XSN" } == true
     }
 
+    /**
+     * [surface] 의 첫 음절이 **흔한 한 음절 명사**이고 뒤가 조사·서술격 조사인데, [edited] 가 그 명사 글자만 바꿔 딴 명사로 만드는가
+     * ('곳일까요 → 것일까요'). 받침 채우기·소리 같은 모음·쉬프트 오타는 아니다.
+     */
+    private fun monoNounSwap(surface: String, edited: String): Boolean {
+        if (surface.length < 2 || edited.length != surface.length || surface.substring(1) != edited.substring(1)) return false
+        if (codaGain(surface, edited) || sameSoundSwap(surface, edited) || isShiftSlip(surface, edited)) return false
+        if ((lm.lnCount(surface.substring(0, 1)) ?: 0f) < MONO_NOUN_LN) return false
+        val spacer = this.spacer ?: return false
+        fun nounHead(word: String) = spacer.firstMorpheme(word)?.let { (end, head) -> end == 1 && head.startsWith("NN") } == true
+        if (!nounHead(surface) || !nounHead(edited)) return false
+        val next = spacer.boundaryTags(surface, 1)?.second ?: return false
+        return next.startsWith("J") || next.startsWith("VCP")
+    }
+
     /** [surface] 가 명사 + '-하다·-되다' 꼴로 읽히는데 그 움직씨가 말뭉치에 없는가([verbAttested]). 말뭉치가 아는 어절이면 아니다. */
     private fun unattestedVerb(surface: String): Boolean {
         if (knowsWord(surface)) return false
@@ -1688,8 +1753,22 @@ class ContextCorrector(
 
     private fun lnScore(prevKey: String, text: String): Float {
         val prev = if (prevKey == UNKNOWN_CONTEXT) null else prevKey
-        val known = lm.lnConditional(prev, text) ?: return unknownScore(text)
+        val known = lm.lnConditional(prev, text) ?: return politeScore(prev, text) ?: unknownScore(text)
         return known + usagePenalty(text)
+    }
+
+    /**
+     * 말뭉치가 모르는 어절이 **아는 어절 + 높임 '요'**('무거워서요' = 무거워서 + 요, '취해서요', '학교요')면 그 어절 값에서 조금 깎은 값.
+     * '요' 는 거의 아무 어미·명사 뒤에나 붙어 말뭉치가 다 못 본다. 모르는 말 값을 물리면 한 글자 다른 흔한 말이 이겼다('무거워서요 →
+     * 무서워서요', '취해서요 → 위해서요', 사람이 친 대화 2026-10-15). 앞 어절도 모르면 null.
+     */
+    private fun politeScore(prev: String?, text: String): Float? {
+        if (text.length < 3 || text.last() != '요') return null
+        val stem = text.dropLast(1)
+        // 붙여 친 덩어리('하면돼', '가는걸로' — 사전이 가른다)에 '요' 가 붙은 것은 그대로 모르는 말로 매겨 띄우게 둔다.
+        if (stem.length >= 3 && splitsOf(stem).first != null) return null
+        val known = lm.lnConditional(prev, stem) ?: return null
+        return known + usagePenalty(stem) - POLITE_YO_COST
     }
 
     private fun identityScore(cores: List<String>, contextBefore: String?, trace: StringBuilder? = null): Float {
@@ -2634,6 +2713,15 @@ class ContextCorrector(
         private const val DROPPED_CODA_MIN_LN = 4.0f
         /** [realWordForm] — 줄기 명사가 말뭉치에 이만큼(ln) 나와야 진짜 말로 본다. */
         private const val REAL_STEM_LN = 2.0f
+
+        /** [politeScore] — 아는 어절에 '요' 를 붙인 모르는 어절에 더 물리는 값(ln). */
+        private const val POLITE_YO_COST = 3.0f
+
+        /** [editedAtCut] — 앞 조각 끝을 고친 자리 뒤의 조각이 이만큼 흔하면(ln, 곳이 8.9·먹고 9.9) 붙여 친 오타를 푼 것으로 본다. 신분은 4.5·에도 6.5. */
+        private const val CUT_RIGHT_COMMON_LN = 7.0f
+
+        /** [monoNounSwap] — 한 음절 명사가 이만큼 흔해야(말뭉치 ln, 곳 8.1·몸 7.5) 멀쩡한 명사로 본다. */
+        private const val MONO_NOUN_LN = 7.0f
         /** [realWordForm] 이 글자로 떼어 보는 조사·서술격 꼴(긴 것부터). */
         private val REAL_FORM_PARTICLES = listOf(
             "에서는", "에서도", "으로는", "에게는", "에서", "에게", "으로", "에는", "에선", "이나", "이며", "이다", "이고",
@@ -2780,7 +2868,9 @@ class ContextCorrector(
             'ㄹ' to ('ㅀ' to 1.5f), 'ㅀ' to ('ㄹ' to 1.5f),
             'ㄱ' to ('ㄲ' to 1.8f), 'ㄲ' to ('ㄱ' to 1.8f),
             'ㅂ' to ('ㅄ' to 1.8f), 'ㅄ' to ('ㅂ' to 1.8f),
-            'ㄹ' to ('ㄻ' to 2.0f), 'ㄻ' to ('ㄹ' to 2.0f),
+            // ㄻ → ㄹ 은 안 한다 — ㄻ 은 ㄹ·ㅁ 두 키를 모음 없이 잇달아 쳐야 생겨 실수로 잘 안 나오고, ㄹ 줄기의 명사형('나이 듦이',
+            // '힘듦에도', '만듦')은 바른 말이다. 이 편집이 '듦이 → 들이', '힘듦에도 → 힘들 에도' 를 냈다(2026-10-15).
+            'ㄹ' to ('ㄻ' to 2.0f),
             'ㄹ' to ('ㄼ' to 2.0f), 'ㄼ' to ('ㄹ' to 2.0f),
             'ㄴ' to ('ㄵ' to 2.0f), 'ㄵ' to ('ㄴ' to 2.0f),
             'ㄱ' to ('ㄳ' to 2.5f), 'ㄳ' to ('ㄱ' to 2.5f),

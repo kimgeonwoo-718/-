@@ -8,6 +8,7 @@ import com.spellkeyboard.core.spacing.SpacingDictionary
 import com.spellkeyboard.core.spacing.Speller
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 
 /**
@@ -420,6 +421,29 @@ class EngineWithContextTest {
         // 목적어가 없으면 쉬프트 오타 '잇는' 은 그대로 고친다.
         assertEquals("여기 사람 있는 곳이야", all("여기 사람 잇는 곳이야"))
         assertEquals("좋아요 완전", all("조와요 완전"))
+    }
+
+    @Test
+    fun `사람이 친 글에서 진짜 말을 딴 말로 바꾸거나 이름 앞머리를 떼지 않는다`() {
+        // 2026-10-15 여섯째 판 ⑥ — 사람이 친 대화·영화평·후기(큰 시험지 typed)와 대화 시스템 글.
+        for (text in listOf(
+            "혹시 주차장이 있는 곳일까요?",
+            "을지로에 있는 그레뱅뮤지엄은 어떠세요?",
+            "멋진 날개를 달아주리라 생각한다",
+            "나는 그녀의 나이 듦이 좋다",
+            "목표를 달성하기 힘듦에도 불구하고 해냈다",
+            "드라마 댓글 달긴 또 처음이네"
+        )) {
+            assertEquals(text, all(text))
+        }
+        // 자르는 자리의 글자까지 바꿔 어미·조사를 떼어 내지 않는다.
+        assertFalse(all("분명 만족스러우실거라고 생각됩니다.").contains("살"))
+        assertFalse(all("지내기에 많이 좁은방이었습니다").contains("장이었"))
+        assertFalse(all("거기 예약할라는데요.").contains("할 하는"))
+        // 붙여 친 오타는 그대로 고친다.
+        assertEquals("가족들이랑 봤다가 후회했다", all("가족들이랑봣다가 후회했다"))
+        assertEquals("저녁에 밥 먹자", all("저녁애밥먹자"))
+        assertEquals("좀 괜찮은 곳이 있으려나요?", all("좀 괜찮으곳이 있으려나요?"))
     }
 
     @Test
