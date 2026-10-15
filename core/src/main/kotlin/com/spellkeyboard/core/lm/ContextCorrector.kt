@@ -885,7 +885,10 @@ class ContextCorrector(
             // 받침 넣기는 드문 말에만, 그리고 형태소 분석이 **아주 자연스러운** 말에는 안 한다 — '후련하고 → 훈련하고',
             // '좋아하시니까 → 좋아하십니까', '이해해주기 → 이해해주길' 은 분석 비용이 -1700 ~ -2600 인 멀쩡한 말이었다. 진짜 오타
             // ('채을' 2083, '생가보다' -470, '사란이' 584)는 그 위에 있다(큰 시험지 2026-10-11).
-            codaSlip = (identityCount ?: -1f) < CODA_SLIP_MAX_LN && (morphCost(surface) ?: 0) >= NATURAL_WORD_COST,
+            // 말뭉치가 조사를 떼고도 전혀 모르는 말은 분석이 자연스러워도 받침을 넣어 본다 — 받침 빠진 오타가 드문 사전 명사에 떨어진다
+            // ('저화를' -1392). '무제는'(무제 + 는)처럼 말뭉치가 아는 말은 그대로 둔다.
+            codaSlip = (identityCount == null && !knowsWord(surface)) ||
+                ((identityCount ?: -1f) < CODA_SLIP_MAX_LN && (morphCost(surface) ?: 0) >= NATURAL_WORD_COST),
             nearKey = (identityCount ?: -1f) < NEAR_KEY_MAX_LN,
             cheonjiinKey = cheonjiin && (identityCount ?: -1f) < CJI_MAX_LN,
             realLength = realLength
@@ -917,7 +920,8 @@ class ContextCorrector(
             // 고친 자리가 **흔한 명사 줄기 안**이면 딴 낱말로 바꾸는 것이다 — '이관되지 → 일관되지'(이관 ln 6.4, 2026-10-14). 줄기 뒤의
             // 조사·어미 자리('저녁애 → 저녁에', '작성헤서 → 작성해서')는 그대로 연다.
             val insideCommonStem = firstDifference(surface, edited) < commonStem
-            val evident = evidentAllowed && editedCount != null && (!firmNoun || edited in EVERYDAY_WORDS) && lastSafe && !insideCommonStem && (
+            val evident = evidentAllowed && editedCount != null &&
+                (!firmNoun || edited in EVERYDAY_WORDS || (everydayNounEdit(edited) && !knowsWord(surface))) && lastSafe && !insideCommonStem && (
                 (common && !onsetOnly(surface, edited)) ||
                     (identityCount == null && sameSoundSwap(surface, edited)) ||
                     ((!slipsOnly || identityCount == null) && firstDifference(surface, edited) < rareStem)
@@ -989,7 +993,14 @@ class ContextCorrector(
                 val firm = if (!evident && extraCost > 0f && !isShiftSlip(surface, edited) && !endingShiftMiss(surface, edited) &&
                     !wrongHearsayFix(surface, edited)
                 ) firmCost else 0f
-                out += Candidate(edited, -(cost + penalty + firm))
+                // 말뭉치가 모르는 말에 받침 하나를 채워 **아주 흔한 말**이 되면 받침 빠진 오타다 — 값을 덜 문다('여락 → 연락',
+                // '저화를 → 전화를'. 사전이 드문 명사로 읽어 원문 값이 높았다, 2026-10-15).
+                val dropped = if (evident && identityCount == null && (editedCount ?: 0f) >= EVIDENT_EDIT_LN && codaGain(surface, edited) &&
+                    !knowsWord(surface)
+                ) {
+                    DROPPED_CODA_DISCOUNT
+                } else 0f
+                out += Candidate(edited, -(cost + penalty + firm - dropped))
             }
         }
         // 두 군데 고치기는 **없는 말**에만, 그리고 두 걸음 다 사람이 실제로 내는 오타 방향일 때만(햇는대요 → 했는데요).
@@ -1365,6 +1376,13 @@ class ContextCorrector(
         at < surface.length && !Hangul.hasJongseong(surface[at]) && surface.substring(at + 1) in AFTER_CONSONANT
 
     /** [edited] 가 일상어([EVERYDAY_WORDS])로 시작하고 고친 자리 [at] 이 그 일상어 안인가('내일은' 의 '내일'). */
+    /**
+     * [edited] 가 일상 명사(+조사)인가 — 사전에만 있고 말뭉치가 모르는 드문 명사('여락', '저화', '자소')에 받침 빠진 오타가 떨어졌을 때
+     * 이 명사로는 고친다('연락', '전화를', '장소는', 2026-10-15). '문제' 는 '무제(한 무제)' 와 겹쳐 넣지 않는다.
+     */
+    private fun everydayNounEdit(edited: String): Boolean =
+        EVERYDAY_NOUNS.any { edited.startsWith(it) && (edited.length == it.length || edited.substring(it.length) in EVERYDAY_NOUN_TAILS) }
+
     private fun everydayHead(edited: String, at: Int): Boolean =
         EVERYDAY_WORDS.any { at < it.length && edited.startsWith(it) }
 
@@ -1981,6 +1999,13 @@ class ContextCorrector(
             "같이", "혼자", "먼저", "나중에", "바로", "빨리", "잠깐", "요즘", "항상", "가끔", "자주", "매일", "확인", "고생", "감사"
         )
 
+        /** [everydayNounEdit] 의 일상 명사. */
+        private val EVERYDAY_NOUNS = setOf(
+            "연락", "전화", "장소", "접수", "작성", "검토", "정리", "일정", "시간", "사진", "선약", "계산", "주문", "발송", "덕분", "축하",
+            "걱정", "응원", "예약", "산책", "아침", "점심", "저녁", "우산", "감기", "내용", "공지", "참고", "약속", "생각", "친구", "동생"
+        )
+        private val EVERYDAY_NOUN_TAILS = setOf("은", "는", "이", "가", "을", "를", "에", "에서", "의", "도", "만", "으로", "로", "하고", "해", "해서", "했어")
+
         /** 사람 이름 뒤에 오는 직함·호칭. 앞 어절이 이름이라는 단서다 — '허재 감독' 을 '헌재 감독' 으로 바꾸지 않는다. */
         private val TITLES = listOf(
             "감독", "선수", "씨", "님", "대표", "의원", "교수", "선생", "작가", "배우", "회장", "사장", "기자", "위원장", "장관",
@@ -2384,6 +2409,9 @@ class ContextCorrector(
          * 받침을 **빼는** 쪽도 대 봤는데 전 항목이 나빠졌다(오교정 1.53%). 안 넣는다.
          */
         const val CODA_ADD_COST = 3.0f
+
+        /** 모르는 말에 받침을 채워 아주 흔한 말이 되는 편집에서 덜 무는 값([candidatesFor]). */
+        private const val DROPPED_CODA_DISCOUNT = 1.5f
 
         /**
          * 이보다 드문 어절에만 받침 넣기를 허용한다. ln(빈도) 3 ≈ 6,700만 어절에 스무 번.
