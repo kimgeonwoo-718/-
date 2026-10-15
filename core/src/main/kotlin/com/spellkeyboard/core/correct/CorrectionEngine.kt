@@ -433,7 +433,9 @@ class CorrectionEngine(
                 // (붙여 친 글 '챙겨먹어' 를 디코더가 말뭉치를 보고 가른다).
                 context?.boundVerbJoint(pieces[k - 1], pieces[k], auxiliary = false) != true &&
                 // 말뭉치가 아는 이름·명사 한가운데('아비시니|아의', '베를|린지역의', '인베스트먼|트와').
-                context?.crossesKnownName(core, offset) != true
+                context?.crossesKnownName(core, offset) != true &&
+                // 한 형태소 한가운데이고 붙인 꼴이 더 흔한 자리('끝|납니다', '재미|있을', '익숙해|지는').
+                context?.glueWins(pieces[k - 1], pieces[k]) != true
             val unknown = context?.knowsWord(pieces[k]) == false
             if (keep) {
                 out += pieces[k]

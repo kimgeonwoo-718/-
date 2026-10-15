@@ -268,6 +268,24 @@ class Spacer(private val dictionary: SpacingDictionary) {
         return nouns >= 2
     }
 
+    /**
+     * [word] 를 한 어절로 읽은 분석에서 [p] 음절 자리가 형태소 한가운데인가 — 분석값은 따지지 않는다('끝납니다' 는 끝납니다/VV+EF 한
+     * 형태소인데 값이 높다). 분석이 안 되면 null.
+     */
+    fun insideMorpheme(word: String, p: Int): Boolean? {
+        if (p <= 0 || p >= word.length || word.length > MAX_SYLLABLES) return null
+        val (pieces, _) = runAnalysisWithMorphs(word) ?: return null
+        var jamo = 0
+        for (i in 0 until p) jamo += jamoLength(word[i])
+        var at = 0
+        for ((length, _) in pieces) {
+            if (at == jamo) return false
+            if (at > jamo) return true
+            at += length
+        }
+        return at != jamo
+    }
+
     private val commonNoun = dictionary.tagId("NNG")
     private val properNoun = dictionary.tagId("NNP")
 

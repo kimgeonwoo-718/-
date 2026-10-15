@@ -406,6 +406,23 @@ class CorrectionEngineTest {
     }
 
     @Test
+    fun `의존명사와 횟수를 띄운다`() {
+        // 붙여 친 글 띄어쓰기 자에서 놓치던 것(2026-10-15).
+        assertEquals("그냥 쉬는 게 낫지", fix("그냥 쉬는게 낫지"))
+        assertEquals("가는 게 좋겠어", fix("가는게 좋겠어"))
+        assertEquals("그런 줄도 모르고", fix("그런줄도 모르고"))
+        assertEquals("셋 다 마음에 들어", fix("셋다 마음에 들어"))
+        assertEquals("한 번만 더 해 보자", fix("한번만 더 해 보자"))
+        assertEquals("한 번도 없어", fix("한번도 없어"))
+        assertEquals("아는 사람 중에 한 명이야", fix("아는 사람중에 한 명이야"))
+        // '-ㄹ게'(어미), '한번 해 봐'(시험 삼아), '우리다', '그중' 은 그대로.
+        assertUntouched("내가 할게 더 줘")
+        assertUntouched("한번 해 봐")
+        assertUntouched("그건 우리다")
+        assertUntouched("그중에 하나")
+    }
+
+    @Test
     fun `홀로 떨어진 조사를 앞말에 붙인다`() {
         assertEquals("학교에서 만나자", fix("학교 에서 만나자"))
         assertEquals("나는 간다", fix("나 는 간다"))

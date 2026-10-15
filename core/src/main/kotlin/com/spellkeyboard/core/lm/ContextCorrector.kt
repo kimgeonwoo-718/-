@@ -599,6 +599,20 @@ class ContextCorrector(
         return false
     }
 
+    /**
+     * [before]|[after] 가 한 형태소 한가운데이고('끝|납니다' 의 끝나, '재미|있을' 의 재미있, '익숙해|지는') 말뭉치가 붙인 꼴을 두 조각
+     * 짝보다 많이 봤는가 — 긴 덩어리 나누기가 이 자리를 자르지 않는다. 붙인 꼴을 말뭉치가 모르면('아버지가방에') 아니다.
+     */
+    fun glueWins(before: String, after: String): Boolean {
+        // '-아/-어 + 지다'('익숙해|지는', '예뻐|졌어')는 늘 붙여 쓴다. 분석 사전은 홀로 선 '지는' 을 지(자기)+는 으로 읽어 품사로는 못 본다.
+        // 한 음절 앞말('해|지는' — 해가 지다)은 뺀다.
+        if (before.length >= 2 && after[0] in "지져졌집질진" && endsWithAEo(before)) return true
+        val whole = lm.lnCount(before + after) ?: return false
+        val pair = lm.lnBigramCount(before, after)
+        if (pair != null && whole <= pair) return false
+        return spacer?.insideMorpheme(before + after, before.length) == true
+    }
+
     /** [chunk] 끝에 붙은 조사를 뗀 자리(조사가 없으면 길이). */
     private fun trailingParticleStart(chunk: String): Int {
         for (particle in TRAILING_PARTICLES) {
