@@ -1,5 +1,7 @@
 package com.spellkeyboard.core.spacing
 
+import com.spellkeyboard.core.hangul.Hangul
+
 /**
  * 붙여 쓴 한 덩어리를 어절로 나눈다.
  *
@@ -61,7 +63,8 @@ class Spacer(private val dictionary: SpacingDictionary) {
     fun space(word: String): String? {
         if (word.length < MIN_SYLLABLES) return null
         val analysis = analyze(word, allowSpaces = true) ?: return null
-        val spaced = render(word, analysis)
+        // 겹조사 뒤의 '의' 는 앞에 붙는다('유가족으로부터 의', '타깃층에서 의' — 사전이 조사 둘의 잇기 값을 높게 매겨 띄웠다).
+        val spaced = render(word, analysis).replace(LONE_GENITIVE, "$1의")
         return if (spaced == word) null else spaced
     }
 
@@ -242,6 +245,29 @@ class Spacer(private val dictionary: SpacingDictionary) {
         return false
     }
 
+    /**
+     * [word] 를 한 어절로 읽은 분석이 **명사(와 접두·접미사)만 이어지고 끝에 조사만** 붙은 꼴인가 — 이름·합성어 모양
+     * ('대한상공회의소는', '챔피언스리그에서의', '국토교통위'). 동사·형용사·부사·어미·의존명사가 끼면 아니다 — 붙여 친 글은 대개
+     * 여기 든다('그때보자', '친구만나서'). 분석값은 따지지 않는다(긴 이름은 값이 높다).
+     */
+    fun isNounChunk(word: String): Boolean {
+        if (word.length < 2 || word.length > MAX_SYLLABLES) return false
+        val (pieces, _) = runAnalysisWithMorphs(word) ?: return false
+        var nouns = 0
+        var particles = false
+        for ((_, morph) in pieces) {
+            val head = dictionary.tagName(dictionary.headTag(morph))
+            val tail = dictionary.tagName(dictionary.tailTag(morph))
+            if (head.startsWith("J") && tail.startsWith("J")) {
+                particles = true
+                continue
+            }
+            if (particles || head !in NOUNISH_TAGS || tail !in NOUNISH_TAGS) return false
+            nouns++
+        }
+        return nouns >= 2
+    }
+
     private val commonNoun = dictionary.tagId("NNG")
     private val properNoun = dictionary.tagId("NNP")
 
@@ -276,25 +302,42 @@ class Spacer(private val dictionary: SpacingDictionary) {
      * (앞 형태소의 끝 품사, 뒤 형태소의 첫 품사), 형태소 한가운데면 null. 음절마다 분석을 되풀이하지 않고 한 번으로 낸다.
      * 분석이 안 되거나 믿기 어려우면 null.
      */
-    fun junctionTags(word: String): Array<Pair<String, String>?>? {
+    fun junctionTags(word: String): Array<Pair<String, String>?>? = syllableTags(word)?.first
+
+    /**
+     * [junctionTags] 와 같은 분석에서 (경계 자리의 품사, **형태소 한가운데인** 자리마다 그 형태소의 (첫 품사, 끝 품사)).
+     * 둘째는 '국가대표팀에|서는'(에서/JKB)·'상징으로|서의'(으로서/JKB) 처럼 조사 한가운데를 자르는지 볼 때 쓴다.
+     */
+    fun syllableTags(word: String): Pair<Array<Pair<String, String>?>, Array<Pair<String, String>?>>? {
         if (word.isEmpty() || word.length > MAX_SYLLABLES) return null
         val (pieces, cost) = runAnalysisWithMorphs(word) ?: return null
         if (cost > BOUND_TRUST_COST_PER_MORPH * pieces.size) return null
         val tagsAt = HashMap<Int, Pair<String, String>>()
+        // 형태소마다 (자모 시작, 자모 끝, 형태소).
+        val spans = ArrayList<Triple<Int, Int, Int>>()
         var at = 0
         var previous = -1
         for ((length, morph) in pieces) {
             if (previous >= 0) tagsAt[at] = dictionary.tagName(dictionary.tailTag(previous)) to dictionary.tagName(dictionary.headTag(morph))
+            spans += Triple(at, at + length, morph)
             at += length
             previous = morph
         }
-        val out = arrayOfNulls<Pair<String, String>>(word.length + 1)
+        val junctions = arrayOfNulls<Pair<String, String>>(word.length + 1)
+        val inside = arrayOfNulls<Pair<String, String>>(word.length + 1)
         var jamo = 0
         for (i in 0 until word.length) {
-            if (i > 0) out[i] = tagsAt[jamo]
+            if (i > 0) {
+                junctions[i] = tagsAt[jamo]
+                if (junctions[i] == null) {
+                    spans.firstOrNull { it.first < jamo && jamo < it.second }?.let {
+                        inside[i] = dictionary.tagName(dictionary.headTag(it.third)) to dictionary.tagName(dictionary.tailTag(it.third))
+                    }
+                }
+            }
             jamo += jamoLength(word[i])
         }
-        return out
+        return junctions to inside
     }
 
     /**
@@ -308,11 +351,19 @@ class Spacer(private val dictionary: SpacingDictionary) {
         if (head != "VV" && head != "XSV" && head != "XSA" && head != "VX") return false
         // 분석이 안 되는 앞말은 대개 신조어·이름 같은 체언이다('문송').
         val left = edgeTags(before) ?: return true
+        // 형용사 + '-어하다'('아쉬워|하였기에', '귀여워|하고', '좋아|해')는 한 낱말이다.
+        if (left.first == "VA" && left.second == "EC" && after[0] in "하해했" && endsWithA(before.last())) return true
         return when (left.second) {
             "NNG", "NNP", "XR" -> true
             "MAG" -> before.length >= 4 && firstMorpheme(before)?.first == before.length && before.last() !in "이히로게"
             else -> false
         }
+    }
+
+    /** 음절이 '-아/-어' 로 끝나는가(모음 ㅏ·ㅓ·ㅝ·ㅘ·ㅕ·ㅐ, 받침 없음) — '아쉬워', '기뻐', '좋아', '미워'. */
+    private fun endsWithA(c: Char): Boolean {
+        val (_, jung, jong) = Hangul.decompose(c) ?: return false
+        return jong == 0 && Hangul.JUNGSEONG[jung] in "ㅏㅓㅝㅘㅕㅐ"
     }
 
     /** 용언 품사인가(동사·형용사·보조용언). */
@@ -701,6 +752,12 @@ class Spacer(private val dictionary: SpacingDictionary) {
 
         /** [boundMorphemeStartsAt] 이 분석을 믿는 형태소당 비용 상한. */
         private const val BOUND_TRUST_COST_PER_MORPH = 2000
+
+        /** [isNounChunk] 의 명사 쪽 품사. 의존명사(NNB)·대명사는 뺀다 — 붙여 친 글의 '것·수·데' 다. */
+        private val NOUNISH_TAGS = setOf("NNG", "NNP", "NR", "XSN", "XPN", "SL", "SH", "SN")
+
+        /** 겹조사 뒤에 홀로 띄운 '의'. [space] */
+        private val LONE_GENITIVE = Regex("(에서|으로부터|로부터|에게서|한테서|으로서|로서|에서부터|까지|부터|만큼|에게|한테|과|와) 의(?= |$)")
 
         /** '-하다' 활용꼴의 첫 음절. [derivesWithHada] */
         private const val HADA_SYLLABLES = "하해했합한할함"

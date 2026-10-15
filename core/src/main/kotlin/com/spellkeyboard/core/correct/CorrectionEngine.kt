@@ -402,6 +402,9 @@ class CorrectionEngine(
         if (pieces.drop(1).any { spacer.startsWithBoundMorpheme(it) == true }) return core
         // 통째로 읽은 분석이 이름 조각뿐이면 이름이다('배스킨라빈스 → 배스킨라 빈스').
         if (spacer.isProperNounChunk(core)) return core
+        // 명사만 이어진 덩어리면 이름·합성어 모양이다 — 말뭉치가 잇달아 본 적 없는 조각으로는 가르지 않는다(디코더와 같은 막이,
+        // [ContextCorrector.nameJoint]). '광주장애인국민체육센터', '지놈앤컴퍼니', '나이지리아군의'.
+        val nounChunk = spacer.isNounChunk(core)
         val out = ArrayList<String>()
         out += pieces[0]
         // 조각마다, 사전이 나눈 조각 가운데 말뭉치가 모르는 것을 품었는가([ContextCorrector.joinNameFragments]).
@@ -423,7 +426,12 @@ class CorrectionEngine(
                 // '그레뱅뮤지엄 → 그레 뱅뮤지엄' 다음에 디코더가 '그레' 를 '그래' 로 바꿨다(2026-10-14).
                 core.substring(offset).let { rest -> !(context?.knowsWord(rest) == false && spacer.isProperNounChunk(rest)) } &&
                 // 체언·어근 + '-하다' 는 한 낱말이다('티격태격|하지만'). 때를 나타내는 말 뒤('오늘|하자')는 뗀다.
-                !(pieces[k - 1] !in TIME_NOUNS && spacer.derivesWithHada(pieces[k - 1], pieces[k]))
+                !(pieces[k - 1] !in TIME_NOUNS && spacer.derivesWithHada(pieces[k - 1], pieces[k])) &&
+                // 앞에서 도로 붙인 덩어리('지놈|앤' → '지놈앤')까지 왼쪽으로 본다.
+                !(nounChunk && context?.nameJoint(out.last(), pieces[k]) == true) &&
+                // '-받다·-하다' 가 붙는 명사 뒤('비난|받았을때') — 디코더와 같은 막이. '-아/-어' 뒤 보조용언은 여기서 안 본다
+                // (붙여 친 글 '챙겨먹어' 를 디코더가 말뭉치를 보고 가른다).
+                context?.boundVerbJoint(pieces[k - 1], pieces[k], auxiliary = false) != true
             val unknown = context?.knowsWord(pieces[k]) == false
             if (keep) {
                 out += pieces[k]
