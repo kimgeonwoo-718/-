@@ -284,6 +284,13 @@ object SpacingRules {
 
     private val VOWEL_NUMERAL_TAILS = listOf("라", "야", "예", "랑", "나", "든")
 
+    /** 사람 이름 뒤에 오는 직함·호칭. 수 + 단위로 읽히는 이름('한병도', '백원우') 뒤에 오면 가르지 않는다. */
+    private val PERSON_TITLES = listOf(
+        "후보", "의원", "씨", "대표", "장관", "위원장", "부원장", "원장", "총리", "회장", "부회장", "사장", "감독", "선수", "교수", "기자",
+        "대통령", "당선인", "이사장", "차관", "시장", "지사", "의장", "대변인", "변호사", "작가", "배우", "가수", "박사", "최고위원",
+        "수석", "실장", "국장", "팀장", "부장", "위원", "공주", "왕자", "여사"
+    )
+
     private val NUMERAL_COMPOUND_PREFIXES = listOf(
         "한시적", "한시도", "한시름", "한시바삐", "한시가", "한시라도", "한시각", "한줄기",
         "세분화", "세분하", "세분했", "세분된", "세분되", "세분류", "세시풍", "세시봉",
@@ -444,7 +451,11 @@ object SpacingRules {
             """(?<![가-힣0-9])(${NUMERALS.joinToString("|")})(${UNITS.joinToString("|")})(?=([가-힣]*)\s*([가-힣]*))""",
             "$1 $2",
             R
-        ) { match -> match.value !in NUMERAL_EXCEPTIONS && !numeralCompound(match) && numeralTailFits(match.groupValues[2], match.groupValues[3]) },
+        ) { match ->
+            match.value !in NUMERAL_EXCEPTIONS && !numeralCompound(match) && numeralTailFits(match.groupValues[2], match.groupValues[3]) &&
+                // 뒷말이 직함이면 사람 이름이다 — '한병도 후보 → 한 병도', '백원우 부원장'(기사 2026-10-15).
+                !(match.groupValues[3].length <= 1 && PERSON_TITLES.any { match.groupValues[4].startsWith(it) })
+        },
         TextRule.of("""(?<![가-힣])한대(?=\s+[가-힣]|가|를|씩|만|에|도|정도|쯤|째)""", "한 대", R),
 
         // 보조용언 '-고 있다', '-지 않다/못하다/말다' 는 띄어 쓴다.

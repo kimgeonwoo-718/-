@@ -449,8 +449,11 @@ class ContextCorrector(
             val swallowsSyllable = !withinOne && cores[firstOwner].length >= 2 && cores[lastOwner].length == 1 &&
                 ends[lastOwner] == span.end && starts[firstOwner] == span.start
             val edits = !(protectedTail && firm[last]) && !swallowsSyllable &&
-                !(span.kind == KIND_FREE && (insideRealWord(span.start) || insideRealWord(span.end) || span.end - span.start == 1 ||
-                    nameInside[span.start] || nameInside[span.end]))
+                !(span.kind == KIND_FREE && (insideRealWord(span.start) || insideRealWord(span.end) || span.end - span.start == 1))
+            // 이름 조각이라 도로 붙인 덩어리 안을 자르는 자유 구간은 소리 같은 모음(ㅐ↔ㅔ)과 쉬프트 오타(ㅅ→ㅆ)만 고친다 — '이번주였나요 →
+            // 이번 죽였나요', '공동어로구역의 → 공동으로 구역의'는 막고, 오타 토막을 도로 붙인 '태|이프를샀던 → 테이프를 샀던',
+            // '나름|재밋었는데 → 나름 재밌었는데'는 고친다(2026-10-15).
+            val sameSoundOnly = span.kind == KIND_FREE && (nameInside[span.start] || nameInside[span.end])
             // 끝 음절 잠금은 명사뿐 아니라 **한 어절로 읽히는 말 전부**에 건다 — 어미를 딴 어미로 바꾸면 뜻이 바뀐다('처리되었으며 →
             // 처리되었으면', '선수이자 → 선수이다', '사용하지마 → 사용하지만', '흡연자라 → 흡연자가'). 조사 짝('을↔를')만 바꾼다.
             val fresh = candidatesFor(
@@ -461,6 +464,7 @@ class ContextCorrector(
                 lockLast = wellFormed && span.end == ends[firstOwner],
                 endingFixed = punctuatedLast && span.end == n,
                 slipsOnly = protectedTail && wellFormed,
+                sameSoundOnly = sameSoundOnly,
                 evidentAllowed = !(withinOne && firstOwner < last && titleWord(cores[firstOwner + 1])),
                 firmNoun = withinOne && firm[firstOwner],
                 firmStem = if (withinOne && firm[firstOwner] && span.start == starts[firstOwner]) layout.nounLength[firstOwner] else 0,
@@ -534,6 +538,7 @@ class ContextCorrector(
                 (doubtful[at] == 2 || (doubtful[at] == 1 && (rarePiece(tokens[k - 1]) || rarePiece(tokens[k]))) ||
                     (nounJoint[at] && nameJoint(tokens[k - 1], tokens[k])))
             ) out += at
+            else if (k > 0 && !layout.boundary[at] && wholeWins(tokens[k - 1], tokens[k])) out += at
             at += tokens[k].length
         }
         return out
@@ -576,6 +581,33 @@ class ContextCorrector(
         HADA_FORMS.any { (lm.lnCount(stem + it) ?: 0f) >= HADA_ROOT_LN }
 
     /**
+     * 덩어리 [chunk] 의 [p] 자리를 **말뭉치가 아는 이름·명사**가 가로지르는가 — 그 낱말이 덩어리 첫머리에서 시작하거나 덩어리 끝(뒤의
+     * 조사는 빼고)에서 끝난다('아비시니|아의' 의 아비시니아, '베를|린지역의' 의 베를린, '함대함유도|무기' 의 유도무기,
+     * '셰나바리인베스트먼|트와' 의 인베스트먼트). 그 낱말은 명사로 읽혀야 한다 — 구어체에서 붙여 친 꼴('할수있어', '보고싶어')도
+     * 말뭉치에 있어서다. 긴 덩어리 나누기([com.spellkeyboard.core.correct.CorrectionEngine])가 쓴다.
+     */
+    fun crossesKnownName(chunk: String, p: Int): Boolean {
+        val stem = trailingParticleStart(chunk)
+        for (i in 0 until p) {
+            for (j in p + 1..chunk.length) {
+                if (j - i < KNOWN_NAME_MIN_SYLLABLES || (i != 0 && j != stem && j != chunk.length)) continue
+                val word = chunk.substring(i, j)
+                if ((lm.lnCount(word) ?: 0f) < KNOWN_NAME_LN) continue
+                if (spacer?.isLexiconNoun(word) == true || tagsOf(word)?.let { it.first in NOUN_PAIR_TAGS && it.second in NOUN_PAIR_TAGS } == true) return true
+            }
+        }
+        return false
+    }
+
+    /** [chunk] 끝에 붙은 조사를 뗀 자리(조사가 없으면 길이). */
+    private fun trailingParticleStart(chunk: String): Int {
+        for (particle in TRAILING_PARTICLES) {
+            if (chunk.length > particle.length + 1 && chunk.endsWith(particle)) return chunk.length - particle.length
+        }
+        return chunk.length
+    }
+
+    /**
      * 조각이 조사·연결어미·종결어미로 끝나거나 때를 나타내는 말인가 — 그 뒤는 붙여 친 문장의 딴 어절이다('그날은|선약이', '어제|산옷이').
      * 말뭉치가 모르는 토막('아슈와', '하나금융지')은 분석이 조사·어미로 읽어도 이름 조각이라 아니다.
      */
@@ -612,6 +644,20 @@ class ContextCorrector(
             }
         }
         return false
+    }
+
+    /**
+     * 사람이 붙여 친 [before]+[after] 를 말뭉치가 통째로 두 조각 짝보다 훨씬 많이 봤고 뒤가 명사인가 — 이름이다
+     * ('더불어민주당이' 4.9 대 '더불어 민주당이' 3.6, '바른미래당' 6.0 대 3.6). 구어체의 붙여 쓴 꼴('안돼', '공부하는데')은 뒤가 명사가
+     * 아니라 여기 안 걸린다.
+     */
+    private fun wholeWins(before: String, after: String): Boolean {
+        if (before.length < 2 || before.length + after.length < WHOLE_WINS_MIN_SYLLABLES) return false
+        val whole = lm.lnCount(before + after) ?: return false
+        val pair = lm.lnBigramCount(before, after)
+        if (pair != null && whole < pair + WHOLE_WINS_MARGIN) return false
+        val head = tagsOf(after)?.first ?: return false
+        return head == "NNG" || head == "NNP"
     }
 
     private fun rarePiece(token: String): Boolean = (lm.lnCount(token) ?: Float.NEGATIVE_INFINITY) < RARE_PIECE_LN
@@ -790,6 +836,7 @@ class ContextCorrector(
         extraCost: Float = 0f,
         lockLast: Boolean = false,
         slipsOnly: Boolean = false,
+        sameSoundOnly: Boolean = false,
         evidentAllowed: Boolean = true,
         firmNoun: Boolean = false,
         firmStem: Int = 0,
@@ -865,6 +912,7 @@ class ContextCorrector(
                 !endingShiftMiss(surface, edited)
             ) continue
             if (!evident && slipsOnly && !isShiftSlip(surface, edited) && !endingShiftMiss(surface, edited)) continue
+            if (sameSoundOnly && !sameSoundSwap(surface, edited) && !isShiftSlip(surface, edited)) continue
             // 사전 명사(또는 흔한 명사들로 된 합성어) + 한 음절로 된 모르는 말('결제기' = 결제/기, '국방장관들')의 끝 음절을 딴 음절로
             // 바꾸지 않는다 — 합성어 꼬리를 조사나 딴 명사로 바꿨다('카드 결제기 → 결제가 → 결제시', '전 국방장관들 → 국방장관을',
             // 2026-10-14). 소리 같은 모음('저녁애 → 저녁에')·받침 채우기는 그대로 둔다.
@@ -932,7 +980,7 @@ class ContextCorrector(
         }
         // 두 군데 고치기는 **없는 말**에만, 그리고 두 걸음 다 사람이 실제로 내는 오타 방향일 때만(햇는대요 → 했는데요).
         // 소리 같은 받침끼리 바꾸는 걸음이 끼면 딴 말이 된다('잊는게 → 잇는게 → 있는게').
-        if (kind == KIND_IDENTITY && !identityKnown && !slipsOnly && surface.length <= MAX_DOUBLE_EDIT_SYLLABLES) {
+        if (kind == KIND_IDENTITY && !identityKnown && !slipsOnly && !sameSoundOnly && surface.length <= MAX_DOUBLE_EDIT_SYLLABLES) {
             for ((once, cost1) in singleEdits(surface, realLength = { surface.length })) {
                 for ((twice, cost2) in singleEdits(once, realLength = { once.length })) {
                     val twiceCount = lm.lnCount(twice)
@@ -1100,6 +1148,14 @@ class ContextCorrector(
             if (layout.starts[right] == p && layout.cores[right] in STANDALONE_VERBS) return null
             // 수관형사('한·두·몇')와 뒤의 단위는 붙이지 않는다 — '올 한 해 → 올 한해', '한 해 동안 → 한해 동안'(2026-10-13).
             if (layout.cores[layout.owner[p - 1]] in NUMERAL_DETERMINERS) return null
+            // 뒤에 단위가 오는 수관형사를 앞말에 붙이지도 않는다 — '취임 한 달여 → 취임한 달여'(2026-10-15).
+            if (layout.starts[right] == p && layout.cores[right] in NUMERAL_DETERMINERS && right + 1 < layout.cores.size &&
+                COUNTER_HEADS.any { layout.cores[right + 1].startsWith(it) }
+            ) return null
+            // '-아야/-어야 하다·되다' 의 '하다·되다' 는 띄어 쓴다 — '내야 하는 → 내야하는'(2026-10-15).
+            if (layout.starts[right] == p && layout.cores[layout.owner[p - 1]].let { it.length >= 2 && it.last() == '야' && tagsOf(it)?.second?.startsWith("E") == true } &&
+                layout.cores[right][0] in "하해했합한할함되돼됐됩될"
+            ) return null
             // '-아/-어' 뒤의 보조용언('보내 줘', '먹어 봐')은 띄어 쓰는 것이 원칙이고 붙여 써도 된다. 사람이 띄어 친 것을 붙이지
             // 않는다 — '카카오톡으로 보내 줘 → 보내줘'(2026-10-14).
             // 분석 사전은 '보내줘' 를 보내/VV 줘/EC 로도 읽어서 품사로는 못 가린다 — 앞 어절의 '-아/-어' 와 뒤 어절의 머리를 본다.
@@ -1567,6 +1623,9 @@ class ContextCorrector(
 
     private fun nameFragment(piece: String): Boolean {
         if (knowsWord(piece)) return false
+        // 한 글자만 고치면 흔한 말이 되는 토막은 이름 조각이 아니라 오타다('보능|동안' → 보는, '재밋었는데'). 도로 붙이면 디코더가
+        // 그 덩어리 안을 못 고친다(2026-10-15).
+        if (typoOfCommonWord(piece)) return false
         if (!isWellFormed(piece)) return true
         val (head, tail) = tagsOf(piece) ?: return true
         // 수로 시작하면 수 + 단위를 붙여 친 것이다('이십분정도').
@@ -1602,6 +1661,11 @@ class ContextCorrector(
         }
         return out
     }
+
+    /** [piece] 를 사람이 흔히 내는 오타 한 걸음(옆 키·받침·쉬프트)으로 고치면 말뭉치에 흔한 말이 되는가. */
+    private fun typoOfCommonWord(piece: String): Boolean =
+        piece.length in 2..MAX_FREE_SYLLABLES &&
+            singleEdits(piece, codaSlip = true, nearKey = true).any { (lm.lnCount(it.first) ?: 0f) >= TYPO_NEIGHBOR_LN }
 
     /** 다듬은 조각([pieces])마다, 그것을 이루는 사전 첫 조각([raw]) 가운데 말뭉치가 모르는 것이 있는가([joinNameFragments]). */
     private fun holdsUnknown(raw: List<String>, pieces: List<String>): List<Boolean> {
@@ -1941,6 +2005,11 @@ class ContextCorrector(
         )
 
         /** 뒤의 단위와 띄어 쓰는 수관형사. 디코더가 '한 해' 를 '한해' 로 붙이지 않게 한다. */
+        /** 수관형사 뒤에 오는 단위의 첫머리 — [mergeCost] 가 '취임 한 달' 의 '한' 을 앞말에 안 붙인다. */
+        private val COUNTER_HEADS = listOf(
+            "달", "해", "명", "개", "번", "시간", "살", "잔", "병", "권", "마리", "주일", "년", "분", "초", "시", "가지", "곳", "채", "대", "장", "켤레", "벌", "그릇"
+        )
+
         private val NUMERAL_DETERMINERS = setOf(
             "한", "두", "세", "네", "몇", "여러", "열", "스무", "다섯", "여섯", "일곱", "여덟", "아홉", "열한", "열두", "열세", "열네"
         )
@@ -2209,6 +2278,17 @@ class ContextCorrector(
 
         /** [boundVerbJoint] — 이 품사로 시작하는 앞말은 '-하다' 줄기일 수 있다(사전이 '협치' 를 어근 XR 로 읽는다). */
         private val HADA_ROOT_HEADS = setOf("NNG", "NNP", "XR")
+
+        /** [typoOfCommonWord] — 한 걸음 고친 말이 말뭉치에 이만큼(ln) 나와야 흔한 말이다. */
+        private const val TYPO_NEIGHBOR_LN = 5.0f
+
+        /** [crossesKnownName] — 이만큼 길고 말뭉치에 이만큼(ln) 나온 낱말만 본다. */
+        private const val KNOWN_NAME_MIN_SYLLABLES = 3
+        private const val KNOWN_NAME_LN = 2.0f
+
+        /** [wholeWins] — 통째 꼴이 두 조각 짝보다 이만큼(ln) 더 흔해야 하고, 이만큼 길어야 한다. */
+        private const val WHOLE_WINS_MARGIN = 1.0f
+        private const val WHOLE_WINS_MIN_SYLLABLES = 5
 
         /** [hadaRoot] 가 보는 '-하다' 활용꼴. */
         private val HADA_FORMS = listOf("했다", "하는", "한다", "하고", "했고", "하기")

@@ -431,7 +431,9 @@ class CorrectionEngine(
                 !(nounChunk && context?.nameJoint(out.last(), pieces[k]) == true) &&
                 // '-받다·-하다' 가 붙는 명사 뒤('비난|받았을때') — 디코더와 같은 막이. '-아/-어' 뒤 보조용언은 여기서 안 본다
                 // (붙여 친 글 '챙겨먹어' 를 디코더가 말뭉치를 보고 가른다).
-                context?.boundVerbJoint(pieces[k - 1], pieces[k], auxiliary = false) != true
+                context?.boundVerbJoint(pieces[k - 1], pieces[k], auxiliary = false) != true &&
+                // 말뭉치가 아는 이름·명사 한가운데('아비시니|아의', '베를|린지역의', '인베스트먼|트와').
+                context?.crossesKnownName(core, offset) != true
             val unknown = context?.knowsWord(pieces[k]) == false
             if (keep) {
                 out += pieces[k]
