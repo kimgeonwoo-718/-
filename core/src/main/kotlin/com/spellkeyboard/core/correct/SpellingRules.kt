@@ -167,6 +167,8 @@ object SpellingRules {
         "함부러" to "함부로",
         // '벅찰텐대요' — '텐데'(터인데)를 '텐대'로 치는 일. 폰의 Kiwi 단계는 이걸 '터인데요' 로 풀었다(큰 시험지 2026-10-11).
         "텐대" to "텐데",
+        // '예매'(豫賣)를 ㅐ↔ㅔ 로 친 것. '예메' 는 쓰이는 말이 없다(2026-10-15).
+        "(?<![가-힣])예메" to "예매",
         "여지껏" to "여태껏",
         "아뭏든" to "아무튼",
         "요컨데" to "요컨대",
@@ -727,7 +729,11 @@ object SpellingRules {
 
         // 과거형 뒤의 '-는대'는 없다 — 전해 들은 말이면 '했대', 아니면 '했는데'. 앞의 햇→했 규칙이
         // 먼저 돌면 디코더가 '햇는대요'를 한꺼번에 못 고쳐서 여기서 잡는다. '있다·없다'도 '있대'라.
-        TextRule.of("([았었였했갔왔봤졌됐켰셨겠있없])는대(?=$|요|[^가-힣])", "$1는데", R),
+        // 받침 ㅆ 인 과거형 음절은 다 본다('어려웠는대' 의 웠, '그랬는대' 의 랬 — 목록에 없어 남았다, 2026-10-15).
+        TextRule.of("([가-힣])는대(?=$|요|[^가-힣])", "$1는데", R) { match ->
+            val c = match.groupValues[1][0]
+            Hangul.jongseongOf(c) == 'ㅆ' || c == '없'
+        },
         // 과거형 뒤 문장 끝의 '-데'는 거의 늘 전해 들은 말 '-대'다('걔네 헤어졌대').
         TextRule.of("([았었였했갔왔봤졌됐켰셨])데(?=$|요|[^가-힣])", "$1대", R),
 
@@ -1035,6 +1041,24 @@ object SpellingRules {
         "렸고" to "렀고", "렸어요" to "렀어요", "렸습니다" to "렀습니다", "려야" to "러야"
     )
 
+    /** 과거형 자리의 받침 ㅅ 을 ㅆ 으로 고친 어절, 아니면 null([CONTEXT]). */
+    private fun pastShiftSlip(match: MatchResult): String? {
+        val head = match.groupValues[1]
+        val syllable = match.groupValues[2][0]
+        val (cho, jung, jong) = Hangul.decompose(syllable) ?: return null
+        if (Hangul.JONGSEONG[jong] != 'ㅅ') return null
+        val vowel = Hangul.JUNGSEONG[jung]
+        val eot = vowel == 'ㅓ' && Hangul.CHOSEONG[cho] == 'ㅇ'
+        if (vowel !in "ㅝㅕㅘㅙㅐ" && !eot) return null
+        if (eot && (head.isEmpty() || head.endsWith("무"))) return null
+        if (syllable in PAST_SLIP_EXCEPTIONS || head.endsWith("빼")) return null
+        val fixed = Hangul.compose(cho, jung, Hangul.JONGSEONG.indexOf('ㅆ'))
+        return head + fixed + match.groupValues[3]
+    }
+
+    /** [pastShiftSlip] 이 고치지 않는 음절 — '뱃지', '뭣', '뺏다'(빼앗다). */
+    private val PAST_SLIP_EXCEPTIONS = setOf('뱃', '뭣', '뺏')
+
     /** 받침 빠진 수관형사·의존명사 뒤에 오는 단위([CONTEXT] — '하 잔 → 한 잔', '며 시 → 몇 시'). */
     private const val DROPPED_UNITS = "잔|시간|번|개|명|달|해|살|병|권|마리|그릇|군데|가지|곳|채|분|주|시|일|년|주일|개월"
 
@@ -1065,8 +1089,17 @@ object SpellingRules {
             "안$1",
             R
         ),
+        // 보조용언 앞의 홀로 선 '헤'(해 — ㅐ↔ㅔ, '한 번만 더 헤 보자'). '헤' 는 홀로 쓰이는 말이 아니다.
+        TextRule.of("""(?<![가-힣])헤(\s+)(?=(?:보|봐|봤|줘|주|놓|놔|두|버리|버려|버렸)[가-힣]*(?:$|[^가-힣]))""", "해$1", R),
         // '지그'(지금). '지그재그' 는 뒤가 달라 안 걸린다.
         TextRule.of("""(?<![가-힣])지그(?=\s|$|은|는|도|부터|까지|이라도)""", "지금", R),
+        // 과거형 자리의 쉬프트 오타 — 'ㅝ·ㅕ·ㅘ·ㅙ·ㅐ'(뒀·렸·왔·됐·했)나 '엇'(었) 에 받침 ㅅ 이 오고 바로 어미가 붙은 것('예매해둿어', '빌렷어',
+        // '말햇다', '봣는데'). 디코더는 고친 말을 말뭉치가 알 때만 고쳐서 드문 꼴이 남았다(2026-10-15). 큰 시험지에서 훑어
+        // '무엇을'·'포맷을'·'엘리엇을'(받침 ㅅ 명사 + 을)·'뱃지'·'뭣'·'빼앗다·뺏다' 를 걸러 냈다.
+        TextRule.computed(
+            """(?<![가-힣])([가-힣]*?)([가-힣])(어요|어서|어도|어|다|네요|네|지만|지|고|는데요|는데|는지|으니까|으니|던|음|습니다|잖아|죠|구나|더라)(?![가-힣])""",
+            R
+        ) { match -> pastShiftSlip(match) },
 
         // '일부로'(일부러) — 표에 있던 것을 앞말을 보도록 옮겼다. '오케스트라의 일부로'·'몸의 일부로'·'일부로 구성된' 의 '일부로' 는
         // 명사 '일부' + '로' 라 맞는 말이다(큰 시험지 2026-10-11, 번역문에서 '일부러' 로 바꿨다). 앞이 '-의' 이거나 뒤가 '구성·포함'

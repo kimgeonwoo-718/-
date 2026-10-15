@@ -425,6 +425,24 @@ class CorrectionEngineTest {
     }
 
     @Test
+    fun `과거형 자리의 쉬프트 오타와 ㅐ ㅔ 오타를 고친다`() {
+        // 디코더는 고친 말을 말뭉치가 알 때만 고쳐서 드문 꼴이 남았다(2026-10-15).
+        assertEquals("표는 미리 예매해뒀어", fix("표는 미리 예메해둿어"))
+        assertEquals("책 두 권을 빌렸어", fix("책 두 권을 빌렷어"))
+        assertEquals("일정을 다음 주로 미뤘어", fix("일정을 다음 주로 미뤗어"))
+        assertEquals("그는 이렇게 말했다", fix("그는 이렇게 말햇다"))
+        assertEquals("처음에는 어려웠는데 하다 보니까", fix("처음에는 어려웠는대 하다 보니까"))
+        assertEquals("한 번만 더 해 보자", fix("한 번만 더 헤 보자"))
+        // 받침 ㅅ 명사 + 을, '무엇', '빼앗다·뺏다', '뱃지', 전해 들은 말 '-대' 는 그대로.
+        assertUntouched("무엇을 원해")
+        assertUntouched("파일 포맷을 바꿔")
+        assertUntouched("돈을 뺏어")
+        assertUntouched("빼앗고 말았다")
+        assertUntouched("뱃지 달아")
+        assertUntouched("걔 결혼한대")
+    }
+
+    @Test
     fun `의존명사와 횟수를 띄운다`() {
         // 붙여 친 글 띄어쓰기 자에서 놓치던 것(2026-10-15).
         assertEquals("그냥 쉬는 게 낫지", fix("그냥 쉬는게 낫지"))
