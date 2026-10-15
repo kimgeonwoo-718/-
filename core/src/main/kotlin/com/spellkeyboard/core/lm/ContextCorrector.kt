@@ -475,6 +475,8 @@ class ContextCorrector(
                 // '서명하였다 → 설명하였다', '업어 → 없어'). 쉬프트 오타(ㅅ→ㅆ, -ㄹ가 → -ㄹ까)는 이 값을 물리지 않는다.
                 extraCost = if (wellFormed) FIRM_EDIT_COST else 0f,
                 fakeVerb = fakeVerb,
+                // 구간이 어절 첫머리에서 시작하면 바로 앞 어절(목적어 조사·수 뒤의 진짜 말을 지킨다).
+                prevWord = if (span.start == starts[firstOwner]) (if (firstOwner > 0) cores[firstOwner - 1] else contextBefore) else null,
                 lockLast = wellFormed && span.end == ends[firstOwner],
                 endingFixed = punctuatedLast && span.end == n,
                 slipsOnly = protectedTail && wellFormed,
@@ -908,6 +910,7 @@ class ContextCorrector(
         insideCommonNoun: (Int) -> Int = { 0 },
         bareNounBeforeNoun: Boolean = false,
         fakeVerb: Boolean = false,
+        prevWord: String? = null,
         realLength: (Int) -> Int = { 0 }
     ): List<Candidate> {
         val identityCount = lm.lnCount(surface)
@@ -922,6 +925,8 @@ class ContextCorrector(
             KIND_MERGE, KIND_FREE -> if (identityKnown && !startsBound(surface)) out += Candidate(surface, 0f)
         }
         if (kind == KIND_PIECE || !edits) return out
+        // 직함 앞의 말뭉치가 모르는 말은 이름이다('체체 회장은 → 체첸', '태니 대법원장') — 글자를 안 바꾼다.
+        if (!evidentAllowed && !identityKnown && wholeWord) return out
 
         // 편집 후보는 언어모델이 아는 어절만. 모르는 말끼리 형태소 비용으로 겨루게 하면
         // 이름과 외래어('웰트쿠겔브루넨')가 비슷한 소리의 엉뚱한 말로 바뀐다.
@@ -987,11 +992,16 @@ class ContextCorrector(
             ) continue
             if (!evident && slipsOnly && !isShiftSlip(surface, edited) && !endingShiftMiss(surface, edited)) continue
             if (sameSoundOnly && !sameSoundSwap(surface, edited) && !isShiftSlip(surface, edited)) continue
+            // 목적어 뒤의 '잇-'(잇다 — '뒤를 잇는', '케이블로 잇는')을 '있-' 으로 바꾸지 않는다. '있다' 는 목적어를 못 받는다(큰 시험지 2026-10-15).
+            if (surface.startsWith("잇") && edited.startsWith("있") && prevWord != null && (prevWord.endsWith("을") || prevWord.endsWith("를"))) continue
+            // 수 뒤의 단위 '군데'(네 군데의 → 군대의)는 그대로.
+            if (surface.startsWith("군데") && !edited.startsWith("군데") && prevWord in COUNT_WORDS) continue
             // 말뭉치가 모르지만 **자연스럽게 읽히는** 말에 받침을 채우는 것은 고친 말이 일상어일 때만([everydayEdit] — '도차했어 →
             // 도착했어', '피고해서 → 피곤해서', '여락 → 연락'). 분석 사전에는 드문 한자어가 다 올라 있어 오타 줄기('도차·사책')와 진짜 말
             // ('시음·서임·저부')을 못 가른다 — 기사·위키에서 '시음하고 → 신음하고', '서임하고 → 선임하고' 가 났다(2026-10-15).
-            if (identityCount == null && codaGain(surface, edited) && (morphCost(surface) ?: 0) < NATURAL_WORD_COST && !everydayEdit(edited) &&
-                !endingFill(surface, edited)
+            // 아예 못 읽는 말까지 넓히면('월드와이드 → 월드와일드' 를 막으려고) '뻐했어', '가봣는데' 같은 오타도 막혀서 안 넓혔다.
+            if (identityCount == null && codaGain(surface, edited) && !everydayEdit(edited) && !endingFill(surface, edited) &&
+                (morphCost(surface) ?: 0) < NATURAL_WORD_COST
             ) continue
             // 형태소 사전이 나눈 **멀쩡한 조각** 안에 받침을 채우는 것은 고친 말이 뻔할 때만 — '운전하는거 → 운전하는건' 은 막고(사용자가
             // 고른 말), 사전이 '더|분에' 로 잘못 나눈 '더분에 → 덕분에' 는 연다(2026-10-15).
@@ -2160,6 +2170,9 @@ class ContextCorrector(
             "공부", "청소", "결제", "입금", "취소", "변경", "신청", "제출", "참석", "배송", "문의", "답장", "회신", "퇴근", "출근", "야근",
             "회의", "휴가", "여행", "선물", "생일", "주말", "오전", "오후", "근처", "정말", "진짜", "완전", "속상", "창밖", "한잔", "전달"
         )
+        /** 단위 앞에 오는 수관형사([candidatesFor] — '네 군데의'). */
+        private val COUNT_WORDS = setOf("한", "두", "세", "네", "몇", "여러", "다섯", "여섯", "일곱", "여덟", "아홉", "열", "스무", "수십", "수백", "몇몇")
+
         /** [endingFill] — 받침을 채워 생기는 어미·조사 음절. */
         private const val ENDING_FILL_SYLLABLES = "던은는을를란난런된한할될온올간갈든큰작"
 
