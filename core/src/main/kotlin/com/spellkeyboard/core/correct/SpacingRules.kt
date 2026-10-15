@@ -29,7 +29,7 @@ object SpacingRules {
     private val GEOT_EXCEPTIONS = setOf("별것", "날것", "들것")
 
     /** 한 단어로 붙여 쓰는 '때'들. */
-    private val TTAE_EXCEPTIONS = setOf("한때", "물때", "본때")
+    private val TTAE_EXCEPTIONS = setOf("한때", "물때", "본때", "손때")
 
     /**
      * 수관형사. 뒤에 단위 의존명사가 오면 띄어 쓴다 ('네 개', '두 명', '몇 번').
@@ -97,6 +97,7 @@ object SpacingRules {
      * 여기서 띄우면 없는 말('머지')이 생긴다.
      */
     private val JI_EXCEPTIONS = setOf("머지", "오래지", "적지", "멀지", "못지", "마지")
+
 
     /**
      * 서술격 조사 '이다' 의 꼴 가운데 **홀로 띄어 쓰는 일이 없는 것**만. '이야'·'이고'·'인데' 는 뺐다 —
@@ -241,6 +242,20 @@ object SpacingRules {
         '친', '진', '린', '킨', '운', '든', '른', '난', '럴', '런', '들', '알', '닌', '인'
     )
 
+    /**
+     * 떨어진 조사를 붙였을 때 앞 음절 받침과 짝이 맞는가 — '1955년 를'(제목이 빠진 글)을 '1955년를' 로 붙이지 않는다(2026-10-15).
+     * 받침 뒤 '은·을·으로', 받침 없는 말(과 ㄹ 받침) 뒤 '는·를'.
+     */
+    private fun particleFits(before: Char, particle: String): Boolean {
+        val coda = Hangul.hasJongseong(before)
+        return when (particle) {
+            "은", "을" -> coda
+            "는", "를" -> !coda
+            "으로" -> coda && Hangul.jongseongOf(before) != 'ㄹ'
+            else -> true
+        }
+    }
+
     private fun adnominalBefore(match: MatchResult): Boolean =
         Hangul.jongseongOf(match.groupValues[1][0]) in ADNOMINAL_JONG
 
@@ -262,8 +277,17 @@ object SpacingRules {
         if (NUMERAL_COMPOUND_PREFIXES.any { word.startsWith(it) }) return true
         // '십분 이해한다'(충분히)와 '십 분 걸려'(10분)는 다음 어절로 가른다. 다음 어절이 아직 없으면(실시간으로 '십분' 까지 친 순간)
         // 기다린다 — 뗐다가는 '십 분 이해해' 가 된다.
-        return word == "십분" && (match.groupValues[4].isEmpty() || SIPBUN_NEXT.any { match.groupValues[4].startsWith(it) })
+        if (word == "십분" && (match.groupValues[4].isEmpty() || SIPBUN_NEXT.any { match.groupValues[4].startsWith(it) })) return true
+        // '한시 인하·한시 조치'(限時)는 뒤에 오는 한자어 명사로 안다. 뒷말이 아직 없으면(실시간) 때('한 시')로 본다.
+        return word == "한시" && HANSI_NEXT.any { match.groupValues[4].startsWith(it) }
     }
+
+    /** '한시'(限時) 뒤에 오는 말 — [numeralCompound]. 기사에서 '한시 인하·한시 조치·한시 운영' 으로 쓴다(2026-10-15). */
+    private val HANSI_NEXT = listOf(
+        "인하", "인상", "조치", "운영", "기구", "적용", "유예", "허용", "면제", "감면", "지원", "시행", "도입", "중단", "폐지", "완화",
+        "연장", "특례", "법", "조직", "사업", "체제", "규정", "해제", "중지", "동결", "감축", "확대", "축소", "보류", "정지", "금지",
+        "제한", "편성", "배정", "수당", "할인", "개방", "판매", "고용", "채용", "기관", "특별", "휴업", "휴무", "가동", "철폐", "부활"
+    )
 
     /**
      * 수 + 단위 뒤에 같은 어절로 이어진 글자가 **조사나 수량 꼬리**('씩·째·쯤·간·짜리…')일 때만 뗀다. 딴 글자가 이어지면 이름이다 —
@@ -459,10 +483,11 @@ object SpacingRules {
         TextRule.of("""(?<![가-힣])한대(?=\s+[가-힣]|가|를|씩|만|에|도|정도|쯤|째)""", "한 대", R),
 
         // 보조용언 '-고 있다', '-지 않다/못하다/말다' 는 띄어 쓴다.
+        // '-지마' 로 끝나는 일본 섬·사람 이름('사쿠라지마 섬', '이오지마', '나카지마')은 뺀다(기사 2026-10-15).
         // ("알고있다" -> "알고 있다", "쉽지않습니다" -> "쉽지 않습니다")
         TextRule.of("""([가-힣]고)(있|없|싶)""", "$1 $2", R),
         TextRule.of(
-            """([가-힣]지)(않|못하|말고|말자|맙|마라|마세|말아|마(?![가-힣]))""",
+            """([가-힣](?<!사쿠라|이오|나카|미야|아와|가와|쓰루)지)(않|못하|말고|말자|맙|마라|마세|말아|마(?![가-힣]))""",
             "$1 $2",
             R
         ) { match -> match.groupValues[1] !in JI_EXCEPTIONS },
@@ -475,7 +500,7 @@ object SpacingRules {
             """([가-힣])\s+(${PARTICLES.joinToString("|")})(?![가-힣·ㆍ/])""",
             "$1$2",
             R
-        ) { match -> match.groupValues[1][0] !in "는를" },
+        ) { match -> match.groupValues[1][0] !in "는를" && particleFits(match.groupValues[1][0], match.groupValues[2]) },
 
         // 서술격 조사 '이다' 가 홀로 떨어진 것도 앞말에 붙인다. ("김건우 입니다" -> "김건우입니다")
         // 위 조사 규칙은 언어모델이 붙인 꼴을 아는 말('학생입니다')만 고쳐졌다 — 사람 이름처럼 모델이 모르는

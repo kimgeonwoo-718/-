@@ -69,6 +69,11 @@ class ContextCorrector(
             size > UNKNOWN_CACHE_SIZE
     }
 
+    /** [nounSpansOf] — 어절을 한 어절로 읽은 분석에서 사전 명사가 덮는 음절 수([Spacer.nounSpans]). */
+    private val nounSpanCache = object : LinkedHashMap<String, IntArray?>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, IntArray?>?): Boolean = size > UNKNOWN_CACHE_SIZE
+    }
+
     /** [rawBreaks] — 형태소 사전이 다듬지 않고 띄운 자리. */
     private val rawSplits = object : LinkedHashMap<String, Set<Int>>(256, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Set<Int>>?): Boolean =
@@ -402,6 +407,7 @@ class ContextCorrector(
             // 명사만 이어진 어절(이름·합성어 모양 — '대한상공회의소는', '국토교통위', '챔피언스리그에서의')은 어디를 자르든
             // 말뭉치가 두 조각을 잇달아 본 적이 없으면 막는다. 붙여 친 명사 짝('영화제목이')도 원래 못 가르던 것이라 잃는 것이 없다.
             val nounChunk = spacer?.isNounChunk(core) == true
+            val nounSpans = nounSpansOf(core)
             for (p in 1 until core.length) {
                 val at = starts[k] + p
                 val before = core.substring(0, p)
@@ -415,6 +421,10 @@ class ContextCorrector(
                 }
                 // 분석을 못 믿는 긴 이름 뒤('챔피언스리그에|서의')에도 끝의 겹조사 한가운데는 글자로 알아본다.
                 if (insideTrailingParticle(core, p)) doubtful[at] = 2
+                // 사전에 오른 세 음절 넘는 명사 한가운데('큰|어머니인', '중심|가서'의 중심가, '보츠와|나서', '공감이|사회가'의 이사회)도
+                // 사전이 그 자리를 띄워도 세게 본다 — 두 음절 명사('아버지가|방에' 의 가방)는 붙여 친 글에서 흔히 걸려 뺀다(2026-10-15).
+                // 분석값이 높아 통째 분석을 못 믿는 어절이면 네 음절 넘는 명사만 본다('보츠와|나서').
+                if ((nounSpans?.get(p) ?: 0) >= if (analysis != null) LONG_MORPHEME_SYLLABLES else LONG_NAME_SYLLABLES) doubtful[at] = 2
                 // 한 낱말로 무리 없이 읽히고 사전도 한 군데 안 띄우는 어절('폭등했었다', '거듭해', '보고받는')은 어느 자리든 의심한다 —
                 // 붙여 친 덩어리는 분석값이 높거나 사전이 띄운다('그날은선약이', '어제산옷이').
                 if (tagsAt != null && spacerBreaks.isEmpty() && core.length >= 3 && oneWord) doubtful[at] = 2
@@ -539,6 +549,11 @@ class ContextCorrector(
                     (nounJoint[at] && nameJoint(tokens[k - 1], tokens[k])))
             ) out += at
             else if (k > 0 && !layout.boundary[at] && wholeWins(tokens[k - 1], tokens[k])) out += at
+            else if (k > 0 && !layout.boundary[at] && headJoint(tokens[k - 1], tokens[k], at - tokens[k - 1].length, layout)) out += at
+            // 자른 조각 하나가 말뭉치가 모르는 이름 조각이면('팬택씨앤|아이는') 붙여 친 글을 푼 것이 아니다.
+            else if (k > 0 && !layout.boundary[at] && lm.lnBigramCount(tokens[k - 1], tokens[k]) == null &&
+                (nameLike(tokens[k - 1]) || nameLike(tokens[k]))
+            ) out += at
             at += tokens[k].length
         }
         return out
@@ -607,6 +622,8 @@ class ContextCorrector(
         // '-아/-어 + 지다'('익숙해|지는', '예뻐|졌어')는 늘 붙여 쓴다. 분석 사전은 홀로 선 '지는' 을 지(자기)+는 으로 읽어 품사로는 못 본다.
         // 한 음절 앞말('해|지는' — 해가 지다)은 뺀다.
         if (before.length >= 2 && after[0] in "지져졌집질진" && endsWithAEo(before)) return true
+        // '-아/-어 + 트리다·뜨리다'('넘어|트렸으며', '떨어|뜨린')는 힘줌 접미사라 늘 붙인다.
+        if (before.length >= 2 && TRI_SUFFIXES.any { after.startsWith(it) } && endsWithAEo(before)) return true
         val whole = lm.lnCount(before + after) ?: return false
         val pair = lm.lnBigramCount(before, after)
         if (pair != null && whole <= pair) return false
@@ -672,6 +689,29 @@ class ContextCorrector(
         if (pair != null && whole < pair + WHOLE_WINS_MARGIN) return false
         val head = tagsOf(after)?.first ?: return false
         return head == "NNG" || head == "NNP"
+    }
+
+    /**
+     * 사람이 친 어절 첫머리의 한 음절 머리를 떼는데('이|모빌리티', '더|퍼스트', '그|린스버그에서') 말뭉치가 두 조각을 잇달아 본 적이
+     * 없고 뒤가 흔하지 않은 체언인가 — 이름·합성어 머리를 뗀 것이다. 붙여 친 글의 '그|사람', '더|좋은' 은 말뭉치가 본 짝이다.
+     * 부사 + 체언('아주|대학교를')까지 막아 봤더니 붙여 친 글의 '혹시|시간', '이따가|집에' 를 잃어 뺐다(2026-10-15).
+     * [start] 는 [before] 의 자리. 디코더([unseenSplits])와 긴 덩어리 나누기가 같이 쓴다(그쪽은 [layout] 이 없다).
+     */
+    private fun headJoint(before: String, after: String, start: Int, layout: Layout): Boolean =
+        (start == 0 || layout.boundary[start]) && headJoint(before, after)
+
+    fun headJoint(before: String, after: String): Boolean {
+        if (before.length != 1 || lm.lnBigramCount(before, after) != null) return false
+        // 관형형('쉴|새도' 의 쉬+ㄹ)은 붙여 친 글의 흔한 자리라 뺀다.
+        if (tagsOf(before)?.second?.startsWith("E") == true) return false
+        // 뒤가 체언(+조사)일 때만 — '잘|해결됐어', '더|자고' 의 부사는 용언을 꾸며 붙여 친 글에서 늘 뗀다.
+        return (lm.lnCount(after) ?: 0f) < LONE_HEAD_COMMON_LN && nominalPiece(after)
+    }
+
+    /** 조각이 체언(+조사)인가. 분석이 안 되는 조각은 대개 이름이라 체언으로 친다. */
+    private fun nominalPiece(piece: String): Boolean {
+        val (head, tail) = tagsOf(piece) ?: return true
+        return head in NOUN_PAIR_TAGS && (tail in NOUN_PAIR_TAGS || tail.startsWith("J"))
     }
 
     private fun rarePiece(token: String): Boolean = (lm.lnCount(token) ?: Float.NEGATIVE_INFINITY) < RARE_PIECE_LN
@@ -770,12 +810,12 @@ class ContextCorrector(
     }
 
     /** 왜 그렇게 고쳤는지(또는 안 고쳤는지) 점수를 풀어 쓴다. 조정·진단용. */
-    fun explain(window: String, contextBefore: String? = null): String {
+    fun explain(window: String, contextBefore: String? = null, protectLast: Boolean = false): String {
         val trace = StringBuilder()
         val pieces = tokenize(window)
         val cores = pieces.filter { it.soft }.map { it.core }
         if (cores.isEmpty()) return "고칠 수 있는 어절이 없다"
-        decode(cores, contextBefore, trace)
+        decode(cores, contextBefore, trace, protectLast = protectLast)
         return trace.toString()
     }
 
@@ -1653,6 +1693,15 @@ class ContextCorrector(
         return out
     }
 
+    /**
+     * 말뭉치가 모르는 이름 조각인데 체언으로 끝나는가('팬택씨앤'). 붙여 친 글을 실시간으로 풀다 남은 덩어리('봤는데다시' — 부사로
+     * 끝남, '확인하시고회신' — 아는 두 말로 갈림)는 아니다 — 그 자리를 막았더니 뒤 조각('봐도')을 못 떼었다(2026-10-15).
+     */
+    private fun nameLike(piece: String): Boolean =
+        nameFragment(piece) && (tagsOf(piece)?.second?.let { it in NOUN_TAILS || it.startsWith("J") } ?: true) &&
+            // 아는 두 말로 갈리는 덩어리('확인하시고|회신')는 붙여 친 글이 덜 풀린 것이다.
+            (1 until piece.length).none { knowsWord(piece.substring(0, it)) && knowsWord(piece.substring(it)) }
+
     private fun nameFragment(piece: String): Boolean {
         if (knowsWord(piece)) return false
         // 한 글자만 고치면 흔한 말이 되는 토막은 이름 조각이 아니라 오타다('보능|동안' → 보는, '재밋었는데'). 도로 붙이면 디코더가
@@ -1662,10 +1711,24 @@ class ContextCorrector(
         val (head, tail) = tagsOf(piece) ?: return true
         // 수로 시작하면 수 + 단위를 붙여 친 것이다('이십분정도').
         if (head == "NR" || head == "MM") return false
+        // 줄어든 조사(받침 ㄹ = 를, ㄴ = 는)로 끝나는데 그 받침을 뗀 줄기도 말뭉치가 모르면 이름 한가운데다 — 분석 사전이 '판킬'
+        // (판킬리아)을 판키+ㄹ, '팬택씨앤'(팬택씨앤아이)을 팬택씨애+ㄴ 으로 읽었다(2026-10-15). '날·난·걸' 같은 줄임은 아는 말이다.
+        if (tail.startsWith("J") && contractedParticle(piece)) return true
         // 분석값이 높아도 조사로 끝나면 붙여 친 낱말 + 조사이기 쉽다('이십분정도', '산옷이').
         if ((morphCost(piece) ?: Int.MAX_VALUE) > NAME_FRAGMENT_COST && !tail.startsWith("J")) return true
         // 명사로 끝나도 사전에 통째로 오른 명사('격조')는 이름 조각이 아니다 — 말뭉치에 어절로 드물 뿐이다.
         return tail in NOUN_TAILS && spacer?.isLexiconNoun(piece) != true
+    }
+
+    /** [piece] 끝 음절의 받침이 ㄹ·ㄴ 이고, 그 받침을 뗀 꼴('판키', '팬택씨애')을 말뭉치가 모르는가. */
+    private fun contractedParticle(piece: String): Boolean {
+        val last = piece.last()
+        // 그 자체로 조사 음절인 것('혼자하기에는', '…을')은 줄임이 아니다.
+        if (piece.length < 2 || last in FULL_PARTICLE_SYLLABLES) return false
+        val (cho, jung, jong) = Hangul.decompose(last) ?: return false
+        if (Hangul.JONGSEONG[jong] != 'ㄹ' && Hangul.JONGSEONG[jong] != 'ㄴ') return false
+        val stem = piece.dropLast(1) + Hangul.compose(cho, jung, 0)
+        return !knowsWord(stem)
     }
 
     /** [text] 에서 이름 조각을 도로 붙여 생긴 덩어리([joinNameFragments]) 안쪽의 모든 자리(음절 위치). */
@@ -1723,6 +1786,14 @@ class ContextCorrector(
     }
 
     private fun startsWithVerb(piece: String): Boolean = tagsOf(piece)?.first?.let { spacer?.isVerbTag(it) } == true
+
+    private fun nounSpansOf(core: String): IntArray? {
+        val spacer = this.spacer ?: return null
+        synchronized(nounSpanCache) { if (nounSpanCache.containsKey(core)) return nounSpanCache[core] }
+        val spans = spacer.nounSpans(core)
+        synchronized(nounSpanCache) { nounSpanCache[core] = spans }
+        return spans
+    }
 
     private fun junctionsOf(core: String): Pair<Array<Pair<String, String>?>, Array<Pair<String, String>?>>? {
         val spacer = this.spacer ?: return null
@@ -2299,6 +2370,20 @@ class ContextCorrector(
 
         /** 말뭉치에 어절로 이만큼(ln) 못 나온 조각은 드물다 — 이름 조각('변협은', '사진|전' 의 보도사진)이기 쉽다([unseenSplits]). */
         private const val RARE_PIECE_LN = 3.0f
+
+        /** 이 음절 수 넘는 사전 명사 한가운데는 세게 본다([Spacer.nounSpans]). 두 음절('가방')은 붙여 친 글에 흔히 걸린다. */
+        private const val LONG_MORPHEME_SYLLABLES = 3
+        /** 통째 분석값이 높아 못 믿을 때의 문턱 — 드문 이름('보츠와나')만 본다. */
+        private const val LONG_NAME_SYLLABLES = 4
+
+        /** [headJoint] — 한 음절 머리 뒤 조각이 말뭉치에 이만큼(ln) 나오면 흔한 말이라 뗀다('그|사람이'). */
+        private const val LONE_HEAD_COMMON_LN = 6.5f
+
+        /** 받침 ㄹ·ㄴ 으로 끝나는 온전한 조사 음절 — [contractedParticle] 이 줄임으로 보지 않는다. */
+        private const val FULL_PARTICLE_SYLLABLES = "는은을를엔란론선"
+
+        /** '-아/-어' 뒤에 늘 붙는 힘줌 접미사 '-트리다·-뜨리다' 의 꼴([glueWins]). */
+        private val TRI_SUFFIXES = listOf("트리", "트려", "트렸", "트린", "트릴", "트립", "뜨리", "뜨려", "뜨렸", "뜨린", "뜨릴", "뜨립")
         const val MAX_DOUBLE_EDIT_SYLLABLES = 8
         const val MAX_SEGMENT_SYLLABLES = 48
         private const val BEAM = 12

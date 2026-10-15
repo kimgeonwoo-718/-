@@ -443,6 +443,21 @@ class CorrectionEngineTest {
     }
 
     @Test
+    fun `낱말로 굳은 손때 한시 일본 이름과 받침이 안 맞는 조사는 건드리지 않는다`() {
+        // 2026-10-15 여섯째 판 ① — 처음 보는 시험 표본(test2).
+        assertUntouched("30년 손때 묻은 집")
+        assertUntouched("취득세 한시 인하 조치의 종료를 앞두고")
+        assertUntouched("사쿠라지마 섬은 꽤 잠잠해졌다")
+        assertUntouched("백일희는 1955년 를 부른 가수이고")
+        // 같은 규칙이 고치던 것은 그대로 고친다.
+        assertEquals("먹을 때 조심해", fix("먹을때 조심해"))
+        assertEquals("내일 한 시에 보자", fix("내일 한시에 보자"))
+        assertEquals("울지 마", fix("울지마"))
+        assertEquals("학교에서 만나", fix("학교 에서 만나"))
+        assertEquals("1955년을 기억해", fix("1955년 을 기억해"))
+    }
+
+    @Test
     fun `의존명사와 횟수를 띄운다`() {
         // 붙여 친 글 띄어쓰기 자에서 놓치던 것(2026-10-15).
         assertEquals("그냥 쉬는 게 낫지", fix("그냥 쉬는게 낫지"))

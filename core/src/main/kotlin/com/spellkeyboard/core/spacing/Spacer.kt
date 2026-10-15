@@ -286,6 +286,30 @@ class Spacer(private val dictionary: SpacingDictionary) {
         return at != jamo
     }
 
+    /**
+     * [word] 를 한 어절로 읽은 분석에서 음절 자리마다, 그 자리가 **사전 명사(일반·고유) 한가운데**면 그 명사가 덮는 음절 수(아니면 0).
+     * 분석값은 따지지 않는다 — 드문 이름('보츠와나서' 의 보츠와나)은 값이 높다. 부르는 쪽이 값에 따라 문턱을 달리 둔다.
+     * 분석이 안 되면 null.
+     */
+    fun nounSpans(word: String): IntArray? {
+        if (word.length < 2 || word.length > MAX_SYLLABLES) return null
+        val (pieces, _) = runAnalysisWithMorphs(word) ?: return null
+        val starts = IntArray(word.length + 1)
+        for (i in word.indices) starts[i + 1] = starts[i] + jamoLength(word[i])
+        val out = IntArray(word.length + 1)
+        var at = 0
+        for ((length, morph) in pieces) {
+            val head = dictionary.headTag(morph)
+            if ((head == commonNoun || head == properNoun) && dictionary.tailTag(morph) == head) {
+                val end = at + length
+                val covered = (0 until word.length).count { starts[it] >= at && starts[it + 1] <= end }
+                for (p in 1 until word.length) if (starts[p] > at && starts[p] < end) out[p] = covered
+            }
+            at += length
+        }
+        return out
+    }
+
     private val commonNoun = dictionary.tagId("NNG")
     private val properNoun = dictionary.tagId("NNP")
 

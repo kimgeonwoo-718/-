@@ -435,7 +435,9 @@ class CorrectionEngine(
                 // 말뭉치가 아는 이름·명사 한가운데('아비시니|아의', '베를|린지역의', '인베스트먼|트와').
                 context?.crossesKnownName(core, offset) != true &&
                 // 한 형태소 한가운데이고 붙인 꼴이 더 흔한 자리('끝|납니다', '재미|있을', '익숙해|지는').
-                context?.glueWins(pieces[k - 1], pieces[k]) != true
+                context?.glueWins(pieces[k - 1], pieces[k]) != true &&
+                // 덩어리 첫머리의 한 음절 머리를 이름에서 떼지 않는다('그|린스버그에서') — 디코더와 같은 막이.
+                !(k == 1 && context?.headJoint(pieces[0], pieces[1]) == true)
             val unknown = context?.knowsWord(pieces[k]) == false
             if (keep) {
                 out += pieces[k]
