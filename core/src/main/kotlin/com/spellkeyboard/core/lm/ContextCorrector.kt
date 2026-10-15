@@ -978,6 +978,15 @@ class ContextCorrector(
         // 고친 자리가 **드문 명사 줄기** 안이면(고새하셨어요·화인해볼게·개마) 그 줄기가 오타일 가능성이 크다. 막이가 걸릴 때만 잰다.
         val rareStem by lazy { if (lockLast || slipsOnly || extraCost > 0f) rareNounStemLength(surface, identityCount) else 0 }
         val commonStem by lazy { commonNounStemLength(surface) }
+        val shapeOk by lazy { attestedShape(surface) }
+        val siblingsOk by lazy { siblingAttested(surface) }
+        val stemOk by lazy { stemAttested(surface) }
+        // 고친 자리를 보고 [surface] 가 진짜 말의 한 꼴인지 가른다([attestedShape]·[siblingAttested]·[stemAttested]). 형태소 분석이 고친
+        // 말을 **훨씬** 자연스럽게 읽으면([ATTESTED_COST_GAP]) 오타로 본다 — '자하철역에서'(3,852 → -4,394), '조겠어'(1,412 → -4,184).
+        fun attested(edited: String): Boolean =
+            shapeOk && ((firstDifference(surface, edited) < surface.length - 1 && siblingsOk) || stemOk) &&
+                (morphCost(surface) ?: Int.MAX_VALUE) - (morphCost(edited) ?: Int.MAX_VALUE) < ATTESTED_COST_GAP
+        val besideForeign by lazy { foreignLooking(nextWord) }
         for ((edited, cost) in singleEdits(
             surface,
             // 받침 넣기는 드문 말에만, 그리고 형태소 분석이 **아주 자연스러운** 말에는 안 한다 — '후련하고 → 훈련하고',
@@ -996,6 +1005,45 @@ class ContextCorrector(
             // 첫소리를 된소리로 바꾸는 편집은 고친 말이 흔할 때만 — 된소리 짝은 둘 다 진짜 말인 일이 많다('하시는 분인것 → 뿐인것',
             // '뿐인것' 은 말뭉치에 열다섯 번뿐이었다). 어미 '-ㄹ가 → -ㄹ까'('어떠실가요')는 쉬프트 오타라 그대로 둔다.
             if ((editedCount ?: 0f) < TENSE_ONSET_MIN_LN && tensedOnset(surface, edited) && !shiftedEnding(surface, edited)) continue
+            // 말뭉치가 통째로는 모르는 **진짜 말의 활용형**도 된소리로 바꾸지 않는다 — '열린우리당을 → 우리땅을'(기사 2026-10-15).
+            if (identityCount == null && tensedOnset(surface, edited) && !shiftedEnding(surface, edited) && !everydayEdit(edited) &&
+                attested(edited) && !contextPrefers(prevWord, surface, edited)
+            ) continue
+            // 말뭉치가 아는 **진짜 활용형**([attested])의 첫소리를 된소리로 바꾸는 것은 고친 말이 훨씬 흔하거나(빈도 차
+            // [TENSE_KNOWN_GAP_LN]) 앞말이 고친 쪽만 받쳐 줄 때만 — 둘 다 진짜 말인 짝이 많다('진흙을 다지지 → 따지지', '다질 → 따질',
+            // 기사 2026-10-15). 진짜 말이 아닌 오타('날시', '가끔식', '휠신')와 아주 흔한 말('지금가지', '함게', '어던')은 그대로 고친다.
+            if (identityCount != null && tensedOnset(surface, edited) && !shiftedEnding(surface, edited) && !everydayEdit(edited) &&
+                (editedCount ?: 0f) - identityCount < TENSE_KNOWN_GAP_LN && attested(edited) &&
+                !contextPrefers(prevWord, surface, edited) && !(prevWord?.endsWith("에") == true && edited.startsWith("따르"))
+            ) continue
+            // '낫다'(더 좋다·병이 낫다)를 '났다' 로 바꾸지 않는다 — '조연의 연기가 낫다 → 났다'(기사 2026-10-15). 쉬프트 오타 길([singleEdits])은
+            // 이미 '낫' 을 뺐고, 받침 짝 편집 길도 같게 둔다.
+            // '눈물이·화가' 처럼 '나다' 만 받는 주어 뒤('눈물이낫다', 영화평)는 고친다.
+            if (firstDifference(surface, edited) < surface.length && surface[firstDifference(surface, edited)] == '낫' &&
+                edited[firstDifference(surface, edited)] == '났' && NAS_SUBJECTS.none { prevWord?.endsWith(it) == true }
+            ) continue
+            // 말뭉치가 통째로는 모르지만 **진짜 말의 활용형**([attested])으로 읽히는 말의 **줄기** 글자를 옆 키로 바꾸는
+            // 것은 고친 말이 일상어이거나 앞말이 고친 쪽만 받쳐 줄 때만 — '방대하지는 → 반대하지는', '접으려고 → 잡으려고', '발했다고 →
+            // 말했다고', '기저에도 → 기조에도', '모사하기 → 묘사하기'(기사·위키 2026-10-15). 끝 음절(조사·어미 — '마음를', '평가을')과
+            // 진짜 말로 안 읽히는 오타('잔했다', '지방성거에서', '위차한')는 그대로 고친다. '의견을 수렵하여 → 수렴하여' 는 앞말이 살린다.
+            if (identityCount == null && nearKeySwap(surface, edited) && !sameSoundSwap(surface, edited) && !everydayEdit(edited) &&
+                firstDifference(surface, edited) < surface.length - 1 && isWellFormed(surface) &&
+                attested(edited) && !contextPrefers(prevWord, surface, edited)
+            ) continue
+            // '앓다·닳다' 를 '알다·달다' 로 바꾸지 않는다 — 둘 다 흔한 움직씨다('천식을 앓았기 → 알았기', '치통을 앓지만', '닳지 → 달지',
+            // 기사 2026-10-15).
+            if (surface.isNotEmpty() && edited.isNotEmpty() && (surface[0] == '앓' && edited[0] == '알' || surface[0] == '닳' && edited[0] == '달')) continue
+            // 관형형 '-는·-ㄴ' 뒤의 의존명사 '분'(사람)을 '뿐' 으로 바꾸지 않는다 — '뿐' 은 '-ㄹ' 뒤에 온다('못하시는 분인 → 뿐인', 후기 2026-10-15).
+            if (surface.startsWith("분") && edited.startsWith("뿐") && prevWord != null && prevWord.isNotEmpty() &&
+                (prevWord.last() == '는' || Hangul.jongseongOf(prevWord.last()) == 'ㄴ')
+            ) continue
+            // 사전·말뭉치가 아는 명사 + 조사('국책연구기관이')의 조사 자리에 받침을 채워 서술격('-인')으로 만들지 않는다 — 조사까지 맞게 친 말이다(기사
+            // 2026-10-15). 받침을 채워 딴 명사가 되는 것('수년가 → 수년간', '수요이 → 수요일')은 오타라 그대로 고친다.
+            if (firstDifference(surface, edited) == surface.length - 1 && surface.length >= 3 && codaGain(surface, edited) &&
+                surface.last() in PARTICLE_FILL_GUARD && edited.last() == '인' && !adjectivalJeok(surface, edited) &&
+                (spacer?.isLexiconNoun(surface.dropLast(1)) == true || (lm.lnCount(surface.dropLast(1)) ?: 0f) >= REAL_STEM_LN) &&
+                !contextPrefers(prevWord, surface, edited)
+            ) continue
             // 고친 말이 **아주 흔하고** 원문은 드물거나 모르는 말이면 오타가 거의 확실하다 — '저녁애 → 저녁에', '괘찮아 → 괜찮아',
             // '어재 → 어제'. 그럴 때는 멀쩡한 말 막이(끝 음절 잠금·값 더 물리기)를 걷는다. 형태소 분석은 이런 오타도 멀쩡히 읽어 내서
             // (저녁/NNG 애/NNG, 괘/NNG 찮아/XSA) 막이가 진짜 오타까지 막고 있었다 — 오타 되살리기 64.3% → 51.9%(2026-10-13).
@@ -1034,20 +1082,8 @@ class ContextCorrector(
             ) continue
             if (!evident && slipsOnly && !isShiftSlip(surface, edited) && !endingShiftMiss(surface, edited)) continue
             if (sameSoundOnly && !sameSoundSwap(surface, edited) && !isShiftSlip(surface, edited)) continue
-            // 목적어 뒤의 '잇-'(잇다 — '뒤를 잇는', '케이블로 잇는')을 '있-' 으로 바꾸지 않는다. '있다' 는 목적어를 못 받는다(큰 시험지 2026-10-15).
-            if (surface.startsWith("잇") && edited.startsWith("있") && prevWord != null && (prevWord.endsWith("을") || prevWord.endsWith("를"))) continue
-            // 보조용언 '않-' 은 '-지' 뒤에만 온다 — 그 밖의 '안-'('영예를 안았다고', '꼭 안았다')은 '안다'(품다) 다(기사 2026-10-15).
-            if (surface.startsWith("안") && edited.startsWith("않") &&
-                (prevWord == null || !NEG_AUX_BEFORE.any { prevWord.endsWith(it) })
-            ) continue
-            // '잃다' 는 목적어를 받는다 — 주어 뒤의 '일-'('논란이 일었으며')은 '일다'(생기다) 다(기사 2026-10-15).
-            if (surface.startsWith("일") && edited.startsWith("잃") && prevWord != null && (prevWord.endsWith("이") || prevWord.endsWith("가"))) continue
-            // 같은 까닭으로 목적어 뒤의 말을 '생기다' 로 바꾸지 않는다('문신을 새길 수 → 생길 수', '무늬를 새길 → 생길', 2026-10-15).
-            if (surface[0] != '생' && edited.startsWith("생") && edited.length >= 2 && edited[1] in "기길긴겨겼" &&
-                prevWord != null && (prevWord.endsWith("을") || prevWord.endsWith("를"))
-            ) continue
-            // 관형형 뒤의 의존명사 '데'('조식 되는 데면', '주차장 있는 데가')를 '대' 로 바꾸지 않는다('대면' 이 됐다, 대화 말뭉치 2026-10-15).
-            if (surface.startsWith("데") && edited.startsWith("대") && prevWord != null && prevWord.length >= 2 && adnominalEnd(prevWord)) continue
+            // 앞뒤 말이 가르는 짝(잇/있·안/않·데/때·업/없 …)은 [contextForbids] 가 본다. 두 군데 고치기도 같은 막이를 거친다.
+            if (contextForbids(surface, edited, prevWord, nextWord)) continue
             // '갓을'(갓 + 을)을 '갔을' 로는 뒤에 의존명사가 올 때만('갓을 때 → 갔을 때'). '갓을 쓰고' 는 그대로(큰 시험지 2026-10-15).
             if (surface.startsWith("갓") && edited.startsWith("갔") && surface.length == 2 && surface[1] == '을' &&
                 nextWord?.let { next -> AFTER_ADNOMINAL.any { next.startsWith(it) } } != true
@@ -1079,6 +1115,17 @@ class ContextCorrector(
             // 아예 못 읽는 말까지 넓히면('월드와이드 → 월드와일드' 를 막으려고) '뻐했어', '가봣는데' 같은 오타도 막혀서 안 넓혔다.
             if (identityCount == null && codaGain(surface, edited) && !everydayEdit(edited) && !endingFill(surface, edited) &&
                 (morphCost(surface) ?: 0) < NATURAL_WORD_COST
+            ) continue
+            // 분석값이 높아도 **진짜 말의 활용형**([attested])이면 받침을 채우지 않는다 — '명성황후를 시해하기 → 시행하기', '왼손으로
+            // 타구하는 → 탐구하는', '사당에 향사되었다 → 향상되었다'(기사·위키 2026-10-15). 앞말이 고친 쪽만 받쳐 주면 연다.
+            if (identityCount == null && codaFilled(surface, edited) && !everydayEdit(edited) && !endingFill(surface, edited) &&
+                !adjectivalJeok(surface, edited) && attested(edited) && !contextPrefers(prevWord, surface, edited)
+            ) continue
+            // 말뭉치가 모르는 짧은 말 **뒤에 말뭉치가 모르는 이름**([foreignLooking])이 오면 그 말도 외국 이름의 앞 토막이다 — '해르
+            // 레드냅에게 → 해를', '조르 부트케 → 조를', '니난 쿠유치가 → 지난', '왕 섹 힌은 → 색'(기사 2026-10-15). 일상어로 바꾸는 것만
+            // 연다. 앞말이 이름인 것('윌스미스가 내새울 → 내세울')은 오타일 수 있어 안 본다.
+            if (identityCount == null && wholeWord && surface.length <= 3 && !everydayEdit(edited) &&
+                besideForeign
             ) continue
             // 형태소 사전이 나눈 **멀쩡한 조각** 안에 받침을 채우는 것은 고친 말이 뻔할 때만 — '운전하는거 → 운전하는건' 은 막고(사용자가
             // 고른 말), 사전이 '더|분에' 로 잘못 나눈 '더분에 → 덕분에' 는 연다(2026-10-15).
@@ -1173,7 +1220,7 @@ class ContextCorrector(
                     // 두 군데 고치기는 사전 명사(+조사)에 열지 않는다 — '외국인치고 → 외국인이고'(2026-10-13).
                     val evident = evidentAllowed && !firmNoun && twiceCount != null && twiceCount >= EVIDENT_EDIT_LN
                     if (!evident && lockLast && twice.last() != surface.last() && (surface.last() to twice.last()) !in PARTICLE_SWAPS) continue
-                    if (twice != surface && twiceCount != null) {
+                    if (twice != surface && twiceCount != null && !contextForbids(surface, twice, prevWord, nextWord)) {
                         // 한 걸음이 쉬프트 오타면('햇는대요 → 했는대요 → 했는데요') 멀쩡한 말 값을 물리지 않는다.
                         val slip = isShiftSlip(surface, once) || isShiftSlip(once, twice)
                         out += Candidate(twice, -(cost1 + cost2 + EDIT_BASE_COST + if (slip || evident) 0f else extraCost))
@@ -1481,12 +1528,13 @@ class ContextCorrector(
      * '실재 → 실제', '서명하였다 → 설명하였다', '묵었습니다 → 묶었습니다', '지바 → 지방', '허재 → 헌재'.
      */
     /**
-     * '-을/-를' 뒤에 글자를 고쳐 '없-·있-' 을 만드는가. '없다·있다' 는 목적어를 못 받으니 그 꼴은 거의 언제나 딴 동사를 망친 것이다
-     * — '아기를 업어 줬어 → 아기를 없어 줬어', '다리를 잇는 → 있는'(2026-10-13). 원래부터 '없·있' 이었으면 손댄 것이 아니다.
+     * '-을/-를' 뒤에 글자를 고쳐 '없-·있-·싫-' 을 만드는가. '없다·있다·싫다' 는 목적어를 못 받으니 그 꼴은 거의 언제나 딴 동사를 망친
+     * 것이다 — '아기를 업어 줬어 → 아기를 없어 줬어', '다리를 잇는 → 있는'(2026-10-13), '화물을 실었는데 → 싫었는데'(2026-10-15).
+     * 원래부터 그 글자였으면 손댄 것이 아니다.
      */
     private fun objectThenExistential(prevKey: String, candidate: String, original: String, at: Int): Boolean {
         val head = candidate.firstOrNull() ?: return false
-        if (head != '없' && head != '있') return false
+        if (head != '없' && head != '있' && head != '싫') return false
         if (at < original.length && original[at] == head) return false
         val last = prevKey.lastOrNull() ?: return false
         return last == '을' || last == '를'
@@ -1521,6 +1569,10 @@ class ContextCorrector(
         if (a.first != b.first || a.second != b.second || a.third == b.third) return false
         return (a.third == 0 && b.third != 0) || (Hangul.JONGSEONG[a.third] to Hangul.JONGSEONG[b.third]) in CODA_COMPLETIONS
     }
+
+    /** 받침이 **없던** 음절에 받침을 채운 것인가 — [codaGain] 에서 겹받침·쌍받침 맞추기('잣어 → 잤어', '안았다 → 않았다')를 뺀 것. */
+    private fun codaFilled(surface: String, edited: String): Boolean =
+        codaGain(surface, edited) && Hangul.decompose(surface[firstDifference(surface, edited)])?.third == 0
 
     /** 한 음절의 첫소리만 바꾼 것인가('개어 → 깨어'). */
     private fun onsetOnly(surface: String, edited: String): Boolean {
@@ -1583,6 +1635,173 @@ class ContextCorrector(
         val a = Hangul.CHOSEONG[Hangul.decompose(surface[at])?.first ?: return false]
         val b = Hangul.CHOSEONG[Hangul.decompose(edited[at])?.first ?: return false]
         return (a to b) in TENSE_PAIRS
+    }
+
+    /** 앞말·뒷말을 보면 바꾸면 안 되는 편집인가 — 둘 다 진짜 말인 짝을 문맥이 가른다. */
+    private fun contextForbids(surface: String, edited: String, prevWord: String?, nextWord: String?): Boolean {
+        // 목적어 뒤의 '잇-'(잇다 — '뒤를 잇는', '케이블로 잇는')을 '있-' 으로 바꾸지 않는다. '있다' 는 목적어를 못 받는다(큰 시험지 2026-10-15).
+        if (surface.startsWith("잇") && edited.startsWith("있") && prevWord != null && (prevWord.endsWith("을") || prevWord.endsWith("를"))) return true
+        // 보조용언 '않-' 은 '-지' 뒤에만 온다 — 그 밖의 '안-'('영예를 안았다고', '꼭 안았다')은 '안다'(품다) 다(기사 2026-10-15).
+        if (surface.startsWith("안") && edited.startsWith("않") &&
+            (prevWord == null || !NEG_AUX_BEFORE.any { prevWord.endsWith(it) })
+        ) return true
+        // '잃다' 는 목적어를 받는다 — 주어 뒤의 '일-'('논란이 일었으며')은 '일다'(생기다) 다(기사 2026-10-15).
+        if (surface.startsWith("일") && edited.startsWith("잃") && prevWord != null && (prevWord.endsWith("이") || prevWord.endsWith("가"))) return true
+        // 같은 까닭으로 목적어 뒤의 말을 '생기다' 로 바꾸지 않는다('문신을 새길 수 → 생길 수', '무늬를 새길 → 생길', 2026-10-15).
+        if (surface[0] != '생' && edited.startsWith("생") && edited.length >= 2 && edited[1] in "기길긴겨겼" &&
+            prevWord != null && (prevWord.endsWith("을") || prevWord.endsWith("를"))
+        ) return true
+        // 관형형 뒤의 의존명사 '데'('조식 되는 데면', '주차장 있는 데가')를 '대' 로 바꾸지 않는다('대면' 이 됐다, 대화 말뭉치 2026-10-15).
+        if (surface.startsWith("데") && edited.startsWith("대") && prevWord != null && prevWord.length >= 2 && adnominalEnd(prevWord)) return true
+        // 같은 자리의 '데' 를 '때' 로도 바꾸지 않는다 — '때' 는 '-ㄹ' 뒤에 온다('시제품을 만드는 데까지만 → 때까지만', 기사 2026-10-15).
+        if (surface.startsWith("데") && edited.startsWith("때") && prevWord != null && prevWord.isNotEmpty() &&
+            (prevWord.last() == '는' || Hangul.jongseongOf(prevWord.last()) == 'ㄴ')
+        ) return true
+        // '등에 업다'(힘을 빌리다)의 '업-' 을 '없-' 으로 바꾸지 않는다('지지를 등에 업지 못해', '세력을 등에 업었다', 기사 2026-10-15).
+        if (surface.startsWith("업") && edited.startsWith("없") && prevWord != null && prevWord.endsWith("등에")) return true
+        // '-적이 되다'('비협조적이 될', '결정적이 될')의 '이' 에 받침을 채워 '-적인' 으로 만들지 않는다. '살인적이 더위' 는 고친다(기사 2026-10-15).
+        // 뒷말을 아직 모르면(실시간 창의 마지막 어절) 기다린다 — 뒷말이 오면 창 안쪽에서 다시 본다.
+        if (surface.endsWith("적이") && edited.endsWith("적인") && (nextWord == null || nextWord.firstOrNull()?.let { it in "되될된돼됐됩" } == true)) return true
+        // '-려 하다'(뜻 — '대통령 선거에 출마하려 했으나')의 '려' 를 '여' 로 바꾸지 않는다(기사 2026-10-15).
+        if (surface.endsWith("려") && edited.endsWith("여") && surface.dropLast(1) == edited.dropLast(1) &&
+            (nextWord == null || nextWord.firstOrNull()?.let { it in "하했한할해합" } == true)
+        ) return true
+        // '돼'(되어) 뒤에 '-어' 로 이어지는 말('잘돼가고', '돼서', '돼요')이 오면 '돼' 가 맞고, '되' 뒤에 줄기에 바로 붙는 어미('되고',
+        // '되는', '되지')가 오면 '되' 가 맞다 — 그 짝을 거꾸로 바꾸지 않는다('잘돼가고 → 잘되가고', 기사 2026-10-15).
+        if (wrongDoeDwae(surface, edited)) return true
+        return false
+    }
+
+    /** '돼 → 되' 를 '-어' 꼴 앞에서, '되 → 돼' 를 줄기에 붙는 어미 앞에서 하는가 — 둘 다 맞는 말을 틀리게 만든다. */
+    private fun wrongDoeDwae(surface: String, edited: String): Boolean {
+        val at = firstDifference(surface, edited)
+        if (at + 1 >= surface.length || edited.length != surface.length) return false
+        val next = surface[at + 1]
+        return (surface[at] == '돼' && edited[at] == '되' && next in DWAE_NEXT) ||
+            (surface[at] == '되' && edited[at] == '돼' && next in DOE_NEXT)
+    }
+
+    /**
+     * 진짜 말의 활용형일 수 있는 **생김새**인가 — 분석이 무리 없고 용언 뒤가 어미뿐이다. [siblingAttested]·[stemAttested] 와 함께
+     * 옆 키·된소리·받침 채우기 편집 막이([candidatesFor])에만 쓴다.
+     */
+    private fun attestedShape(surface: String): Boolean {
+        val spacer = this.spacer ?: return false
+        // 용언 줄기(또는 명사 + '-하다·-되다') 뒤에는 어미(와 어미 뒤 보조사)만 와야 활용형이다 — '좋아하것'(좋아하 + 것), '있으시가요'
+        // (있 + 으시 + 가 + 요), '죄송하지마'(죄송하 + 지 + 마), '들어가리를'(들어가 + 리 + 를)은 줄기가 진짜여도 오타다.
+        val tags = spacer.morphemeTags(surface) ?: return true
+        val tail = when {
+            spacer.isVerbTag(tags[0].first) -> tags.drop(1)
+            tags.size >= 2 && tags[1].first.let { it == "XSV" || it == "XSA" } -> tags.drop(2)
+            else -> null
+        }
+        if (tail != null && !verbTail(tail)) return false
+        // 격 조사 뒤에 또 조사가 오는 꼴('이웃을이')은 없다.
+        if (tail == null && tags.zipWithNext().any { (a, b) -> a.second in CASE_PARTICLES && b.first.startsWith("J") }) return false
+        return true
+    }
+
+    /**
+     * 끝 음절만 바꾼 형제 꼴이 말뭉치에 둘 넘게 있는가 — '실었기'(실었다·실었고), '스시는'(스시를·스시가), '기저에도'. 오타는 형제가
+     * 없다('조겠어' — 조겠다·조겠고 없음, '이웃을이'). 끝 음절 앞을 고칠 때만 쓴다 — 끝 음절을 고치는 데('가끔식 → 가끔씩')는 앞이
+     * 진짜 말이라는 것이 아무 말도 안 해 준다.
+     */
+    private fun siblingAttested(surface: String): Boolean {
+        // 끝 음절이 어미·조사여야 형제 꼴이 말이 된다 — '우리늄'(우리는·우리가 가 있어도 '늄' 은 조사가 아니다).
+        if (surface.length < 3 || surface.last() !in SIBLING_ENDINGS_CHARS) return false
+        val prefix = surface.dropLast(1)
+        return SIBLING_ENDINGS.count { e -> prefix + e != surface && lm.lnCount(prefix + e) != null } >= 2
+    }
+
+    /**
+     * 줄기로 본 '진짜 말의 활용형' — [realWordForm](잘못 쓴 꼴이 굳은 줄기는 빼고 — [misspeltStem]), 또는 첫 형태소가 사전의 용언
+     * 줄기이고 그 줄기의 다른 꼴이 말뭉치에 있거나('다지지' = 다지고·다지는), 어근·명사 + '-하다·-되다' 의 다른 꼴이 말뭉치에 있거나
+     * 사전 명사다('방대하지는' = 방대한, '타구하는'), 말뭉치가 아는 명사 + 서술격 조사('기단이라는').
+     */
+    private fun stemAttested(surface: String): Boolean {
+        val spacer = this.spacer ?: return false
+        if (realWordForm(surface)) return !misspeltStem(surface)
+        val (end, head) = spacer.firstMorpheme(surface) ?: return false
+        if (end < 1 || end > surface.length) return false
+        val stem = surface.substring(0, end)
+        if (spacer.isVerbTag(head) && head != "VCN" && head != "VCP") {
+            // 줄기 끝 음절에 어미 받침이 붙어 있으면('다질' = 다지 + ㄹ, '바릅니다' = 바르 + ㅂ니다) 받침을 뗀 줄기도 본다.
+            val bare = Hangul.decompose(stem.last())?.takeIf { it.third != 0 }
+                ?.let { stem.dropLast(1) + Hangul.compose(it.first, it.second, 0) }
+            return listOfNotNull(stem, bare).any { s -> VERB_STEM_PROBES.count { s + it != surface && lm.lnCount(s + it) != null } >= 2 }
+        }
+        if (end >= 2 && end < surface.length && (head == "XR" || head == "NNG") && surface[end] in VERB_SUFFIX_HEADS) {
+            // 사전에 명사로 오른 두 음절 넘는 말 + '-하다·-되다'('타구하는', '향사되었다', '계상되지')도 진짜 말로 친다 — 사전에는 드문
+            // 한자어가 다 올라 있어 오타('위차한')도 이리 읽히지만, 분석이 고친 말을 훨씬 낫게 읽는 오타는 [ATTESTED_COST_GAP] 이 연다.
+            return VERB_PROBES.any { stem + it != surface && lm.lnCount(stem + it) != null } || spacer.isLexiconNoun(stem)
+        }
+        // 말뭉치가 아는 명사 + 서술격 조사('기단이라는', '무제이다'). '문화예숙을'(문화 + 예 + 숙 + 을)처럼 서술격 뒤가 어미가 아니면 아니다.
+        if (end >= 2 && end < surface.length && (head == "NNG" || head == "NNP") && (lm.lnCount(stem) ?: 0f) >= REAL_STEM_LN) {
+            val tags = spacer.morphemeTags(surface) ?: return false
+            return tags.size >= 2 && tags[1].first.startsWith("VCP") && verbTail(tags.drop(2))
+        }
+        return false
+    }
+
+    /**
+     * 조사를 뗀 줄기가 말뭉치에는 있지만 사전에는 없고 한 낱말로도 안 읽히는가 — 흔한 말의 **잘못 쓴 꼴**이 말뭉치에 굳은 것이다
+     * ('긍극적으로는' = 긍극적, '다큐멘타리에서'). 사전에 오른 드문 말('기저에도', '사림들을')은 아니다.
+     */
+    private fun misspeltStem(surface: String): Boolean {
+        val spacer = this.spacer ?: return false
+        for (particle in REAL_FORM_PARTICLES) {
+            if (surface.length < particle.length + 2 || !surface.endsWith(particle)) continue
+            var stem = surface.dropLast(particle.length)
+            if (stem.length >= 3 && stem.endsWith("들")) stem = stem.dropLast(1)
+            if ((lm.lnCount(stem) ?: 0f) < REAL_STEM_LN) continue
+            return !spacer.isLexiconNoun(stem) && !spacer.isWellFormed(stem)
+        }
+        return false
+    }
+
+    /** 용언 뒤 형태소들이 어미(와 연결·명사형 어미 뒤 보조사)뿐인가 — '하지는'(지/EC 는/JX)은 되고 '가리를'(리/EP 를/JKO)은 안 된다. */
+    private fun verbTail(tail: List<Pair<String, String>>): Boolean {
+        for ((k, tag) in tail.withIndex()) {
+            if (tag.first.startsWith("E")) continue
+            if (!tag.first.startsWith("J")) return false
+            val before = if (k == 0) return false else tail[k - 1].second
+            if (before != "ETN" && !(before == "EC" && tag.first == "JX")) return false
+        }
+        return true
+    }
+
+    /**
+     * 이름 토막처럼 보이는 이웃 말인가 — 말뭉치가 조사를 떼고도 모르는데 사전이 **고유명사**로 읽는다('레드냅에게', '부트케', '쿠유치가').
+     * 말뭉치가 모르는 이웃이 다 이름은 아니다 — 사람이 친 글에는 오타·새말 이웃이 흔하다('재밋고 로맨틱도').
+     */
+    private fun foreignLooking(word: String?): Boolean {
+        val core = word?.takeWhile { Hangul.isSyllable(it) } ?: return false
+        return core.length >= 2 && !knowsWord(core) && spacer?.firstMorpheme(core)?.second == "NNP"
+    }
+
+    /** '-적이 → -적인'('살인적이 더위 → 살인적인') — 뒷말이 가르므로([contextForbids]) 받침 채우기 막이를 안 거친다. */
+    private fun adjectivalJeok(surface: String, edited: String): Boolean = surface.endsWith("적이") && edited.endsWith("적인")
+
+    /** 앞말과 이어 본 말뭉치가 고친 말만 안다 — '의견을 수렴하여'(있다) / '의견을 수렵하여'(없다). */
+    private fun contextPrefers(prevWord: String?, surface: String, edited: String): Boolean {
+        if (prevWord.isNullOrEmpty()) return false
+        return lm.lnBigramCount(prevWord, edited) != null && lm.lnBigramCount(prevWord, surface) == null
+    }
+
+    /** 한 음절의 첫소리·모음·받침 하나를 **옆 키**([NEAR_KEYS])로 바꾼 것인가. */
+    private fun nearKeySwap(surface: String, edited: String): Boolean {
+        if (surface.length != edited.length) return false
+        val at = firstDifference(surface, edited)
+        if (at >= surface.length || !surface.regionMatches(at + 1, edited, at + 1, surface.length - at - 1)) return false
+        val x = Hangul.decompose(surface[at]) ?: return false
+        val y = Hangul.decompose(edited[at]) ?: return false
+        val diffs = (if (x.first != y.first) 1 else 0) + (if (x.second != y.second) 1 else 0) + (if (x.third != y.third) 1 else 0)
+        if (diffs != 1) return false
+        return when {
+            x.first != y.first -> NEAR_KEYS[Hangul.CHOSEONG[x.first]]?.contains(Hangul.CHOSEONG[y.first]) == true
+            x.second != y.second -> NEAR_KEYS[Hangul.JUNGSEONG[x.second]]?.contains(Hangul.JUNGSEONG[y.second]) == true
+            else -> x.third != 0 && y.third != 0 && NEAR_KEYS[Hangul.JONGSEONG[x.third]]?.contains(Hangul.JONGSEONG[y.third]) == true
+        }
     }
 
     /** 한 음절의 모음만 소리 같은 짝(ㅐ↔ㅔ, ㅚ·ㅙ·ㅞ)으로 바꾼 것인가 — 한국어 오타에서 가장 흔한 꼴이다. */
@@ -2289,7 +2508,10 @@ class ContextCorrector(
             // 여섯째 판(2026-10-15) — 대화에서 '-하다' 로 흔히 쓰는 말.
             "피곤", "도착", "출발", "설명", "확인", "부탁", "미안", "감사", "준비", "시작", "결정", "고민", "기대", "필요", "다행", "운동",
             "공부", "청소", "결제", "입금", "취소", "변경", "신청", "제출", "참석", "배송", "문의", "답장", "회신", "퇴근", "출근", "야근",
-            "회의", "휴가", "여행", "선물", "생일", "주말", "오전", "오후", "근처", "정말", "진짜", "완전", "속상", "창밖", "한잔", "전달"
+            "회의", "휴가", "여행", "선물", "생일", "주말", "오전", "오후", "근처", "정말", "진짜", "완전", "속상", "창밖", "한잔", "전달",
+            // 일곱째 판(2026-10-15) — 사전 명사로 읽히는 오타('공금하신 → 궁금하신', '추전 → 추천')를 막이가 막지 않게.
+            "궁금", "추천", "사용", "이용", "방문", "구매", "추가", "연장", "환불", "교환", "수정", "삭제", "등록", "가입", "로그인",
+            "위치", "고생", "비롯", "해야"
         )
         /** [bareStem] — 줄기 + '다' 가 말뭉치에 이만큼(ln) 나와야 한다. */
         private const val BARE_STEM_LN = 4.0f
@@ -2731,6 +2953,43 @@ class ContextCorrector(
         /** [realWordForm] — 줄기 명사가 말뭉치에 이만큼(ln) 나와야 진짜 말로 본다. */
         private const val REAL_STEM_LN = 2.0f
 
+        /** 아는 말의 첫소리를 된소리로 바꿀 때, 고친 말이 이만큼(ln) 더 흔하면 막지 않는다('지금가지' 2.8 → '지금까지' 9.4). '다지지
+         *  → 따지지' 는 3.6, '다르면 → 따르면' 은 3.3 이라 빈도만으로는 못 가른다 — 앞말이 가른다. */
+        private const val TENSE_KNOWN_GAP_LN = 4.5f
+
+        /**
+         * [candidatesFor] 의 attested — 형태소 분석값이 고친 말 쪽으로 이만큼 넘게 내려가면 친 말을 오타로 본다. 판정해 둔 짝 57개
+         * (2026-10-15)에서 오타는 대개 5,000 넘게('재밋고' 9,280, '들어가리를' 6,524), 드문 진짜 말은 대개 2,500 아래('타구하는' 2,024,
+         * '다지지' 2,043)였다. 넘는 진짜 말('스시는' 4,396)과 못 넘는 오타('미간인' 2,187)는 남는다.
+         */
+        private const val ATTESTED_COST_GAP = 4000
+
+        /** [siblingAttested] 의 형제 꼴 — 어절 끝 음절 자리에 오는 흔한 어미·조사. */
+        private val SIBLING_ENDINGS = listOf(
+            "다", "고", "던", "는", "은", "을", "지", "기", "게", "면", "며", "서", "도", "만", "의", "에", "를", "이", "가", "와", "과", "로"
+        )
+
+        /** [SIBLING_ENDINGS] 이거나 어절 끝에 흔한 어미 음절('실었기', '스시는', '했어'). */
+        private val SIBLING_ENDINGS_CHARS = "다고던는은을지기게면며서도만의에를이가와과로어아요데니까라냐든자".toSet()
+
+        /** 뒤에 또 조사가 올 수 없는 격 조사([attestedShape] — '이웃을이'). */
+        private val CASE_PARTICLES = setOf("JKS", "JKO", "JKG", "JKC")
+
+        /** 용언 줄기의 다른 꼴을 말뭉치에서 찾아볼 어미([attested]). */
+        private val VERB_STEM_PROBES = listOf("다", "고", "는", "지", "게", "기", "면", "며", "던", "도록")
+
+        /** '낫다' 를 '났다' 로 고쳐도 되는 주어('눈물이 났다', '화가 났다') — '나다' 만 받는다. '병이·감기가' 는 '낫다' 도 받아서 뺐다. */
+        private val NAS_SUBJECTS = listOf("눈물이", "화가", "땀이", "사고가", "난리가", "소문이", "결론이", "짜증이", "겁이", "신이", "탈이", "티가", "냄새가", "소리가", "불이")
+
+        /** '돼'(되어) 뒤에 오는 '-어' 꼴의 첫 음절([wrongDoeDwae]). */
+        private const val DWAE_NEXT = "서요도야가버봐봤줘있온왔주라"
+
+        /** '되' 줄기에 바로 붙는 어미의 첫 음절([wrongDoeDwae]). */
+        private const val DOE_NEXT = "고는지면니며기게던든겠시세라"
+
+        /** 사전 명사 뒤에서 받침을 채워 서술격으로 만들지 않을 조사 음절. */
+        private const val PARTICLE_FILL_GUARD = "이가은는을를의도"
+
         /** 보조용언 '않-' 이 올 수 있는 앞말의 끝('하지 않았다', '좋지도 않다', '가진 않는다'). */
         private val NEG_AUX_BEFORE = listOf("지", "지도", "지는", "지가", "지를", "지만", "진", "질", "지조차")
 
@@ -2885,13 +3144,16 @@ class ContextCorrector(
         val JONGSEONG_EDITS = edits(
             'ㅅ' to ('ㅆ' to 0.8f), 'ㅆ' to ('ㅅ' to 0.8f),
             'ㄴ' to ('ㄶ' to 1.5f), 'ㄶ' to ('ㄴ' to 1.5f),
+            // 'ㅀ → ㄹ' 은 옆 키 ㅎ 을 더 친 오타('끓어당기는 → 끌어당기는')를 고친다. '앓다·닳다' 는 안 바꾼다([candidatesFor] — '천식을
+            // 앓았기 → 알았기', 기사 2026-10-15).
             'ㄹ' to ('ㅀ' to 1.5f), 'ㅀ' to ('ㄹ' to 1.5f),
             'ㄱ' to ('ㄲ' to 1.8f), 'ㄲ' to ('ㄱ' to 1.8f),
             'ㅂ' to ('ㅄ' to 1.8f), 'ㅄ' to ('ㅂ' to 1.8f),
-            // ㄻ → ㄹ 은 안 한다 — ㄻ 은 ㄹ·ㅁ 두 키를 모음 없이 잇달아 쳐야 생겨 실수로 잘 안 나오고, ㄹ 줄기의 명사형('나이 듦이',
-            // '힘듦에도', '만듦')은 바른 말이다. 이 편집이 '듦이 → 들이', '힘듦에도 → 힘들 에도' 를 냈다(2026-10-15).
+            // ㄻ·ㄼ → ㄹ 은 안 한다 — 줄이면 멀쩡한 말이 딴 말이 된다('나이 듦이 → 들이', '힘듦에도 → 힘들 에도', '주조색은 엷고 →
+            // 열고', 2026-10-15). 빠뜨린 겹받침을 채우는 쪽('널게 → 넓게')은 그대로 한다. ㅄ·ㄵ·ㄳ → 홑받침은 뒤 음절 첫소리를 한 번 더
+            // 친 오타('영없시간은 → 영업시간은', '팑단의 → 판단의')라 둔다.
             'ㄹ' to ('ㄻ' to 2.0f),
-            'ㄹ' to ('ㄼ' to 2.0f), 'ㄼ' to ('ㄹ' to 2.0f),
+            'ㄹ' to ('ㄼ' to 2.0f),
             'ㄴ' to ('ㄵ' to 2.0f), 'ㄵ' to ('ㄴ' to 2.0f),
             'ㄱ' to ('ㄳ' to 2.5f), 'ㄳ' to ('ㄱ' to 2.5f),
             'ㄷ' to ('ㅅ' to 2.0f), 'ㅅ' to ('ㄷ' to 2.2f),

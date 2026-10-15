@@ -461,6 +461,14 @@ class Spacer(private val dictionary: SpacingDictionary) {
             dictionary.tagName(dictionary.tailTag(pieces.last().second))
     }
 
+    /** 한 어절로 분석한 [word] 의 형태소마다 (첫 품사, 끝 품사)('잡으려고' → VV, EC). 분석이 안 되거나 믿기 어려우면 null. */
+    fun morphemeTags(word: String): List<Pair<String, String>>? {
+        if (word.isEmpty() || word.length > MAX_SYLLABLES) return null
+        val (pieces, cost) = runAnalysisWithMorphs(word) ?: return null
+        if (cost > BOUND_TRUST_COST_PER_MORPH * pieces.size) return null
+        return pieces.map { (_, morph) -> dictionary.tagName(dictionary.headTag(morph)) to dictionary.tagName(dictionary.tailTag(morph)) }
+    }
+
     /**
      * [word] 를 한 어절로 분석했을 때 **첫 형태소가 덮는 음절 수와 그 품사**('고새하셨어요' → 2 to "NNG"). 첫 형태소가 음절 한가운데서
      * 끝나면('했' = 하+ㅆ) 그 음절까지 센다. 분석이 안 되거나 믿기 어려우면 null. 분석을 한 번만 한다 — [boundaryTags] 를 음절마다 부르면
