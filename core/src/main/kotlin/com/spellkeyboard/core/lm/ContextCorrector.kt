@@ -993,9 +993,9 @@ class ContextCorrector(
                 val firm = if (!evident && extraCost > 0f && !isShiftSlip(surface, edited) && !endingShiftMiss(surface, edited) &&
                     !wrongHearsayFix(surface, edited)
                 ) firmCost else 0f
-                // 말뭉치가 모르는 말에 받침 하나를 채워 **아주 흔한 말**이 되면 받침 빠진 오타다 — 값을 덜 문다('여락 → 연락',
-                // '저화를 → 전화를'. 사전이 드문 명사로 읽어 원문 값이 높았다, 2026-10-15).
-                val dropped = if (evident && identityCount == null && (editedCount ?: 0f) >= EVIDENT_EDIT_LN && codaGain(surface, edited) &&
+                // 말뭉치가 조사를 떼고도 전혀 모르는 말에 받침 하나를 채워 **흔한 말**이 되면 받침 빠진 오타다 — 값을 덜 문다('여락 → 연락',
+                // '저화를 → 전화를', '도차했어 → 도착했어'. 원문이 한 낱말로 자연스럽게 읽혀 모르는 말 값이 낮았다, 2026-10-15).
+                val dropped = if (evident && identityCount == null && (editedCount ?: 0f) >= DROPPED_CODA_MIN_LN && codaGain(surface, edited) &&
                     !knowsWord(surface)
                 ) {
                     DROPPED_CODA_DISCOUNT
@@ -2410,8 +2410,9 @@ class ContextCorrector(
          */
         const val CODA_ADD_COST = 3.0f
 
-        /** 모르는 말에 받침을 채워 아주 흔한 말이 되는 편집에서 덜 무는 값([candidatesFor]). */
+        /** 모르는 말에 받침을 채워 흔한 말(ln [DROPPED_CODA_MIN_LN] 이상)이 되는 편집에서 덜 무는 값([candidatesFor]). */
         private const val DROPPED_CODA_DISCOUNT = 1.5f
+        private const val DROPPED_CODA_MIN_LN = 4.0f
 
         /**
          * 이보다 드문 어절에만 받침 넣기를 허용한다. ln(빈도) 3 ≈ 6,700만 어절에 스무 번.

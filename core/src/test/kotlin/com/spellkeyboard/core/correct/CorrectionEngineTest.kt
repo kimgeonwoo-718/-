@@ -406,6 +406,25 @@ class CorrectionEngineTest {
     }
 
     @Test
+    fun `받침 빠진 오타를 뒷말로 가려 고친다`() {
+        // 2026-10-15. 단위 앞 '하·며', 수 뒤 '버', 때 뒤 '저도', 용언 앞 '조·마이·아', '지그'.
+        assertEquals("아이스 아메리카노 한 잔만", fix("아이스 아메리카노 하 잔만"))
+        assertEquals("내일 몇 시에 만날까", fix("내일 며 시에 만날까"))
+        assertEquals("두 번 다시", fix("두 버 다시"))
+        assertEquals("이십 분 정도 걸려", fix("이십 분 저도 걸려"))
+        assertEquals("자주 좀 보자", fix("자주 조 보자"))
+        assertEquals("바람이 많이 부네", fix("바람이 마이 부네"))
+        assertEquals("말도 안 돼", fix("말도 아 돼"))
+        assertEquals("지금 어디쯤 왔어", fix("지그 어디쯤 왔어"))
+        // 인용 뒤 어미 '-며', 외국 이름 '조', 감탄사 '아', '마이 페이지', '지그재그' 는 그대로.
+        assertUntouched("“국회가 거점이 돼야 한다”며 장외투쟁 중단을 촉구했다.")
+        assertUntouched("조 하트는 세리에 A에서 뛰었다.")
+        assertUntouched("아 맞다 그거")
+        assertUntouched("마이 페이지에서 확인")
+        assertUntouched("지그재그로 걸어")
+    }
+
+    @Test
     fun `의존명사와 횟수를 띄운다`() {
         // 붙여 친 글 띄어쓰기 자에서 놓치던 것(2026-10-15).
         assertEquals("그냥 쉬는 게 낫지", fix("그냥 쉬는게 낫지"))
