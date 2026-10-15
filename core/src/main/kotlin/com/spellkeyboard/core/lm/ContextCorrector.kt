@@ -994,6 +994,8 @@ class ContextCorrector(
             if (sameSoundOnly && !sameSoundSwap(surface, edited) && !isShiftSlip(surface, edited)) continue
             // 목적어 뒤의 '잇-'(잇다 — '뒤를 잇는', '케이블로 잇는')을 '있-' 으로 바꾸지 않는다. '있다' 는 목적어를 못 받는다(큰 시험지 2026-10-15).
             if (surface.startsWith("잇") && edited.startsWith("있") && prevWord != null && (prevWord.endsWith("을") || prevWord.endsWith("를"))) continue
+            // 관형형 뒤의 의존명사 '데'('조식 되는 데면', '주차장 있는 데가')를 '대' 로 바꾸지 않는다('대면' 이 됐다, 대화 말뭉치 2026-10-15).
+            if (surface.startsWith("데") && edited.startsWith("대") && prevWord != null && prevWord.length >= 2 && adnominalEnd(prevWord)) continue
             // 수 뒤의 단위 '군데'(네 군데의 → 군대의)는 그대로.
             if (surface.startsWith("군데") && !edited.startsWith("군데") && prevWord in COUNT_WORDS) continue
             // 말뭉치가 모르지만 **자연스럽게 읽히는** 말에 받침을 채우는 것은 고친 말이 일상어일 때만([everydayEdit] — '도차했어 →
@@ -1464,6 +1466,13 @@ class ContextCorrector(
      * [edited] 가 일상 명사(+조사)인가 — 사전에만 있고 말뭉치가 모르는 드문 명사('여락', '저화', '자소')에 받침 빠진 오타가 떨어졌을 때
      * 이 명사로는 고친다('연락', '전화를', '장소는', 2026-10-15). '문제' 는 '무제(한 무제)' 와 겹쳐 넣지 않는다.
      */
+    /** 관형형으로 끝나는가('되는·있는·좋은·할') — 끝 음절이 '는' 이거나 받침 ㄴ·ㄹ 이고 분석 끝이 관형형 어미다. */
+    private fun adnominalEnd(word: String): Boolean {
+        val last = word.last()
+        if (last != '는' && Hangul.jongseongOf(last) != 'ㄴ' && Hangul.jongseongOf(last) != 'ㄹ') return false
+        return tagsOf(word)?.second == "ETM"
+    }
+
     /** 끝 음절에 받침을 채워 **어미·조사 음절**이 되는가('갔더 → 갔던', '축제르 → 축제를'). 외래어 끝('커프 → 커플')은 아니다. */
     private fun endingFill(surface: String, edited: String): Boolean =
         firstDifference(surface, edited) == surface.length - 1 && edited.last() in ENDING_FILL_SYLLABLES

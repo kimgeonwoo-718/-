@@ -408,6 +408,10 @@ class EngineWithContextTest {
         )) {
             assertEquals(text, all(text))
         }
+        // 곳을 가리키는 의존명사 '데'(대화 말뭉치) — '데로 찾아봐', '되는 데면'.
+        assertEquals("수영장 이용할 수 있는 데로 찾아봐 주세요.", all("수영장 이용할 수 있는 데로 찾아봐 주세요."))
+        assertEquals("조식 되는 데면 좋겠는데요.", all("조식 되는 데면 좋겠는데요."))
+        assertEquals("종류는 편한 대로 정해주세요.", all("종류는 편한데로 정해주세요."))
         // 목적어가 없으면 쉬프트 오타 '잇는' 은 그대로 고친다.
         assertEquals("여기 사람 있는 곳이야", all("여기 사람 잇는 곳이야"))
         assertEquals("좋아요 완전", all("조와요 완전"))
