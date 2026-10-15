@@ -1002,6 +1002,8 @@ class ContextCorrector(
             realLength = realLength
         )) {
             val editedCount = lm.lnCount(edited)
+            // 말뭉치가 모르는 고친 말은 끝에서 후보가 못 된다 — 아래 막이(형태소 분석을 부르는 것이 많다)를 거칠 것도 없다.
+            if (editedCount == null) continue
             // 첫소리를 된소리로 바꾸는 편집은 고친 말이 흔할 때만 — 된소리 짝은 둘 다 진짜 말인 일이 많다('하시는 분인것 → 뿐인것',
             // '뿐인것' 은 말뭉치에 열다섯 번뿐이었다). 어미 '-ㄹ가 → -ㄹ까'('어떠실가요')는 쉬프트 오타라 그대로 둔다.
             if ((editedCount ?: 0f) < TENSE_ONSET_MIN_LN && tensedOnset(surface, edited) && !shiftedEnding(surface, edited)) continue
