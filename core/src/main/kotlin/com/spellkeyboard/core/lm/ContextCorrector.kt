@@ -593,9 +593,16 @@ class ContextCorrector(
 
     /** [at] 에서 맞닿은 두 조각 중 하나가 **맞닿은 음절**을 원문([text])과 다르게 바꿨는가(소리 같은 모음·쉬프트 오타 말고 — [unseenSplits]). */
     private fun editedAtCut(before: String, after: String, at: Int, text: String): Boolean {
+        // 있던 받침을 겹받침으로 채운 것('먹지|안았어 → 않았어')도 붙여 친 오타에 흔해서 뺀다.
+        fun completesCoda(a: Char, b: Char): Boolean {
+            val x = Hangul.decompose(a) ?: return false
+            val y = Hangul.decompose(b) ?: return false
+            return x.first == y.first && x.second == y.second && x.third != 0 &&
+                (Hangul.JONGSEONG[x.third] to Hangul.JONGSEONG[y.third]) in CODA_COMPLETIONS
+        }
         fun changedAtCut(original: String, edited: String, index: Int) =
             original.length == edited.length && original[index] != edited[index] &&
-                !sameSoundSwap(original, edited) && !isShiftSlip(original, edited)
+                !sameSoundSwap(original, edited) && !isShiftSlip(original, edited) && !completesCoda(original[index], edited[index])
         val left = text.substring(at - before.length, at)
         val right = text.substring(at, at + after.length)
         // 앞 조각 끝만 고쳤고 뒤 조각이 그대로 **아주 흔한 말**이면 붙여 친 받침 빠짐이다('괜찮으곳이 → 괜찮은 곳이' — 언어모델이 두 말을
@@ -1029,6 +1036,16 @@ class ContextCorrector(
             if (sameSoundOnly && !sameSoundSwap(surface, edited) && !isShiftSlip(surface, edited)) continue
             // 목적어 뒤의 '잇-'(잇다 — '뒤를 잇는', '케이블로 잇는')을 '있-' 으로 바꾸지 않는다. '있다' 는 목적어를 못 받는다(큰 시험지 2026-10-15).
             if (surface.startsWith("잇") && edited.startsWith("있") && prevWord != null && (prevWord.endsWith("을") || prevWord.endsWith("를"))) continue
+            // 보조용언 '않-' 은 '-지' 뒤에만 온다 — 그 밖의 '안-'('영예를 안았다고', '꼭 안았다')은 '안다'(품다) 다(기사 2026-10-15).
+            if (surface.startsWith("안") && edited.startsWith("않") &&
+                (prevWord == null || !NEG_AUX_BEFORE.any { prevWord.endsWith(it) })
+            ) continue
+            // '잃다' 는 목적어를 받는다 — 주어 뒤의 '일-'('논란이 일었으며')은 '일다'(생기다) 다(기사 2026-10-15).
+            if (surface.startsWith("일") && edited.startsWith("잃") && prevWord != null && (prevWord.endsWith("이") || prevWord.endsWith("가"))) continue
+            // 같은 까닭으로 목적어 뒤의 말을 '생기다' 로 바꾸지 않는다('문신을 새길 수 → 생길 수', '무늬를 새길 → 생길', 2026-10-15).
+            if (surface[0] != '생' && edited.startsWith("생") && edited.length >= 2 && edited[1] in "기길긴겨겼" &&
+                prevWord != null && (prevWord.endsWith("을") || prevWord.endsWith("를"))
+            ) continue
             // 관형형 뒤의 의존명사 '데'('조식 되는 데면', '주차장 있는 데가')를 '대' 로 바꾸지 않는다('대면' 이 됐다, 대화 말뭉치 2026-10-15).
             if (surface.startsWith("데") && edited.startsWith("대") && prevWord != null && prevWord.length >= 2 && adnominalEnd(prevWord)) continue
             // '갓을'(갓 + 을)을 '갔을' 로는 뒤에 의존명사가 올 때만('갓을 때 → 갔을 때'). '갓을 쓰고' 는 그대로(큰 시험지 2026-10-15).
@@ -2713,6 +2730,9 @@ class ContextCorrector(
         private const val DROPPED_CODA_MIN_LN = 4.0f
         /** [realWordForm] — 줄기 명사가 말뭉치에 이만큼(ln) 나와야 진짜 말로 본다. */
         private const val REAL_STEM_LN = 2.0f
+
+        /** 보조용언 '않-' 이 올 수 있는 앞말의 끝('하지 않았다', '좋지도 않다', '가진 않는다'). */
+        private val NEG_AUX_BEFORE = listOf("지", "지도", "지는", "지가", "지를", "지만", "진", "질", "지조차")
 
         /** [politeScore] — 아는 어절에 '요' 를 붙인 모르는 어절에 더 물리는 값(ln). */
         private const val POLITE_YO_COST = 3.0f

@@ -444,6 +444,12 @@ class EngineWithContextTest {
         assertEquals("가족들이랑 봤다가 후회했다", all("가족들이랑봣다가 후회했다"))
         assertEquals("저녁에 밥 먹자", all("저녁애밥먹자"))
         assertEquals("좀 괜찮은 곳이 있으려나요?", all("좀 괜찮으곳이 있으려나요?"))
+        // 앞말로 가르는 말(⑦): '-지' 뒤가 아닌 '안-' 은 '안다', 주어 뒤 '일-' 은 '일다', 목적어 뒤는 '생기다' 가 아니다.
+        for (text in listOf("대상 수상의 영예를 안았다고 밝혔다.", "이 발언으로 논란이 일었으며 대책위가 꾸려졌다.", "팔에 문신을 새길 수 있다.")) {
+            assertEquals(text, all(text))
+        }
+        assertEquals("그건 하지 않았어", all("그건 하지 안았어"))
+        assertEquals("밥을 먹지 않았어", all("밥을 먹지안았어"))
     }
 
     @Test

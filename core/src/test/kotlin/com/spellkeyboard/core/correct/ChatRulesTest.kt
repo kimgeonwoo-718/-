@@ -37,6 +37,8 @@ class ChatRulesTest {
         assertFixed("길이길이 남을 영화", "기리기리 남을 영화")
         assertFixed("배송 언제 와요?", "베송 언제 와요?")
         assertUntouched("뤽 베송 감독의 영화", "뤽 베송과 배우들")
+        assertFixed("심장 스텐트 시술", "심장 스탠트 시술")
+        assertFixed("기부채납을 받아", "기부체납을 받아")
         assertFixed("두근두근 설렌다", "두근두근 설레인다")
     }
 
