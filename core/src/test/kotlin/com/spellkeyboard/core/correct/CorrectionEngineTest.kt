@@ -473,6 +473,8 @@ class CorrectionEngineTest {
         assertUntouched("열 개 너무 많아")
         assertUntouched("네일 하러 가자")
         assertUntouched("응답자 8%만이 걱정 없이 잔다")
+        // 외래어 표기('렌털' — 디코더가 말뭉치에 흔한 '렌탈' 로 바꾸던 것을 표가 도로 잡는다).
+        assertEquals("렌털 서비스", fix("렌탈 서비스"))
     }
 
     @Test

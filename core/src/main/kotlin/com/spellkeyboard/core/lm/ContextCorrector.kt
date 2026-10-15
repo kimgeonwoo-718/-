@@ -477,6 +477,7 @@ class ContextCorrector(
                 fakeVerb = fakeVerb,
                 // 구간이 어절 첫머리에서 시작하면 바로 앞 어절(목적어 조사·수 뒤의 진짜 말을 지킨다).
                 prevWord = if (span.start == starts[firstOwner]) (if (firstOwner > 0) cores[firstOwner - 1] else contextBefore) else null,
+                nextWord = if (withinOne && span.end == ends[firstOwner] && firstOwner < last) cores[firstOwner + 1] else null,
                 lockLast = wellFormed && span.end == ends[firstOwner],
                 endingFixed = punctuatedLast && span.end == n,
                 slipsOnly = protectedTail && wellFormed,
@@ -911,6 +912,7 @@ class ContextCorrector(
         bareNounBeforeNoun: Boolean = false,
         fakeVerb: Boolean = false,
         prevWord: String? = null,
+        nextWord: String? = null,
         realLength: (Int) -> Int = { 0 }
     ): List<Candidate> {
         val identityCount = lm.lnCount(surface)
@@ -996,6 +998,12 @@ class ContextCorrector(
             if (surface.startsWith("잇") && edited.startsWith("있") && prevWord != null && (prevWord.endsWith("을") || prevWord.endsWith("를"))) continue
             // 관형형 뒤의 의존명사 '데'('조식 되는 데면', '주차장 있는 데가')를 '대' 로 바꾸지 않는다('대면' 이 됐다, 대화 말뭉치 2026-10-15).
             if (surface.startsWith("데") && edited.startsWith("대") && prevWord != null && prevWord.length >= 2 && adnominalEnd(prevWord)) continue
+            // '갓을'(갓 + 을)을 '갔을' 로는 뒤에 의존명사가 올 때만('갓을 때 → 갔을 때'). '갓을 쓰고' 는 그대로(큰 시험지 2026-10-15).
+            if (surface.startsWith("갓") && edited.startsWith("갔") && surface.length == 2 && surface[1] == '을' &&
+                nextWord?.let { next -> AFTER_ADNOMINAL.any { next.startsWith(it) } } != true
+            ) continue
+            // 어미 없이 끝난 용언 줄기('머리 아프', 이름 속 '아프')의 끝 음절에 받침을 채워 관형형으로 만들지 않는다.
+            if (firstDifference(surface, edited) == surface.length - 1 && codaGain(surface, edited) && bareStem(surface)) continue
             // 수 뒤의 단위 '군데'(네 군데의 → 군대의)는 그대로.
             if (surface.startsWith("군데") && !edited.startsWith("군데") && prevWord in COUNT_WORDS) continue
             // 말뭉치가 모르지만 **자연스럽게 읽히는** 말에 받침을 채우는 것은 고친 말이 일상어일 때만([everydayEdit] — '도차했어 →
@@ -1466,6 +1474,14 @@ class ContextCorrector(
      * [edited] 가 일상 명사(+조사)인가 — 사전에만 있고 말뭉치가 모르는 드문 명사('여락', '저화', '자소')에 받침 빠진 오타가 떨어졌을 때
      * 이 명사로는 고친다('연락', '전화를', '장소는', 2026-10-15). '문제' 는 '무제(한 무제)' 와 겹쳐 넣지 않는다.
      */
+    /** 어미 없이 끝난 용언 줄기인가 — 줄기 + '다' 를 말뭉치가 알고 용언으로 읽힌다('아프', '슬프'). 홀로는 분석이 안 된다. */
+    private fun bareStem(surface: String): Boolean {
+        if (Hangul.hasJongseong(surface.last())) return false
+        val base = surface + "다"
+        if ((lm.lnCount(base) ?: 0f) < BARE_STEM_LN) return false
+        return tagsOf(base)?.first?.let { it == "VA" || it == "VV" } == true
+    }
+
     /** 관형형으로 끝나는가('되는·있는·좋은·할') — 끝 음절이 '는' 이거나 받침 ㄴ·ㄹ 이고 분석 끝이 관형형 어미다. */
     private fun adnominalEnd(word: String): Boolean {
         val last = word.last()
@@ -2179,6 +2195,12 @@ class ContextCorrector(
             "공부", "청소", "결제", "입금", "취소", "변경", "신청", "제출", "참석", "배송", "문의", "답장", "회신", "퇴근", "출근", "야근",
             "회의", "휴가", "여행", "선물", "생일", "주말", "오전", "오후", "근처", "정말", "진짜", "완전", "속상", "창밖", "한잔", "전달"
         )
+        /** [bareStem] — 줄기 + '다' 가 말뭉치에 이만큼(ln) 나와야 한다. */
+        private const val BARE_STEM_LN = 4.0f
+
+        /** 관형형 뒤에 오는 의존명사의 머리([candidatesFor] — '갔을 때', '갔을 거야'). */
+        private val AFTER_ADNOMINAL = listOf("때", "거", "것", "수", "텐", "줄", "리", "뿐", "까", "지", "듯", "만큼", "적")
+
         /** 단위 앞에 오는 수관형사([candidatesFor] — '네 군데의'). */
         private val COUNT_WORDS = setOf("한", "두", "세", "네", "몇", "여러", "다섯", "여섯", "일곱", "여덟", "아홉", "열", "스무", "수십", "수백", "몇몇")
 
