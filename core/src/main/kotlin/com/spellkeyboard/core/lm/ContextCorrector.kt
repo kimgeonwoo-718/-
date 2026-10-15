@@ -450,6 +450,9 @@ class ContextCorrector(
             // '한 어절로 읽히는 말' 은 분석이 **자연스러운** 것만 친다 — 분석 사전은 '있너'(있/VA 너/NP, 3609)도 읽어 낸다.
             val wellFormed = withinOne && (firm[firstOwner] ||
                 (isWellFormed(cores[firstOwner]) && (morphCost(cores[firstOwner]) ?: Int.MAX_VALUE) < LOCK_MAX_COST))
+            // 명사 + '-하다·-되다' 로 읽히는데 그 움직씨가 말뭉치에 없는 말('피고해서' — 피곤해서, '차고해' — 참고해)은 멀쩡한 말 값을
+            // 물리지 않는다 — 분석 사전이 받침 빠진 오타를 흔한 명사 + '-하다' 로 맞춰 읽었다(2026-10-15).
+            val fakeVerb = wellFormed && !firm[firstOwner] && unattestedVerb(cores[firstOwner])
             // 실시간 창의 마지막 어절(뒤를 모름). 명사면 안 고치고, 한 어절로 읽히는 말이면 쉬프트 오타(ㅅ→ㅆ)만.
             val protectedTail = protectLast && withinOne && firstOwner == last
             // 자유롭게 떼어 낸 **한 음절** 조각은 글자를 바꾸지 않는다 — '서울아산병원서 → 서울아산병원 써'(2026-10-13).
@@ -471,6 +474,7 @@ class ContextCorrector(
                 // 사전 명사이거나 자연스럽게 읽히는 말의 글자는 비싸게 바꾼다('묵었습니다 → 묶었습니다', '낮겠습니다 → 낫겠습니다',
                 // '서명하였다 → 설명하였다', '업어 → 없어'). 쉬프트 오타(ㅅ→ㅆ, -ㄹ가 → -ㄹ까)는 이 값을 물리지 않는다.
                 extraCost = if (wellFormed) FIRM_EDIT_COST else 0f,
+                fakeVerb = fakeVerb,
                 lockLast = wellFormed && span.end == ends[firstOwner],
                 endingFixed = punctuatedLast && span.end == n,
                 slipsOnly = protectedTail && wellFormed,
@@ -479,7 +483,12 @@ class ContextCorrector(
                 firmNoun = withinOne && firm[firstOwner],
                 firmStem = if (withinOne && firm[firstOwner] && span.start == starts[firstOwner]) layout.nounLength[firstOwner] else 0,
                 wholeWord = withinOne && span.start == starts[firstOwner] && span.end == ends[firstOwner],
-                insideCommonNoun = { commonNounAt[span.start + it] }
+                insideCommonNoun = { commonNounAt[span.start + it] },
+                // 조사 없이 홀로 선 명사 뒤에 용언이 아닌 말이 오면 이름이기 쉽다('이정 유진투자증권 애널리스트' → 일정 X, 기사 2026-10-15).
+                // '여락 줘'(뒤가 용언)는 그대로 고친다.
+                // 뒷말이 창에 없어도 같다 — 뒤에 용언이 오는지 모른다.
+                bareNounBeforeNoun = withinOne && span.start == starts[firstOwner] && span.end == ends[firstOwner] &&
+                    (firstOwner == last || !startsWithVerb(cores[firstOwner + 1]))
             ) { realLength[span.start + it] }
             candidates[key] = if (list == null) fresh else merge(list, fresh)
         }
@@ -897,6 +906,8 @@ class ContextCorrector(
         wholeWord: Boolean = true,
         endingFixed: Boolean = false,
         insideCommonNoun: (Int) -> Int = { 0 },
+        bareNounBeforeNoun: Boolean = false,
+        fakeVerb: Boolean = false,
         realLength: (Int) -> Int = { 0 }
     ): List<Candidate> {
         val identityCount = lm.lnCount(surface)
@@ -927,7 +938,8 @@ class ContextCorrector(
             // ('채을' 2083, '생가보다' -470, '사란이' 584)는 그 위에 있다(큰 시험지 2026-10-11).
             // 말뭉치가 조사를 떼고도 전혀 모르는 말은 분석이 자연스러워도 받침을 넣어 본다 — 받침 빠진 오타가 드문 사전 명사에 떨어진다
             // ('저화를' -1392). '무제는'(무제 + 는)처럼 말뭉치가 아는 말은 그대로 둔다.
-            codaSlip = (identityCount == null && !knowsWord(surface)) ||
+            // 활용형이라 말뭉치가 통째로 모를 뿐인 진짜 말('시해하고', '공여하는')은 뺀다([realWordForm]).
+            codaSlip = (identityCount == null && !knowsWord(surface) && !realWordForm(surface)) ||
                 ((identityCount ?: -1f) < CODA_SLIP_MAX_LN && (morphCost(surface) ?: 0) >= NATURAL_WORD_COST),
             nearKey = (identityCount ?: -1f) < NEAR_KEY_MAX_LN,
             cheonjiinKey = cheonjiin && (identityCount ?: -1f) < CJI_MAX_LN,
@@ -960,8 +972,12 @@ class ContextCorrector(
             // 고친 자리가 **흔한 명사 줄기 안**이면 딴 낱말로 바꾸는 것이다 — '이관되지 → 일관되지'(이관 ln 6.4, 2026-10-14). 줄기 뒤의
             // 조사·어미 자리('저녁애 → 저녁에', '작성헤서 → 작성해서')는 그대로 연다.
             val insideCommonStem = firstDifference(surface, edited) < commonStem
+            // 사전에 고유명사로만 오른 말('이정' — 사람 이름)은 일상 명사로 바꾸지 않는다('이정 → 일정', 기사 2026-10-15).
             val evident = evidentAllowed && editedCount != null &&
-                (!firmNoun || edited in EVERYDAY_WORDS || (everydayNounEdit(edited) && !knowsWord(surface))) && lastSafe && !insideCommonStem && (
+                (!firmNoun || edited in EVERYDAY_WORDS ||
+                    (everydayNounEdit(edited) && !knowsWord(surface) && spacer?.isLexiconProperNoun(surface) != true &&
+                        !(bareNounBeforeNoun && spacer?.isLexiconNoun(surface) == true))) &&
+                lastSafe && !insideCommonStem && (
                 (common && !onsetOnly(surface, edited)) ||
                     (identityCount == null && sameSoundSwap(surface, edited)) ||
                     ((!slipsOnly || identityCount == null) && firstDifference(surface, edited) < rareStem)
@@ -971,6 +987,15 @@ class ContextCorrector(
             ) continue
             if (!evident && slipsOnly && !isShiftSlip(surface, edited) && !endingShiftMiss(surface, edited)) continue
             if (sameSoundOnly && !sameSoundSwap(surface, edited) && !isShiftSlip(surface, edited)) continue
+            // 말뭉치가 모르지만 **자연스럽게 읽히는** 말에 받침을 채우는 것은 고친 말이 일상어일 때만([everydayEdit] — '도차했어 →
+            // 도착했어', '피고해서 → 피곤해서', '여락 → 연락'). 분석 사전에는 드문 한자어가 다 올라 있어 오타 줄기('도차·사책')와 진짜 말
+            // ('시음·서임·저부')을 못 가른다 — 기사·위키에서 '시음하고 → 신음하고', '서임하고 → 선임하고' 가 났다(2026-10-15).
+            if (identityCount == null && codaGain(surface, edited) && (morphCost(surface) ?: 0) < NATURAL_WORD_COST && !everydayEdit(edited) &&
+                !endingFill(surface, edited)
+            ) continue
+            // 형태소 사전이 나눈 **멀쩡한 조각** 안에 받침을 채우는 것은 고친 말이 뻔할 때만 — '운전하는거 → 운전하는건' 은 막고(사용자가
+            // 고른 말), 사전이 '더|분에' 로 잘못 나눈 '더분에 → 덕분에' 는 연다(2026-10-15).
+            if (codaGain(surface, edited) && realLength(firstDifference(surface, edited)) < 0 && !evident) continue
             // 사전 명사(또는 흔한 명사들로 된 합성어) + 한 음절로 된 모르는 말('결제기' = 결제/기, '국방장관들')의 끝 음절을 딴 음절로
             // 바꾸지 않는다 — 합성어 꼬리를 조사나 딴 명사로 바꿨다('카드 결제기 → 결제가 → 결제시', '전 국방장관들 → 국방장관을',
             // 2026-10-14). 소리 같은 모음('저녁애 → 저녁에')·받침 채우기는 그대로 둔다.
@@ -1030,13 +1055,22 @@ class ContextCorrector(
                     rareSource && codaGain(surface, edited) && particleWantsCoda(surface, firstDifference(surface, edited)) -> CODA_FIRM_COST
                     else -> extraCost
                 }
+                // 말뭉치에 없는 '-하다' 로 읽힌 말([decode] 의 fakeVerb — '피고해서', '차고해')을 **일상어**로 고치는 편집은 멀쩡한 말 값을
+                // 물리지 않는다. 일상어가 아니면 그대로 문다 — '입하하는 → 입학하는', '비정하는 → 지정하는'(기사 2026-10-15).
                 val firm = if (!evident && extraCost > 0f && !isShiftSlip(surface, edited) && !endingShiftMiss(surface, edited) &&
-                    !wrongHearsayFix(surface, edited)
+                    !wrongHearsayFix(surface, edited) && !(fakeVerb && everydayEdit(edited))
                 ) firmCost else 0f
                 // 말뭉치가 조사를 떼고도 전혀 모르는 말에 받침 하나를 채워 **흔한 말**이 되면 받침 빠진 오타다 — 값을 덜 문다('여락 → 연락',
                 // '저화를 → 전화를', '도차했어 → 도착했어'. 원문이 한 낱말로 자연스럽게 읽혀 모르는 말 값이 낮았다, 2026-10-15).
-                val dropped = if (evident && identityCount == null && (editedCount ?: 0f) >= DROPPED_CODA_MIN_LN && codaGain(surface, edited) &&
-                    !knowsWord(surface)
+                // 고친 말이 일상 명사면([everydayNounEdit] — '주무이 → 주문이', '계사은 → 계산은') 아주 흔하지 않아도 같이 본다.
+                // 활용형이라 말뭉치가 통째로 모를 뿐인 진짜 말('시해하고', '공여하는', '주요하다고', '화자들이', '지중해서')은 깎지 않는다 —
+                // 다섯째 판의 이 깎기가 기사·위키에서 '시해하고 → 시행하고', '화자들이 → 환자들이' 를 냈다(큰 시험지 2026-10-15).
+                // 고친 말이 일상어일 때만 깎는다 — 기사의 '입하하는 → 입학하는', '워룸 → 원룸', '마가진 → 망가진' 이 이 깎기로 넘었다.
+                // 끝 음절(어미·조사 자리 — '갔더 → 갔던', '축제르 → 축제를')을 채우는 것은 일상어가 아니어도 깎는다.
+                // 자유롭게 떼어 낸 조각('신으|세요 → 신은 세요')은 깎지 않는다.
+                val dropped = if ((evident || everydayNounEdit(edited)) && kind != KIND_FREE &&
+                    (everydayEdit(edited) || endingFill(surface, edited)) && identityCount == null &&
+                    (editedCount ?: 0f) >= DROPPED_CODA_MIN_LN && codaGain(surface, edited) && !knowsWord(surface) && !realWordForm(surface)
                 ) {
                     DROPPED_CODA_DISCOUNT
                 } else 0f
@@ -1420,6 +1454,14 @@ class ContextCorrector(
      * [edited] 가 일상 명사(+조사)인가 — 사전에만 있고 말뭉치가 모르는 드문 명사('여락', '저화', '자소')에 받침 빠진 오타가 떨어졌을 때
      * 이 명사로는 고친다('연락', '전화를', '장소는', 2026-10-15). '문제' 는 '무제(한 무제)' 와 겹쳐 넣지 않는다.
      */
+    /** 끝 음절에 받침을 채워 **어미·조사 음절**이 되는가('갔더 → 갔던', '축제르 → 축제를'). 외래어 끝('커프 → 커플')은 아니다. */
+    private fun endingFill(surface: String, edited: String): Boolean =
+        firstDifference(surface, edited) == surface.length - 1 && edited.last() in ENDING_FILL_SYLLABLES
+
+    /** 고친 말이 일상어인가 — [EVERYDAY_WORDS] 이거나 [EVERYDAY_NOUNS] 로 시작한다('도착했어', '피곤해서', '연락은'). */
+    private fun everydayEdit(edited: String): Boolean =
+        edited in EVERYDAY_WORDS || EVERYDAY_NOUNS.any { edited.startsWith(it) && edited.length - it.length <= EVERYDAY_TAIL_MAX }
+
     private fun everydayNounEdit(edited: String): Boolean =
         EVERYDAY_NOUNS.any { edited.startsWith(it) && (edited.length == it.length || edited.substring(it.length) in EVERYDAY_NOUN_TAILS) }
 
@@ -1476,6 +1518,42 @@ class ContextCorrector(
         // 줄기 뒤가 '-하다·-되다' 면 그 움직씨가 말뭉치에 **있어야** 진짜 말이다 — '이관되지'(이관된·이관하는 이 있다)는 지키고,
         // '가사합니다'(가사하다는 없다 — 감사합니다 오타)는 연다(2026-10-14).
         return if (verbAttested(surface, end)) end else 0
+    }
+
+    /**
+     * 말뭉치가 [surface] 를 통째로는 몰라도 **진짜 말의 활용형·곡용형**인가 — 말뭉치가 아는 명사 + 말뭉치에 있는 '-하다·-되다'
+     * ('시해하고' = 시해 + 시해한…, '주요하다고'), 또는 말뭉치가 아는 명사 + 조사('화자들이', '지중해서').
+     */
+    private fun realWordForm(surface: String): Boolean {
+        // 말뭉치가 아는 명사 + 조사(글자로 뗀다 — 분석 사전은 '지중해서' 를 지중 + 하다 로 읽는다). '-들' 도 뗀다('화자들이').
+        for (particle in REAL_FORM_PARTICLES) {
+            if (surface.length < particle.length + 2 || !surface.endsWith(particle)) continue
+            var stem = surface.dropLast(particle.length)
+            if (stem.length >= 3 && stem.endsWith("들")) stem = stem.dropLast(1)
+            if ((lm.lnCount(stem) ?: 0f) >= REAL_STEM_LN) return true
+        }
+        // 흔한 명사 + 한자 접미사 '-사'(史·社 — '중국사', '헌법사').
+        if (surface.length >= 3 && surface.last() == '사' && (lm.lnCount(surface.dropLast(1)) ?: 0f) >= COMMON_STEM_LN) return true
+        val (end, head) = spacer?.firstMorpheme(surface) ?: return false
+        // 사전에 오른 용언 줄기의 활용형('주요하다고' = 주요하/VA, '신으세요' = 신/VV, '새기면')도 진짜 말이다.
+        // 뒤 조각의 품사는 통째 분석에서 본다 — '면' 만 떼어 읽으면 명사다.
+        val next = if (end < surface.length) spacer?.boundaryTags(surface, end)?.second else null
+        if (end >= 1 && end <= surface.length && spacer?.isVerbTag(head) == true && (morphCost(surface) ?: Int.MAX_VALUE) < NATURAL_FORM_COST) {
+            return end == surface.length || next?.startsWith("E") == true
+        }
+        if (end < 2 || end >= surface.length || (head != "NNG" && head != "NNP" && head != "XR")) return false
+        val stem = surface.substring(0, end)
+        if ((lm.lnCount(stem) ?: 0f) < REAL_STEM_LN) return false
+        if (surface[end] in VERB_SUFFIX_HEADS) return verbAttested(surface, end)
+        return next?.let { it.startsWith("J") || it == "XSN" } == true
+    }
+
+    /** [surface] 가 명사 + '-하다·-되다' 꼴로 읽히는데 그 움직씨가 말뭉치에 없는가([verbAttested]). 말뭉치가 아는 어절이면 아니다. */
+    private fun unattestedVerb(surface: String): Boolean {
+        if (knowsWord(surface)) return false
+        val (end, head) = spacer?.firstMorpheme(surface) ?: return false
+        if (end < 1 || end >= surface.length || (head != "NNG" && head != "NNP")) return false
+        return surface[end] in VERB_SUFFIX_HEADS && !verbAttested(surface, end)
     }
 
     /** [surface] 의 앞 [end] 음절(명사) 뒤가 '-하다·-되다' 꼴이면 그 움직씨가 말뭉치에 있는가. 그런 꼴이 아니면 true. */
@@ -1978,7 +2056,10 @@ class ContextCorrector(
                 }
             }
             // '거'(것) 에는 받침을 넣지 않는다 — '거/건/걸' 은 사용자가 고른 말이지 오타가 아니다('운전하는거 → 운전하는건').
-            if (codaSlip && realWordLength >= 0 && jong == 0 && word[index] != '거') CODA_SLIPS.forEach { (alternative, cost) ->
+            // 낱말 첫머리의 '거'('거정하지 → 걱정하지', '거토 → 검토')는 의존명사가 아니라 넣는다(2026-10-15).
+            val dependentGeo = word[index] == '거' && (index > 0 || word.length == 1)
+            // 멀쩡한 조각 안('운전하는|거')도 후보는 낸다 — 고친 말이 뻔할 때만 남긴다([candidatesFor], '더|분에 → 덕분에').
+            if (codaSlip && jong == 0 && !dependentGeo) CODA_SLIPS.forEach { (alternative, cost) ->
                 val id = Hangul.jongseongIndex(alternative)
                 if (id >= 0) out += swap(word, index, Hangul.compose(cho, jung, id)) to cost
             }
@@ -2073,8 +2154,17 @@ class ContextCorrector(
         /** [everydayNounEdit] 의 일상 명사. */
         private val EVERYDAY_NOUNS = setOf(
             "연락", "전화", "장소", "접수", "작성", "검토", "정리", "일정", "시간", "사진", "선약", "계산", "주문", "발송", "덕분", "축하",
-            "걱정", "응원", "예약", "산책", "아침", "점심", "저녁", "우산", "감기", "내용", "공지", "참고", "약속", "생각", "친구", "동생"
+            "걱정", "응원", "예약", "산책", "아침", "점심", "저녁", "우산", "감기", "내용", "공지", "참고", "약속", "생각", "친구", "동생",
+            // 여섯째 판(2026-10-15) — 대화에서 '-하다' 로 흔히 쓰는 말.
+            "피곤", "도착", "출발", "설명", "확인", "부탁", "미안", "감사", "준비", "시작", "결정", "고민", "기대", "필요", "다행", "운동",
+            "공부", "청소", "결제", "입금", "취소", "변경", "신청", "제출", "참석", "배송", "문의", "답장", "회신", "퇴근", "출근", "야근",
+            "회의", "휴가", "여행", "선물", "생일", "주말", "오전", "오후", "근처", "정말", "진짜", "완전", "속상", "창밖", "한잔", "전달"
         )
+        /** [endingFill] — 받침을 채워 생기는 어미·조사 음절. */
+        private const val ENDING_FILL_SYLLABLES = "던은는을를란난런된한할될온올간갈든큰작"
+
+        /** [everydayEdit] — 일상 명사 뒤에 붙는 꼬리(조사·'-하다' 활용) 길이 한도. */
+        private const val EVERYDAY_TAIL_MAX = 5
         private val EVERYDAY_NOUN_TAILS = setOf("은", "는", "이", "가", "을", "를", "에", "에서", "의", "도", "만", "으로", "로", "하고", "해", "해서", "했어")
 
         /** 사람 이름 뒤에 오는 직함·호칭. 앞 어절이 이름이라는 단서다 — '허재 감독' 을 '헌재 감독' 으로 바꾸지 않는다. */
@@ -2498,6 +2588,15 @@ class ContextCorrector(
         /** 모르는 말에 받침을 채워 흔한 말(ln [DROPPED_CODA_MIN_LN] 이상)이 되는 편집에서 덜 무는 값([candidatesFor]). */
         private const val DROPPED_CODA_DISCOUNT = 1.5f
         private const val DROPPED_CODA_MIN_LN = 4.0f
+        /** [realWordForm] — 줄기 명사가 말뭉치에 이만큼(ln) 나와야 진짜 말로 본다. */
+        private const val REAL_STEM_LN = 2.0f
+        /** [realWordForm] 이 글자로 떼어 보는 조사·서술격 꼴(긴 것부터). */
+        private val REAL_FORM_PARTICLES = listOf(
+            "에서는", "에서도", "으로는", "에게는", "에서", "에게", "으로", "에는", "에선", "이나", "이며", "이다", "이고",
+            "은", "는", "이", "가", "을", "를", "에", "의", "도", "만", "로", "서", "선", "인", "과", "와"
+        )
+        /** [realWordForm] — 용언 활용형을 진짜 말로 볼 만큼 분석이 자연스러운가(분석값). */
+        private const val NATURAL_FORM_COST = 1500
 
         /**
          * 이보다 드문 어절에만 받침 넣기를 허용한다. ln(빈도) 3 ≈ 6,700만 어절에 스무 번.

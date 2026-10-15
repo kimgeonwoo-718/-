@@ -458,6 +458,24 @@ class CorrectionEngineTest {
     }
 
     @Test
+    fun `소리 같은 모음과 겹받침 오타를 앞뒤 말로 가려 고친다`() {
+        // 2026-10-15 여섯째 판 ② — 오타 시험지에서 남던 것.
+        assertEquals("공부하는 데 방해가 됐어", fix("공부하는 대 방해가 됐어"))
+        assertEquals("그런 데다가 값도 비싸", fix("그런 대다가 값도 비싸"))
+        assertEquals("모르는 체하지 마", fix("모르는 채하지 마"))
+        assertEquals("할 게 너무 많아", fix("할 개 너무 많아"))
+        assertEquals("회의는 내일 오전으로 미뤄졌습니다", fix("회의는 네일 오전으로 미뤄졌습니다"))
+        assertEquals("많이 서운했겠다", fix("만이 서운했겠다"))
+        // 맞는 말은 그대로 — 대(對)·대가(代價)·대로, 수 + 개, 손톱 네일, 붙은 '만이'.
+        assertUntouched("인간 대 기계의 대결")
+        assertUntouched("노력한 대가를 받았다")
+        assertUntouched("하는 대로 해")
+        assertUntouched("열 개 너무 많아")
+        assertUntouched("네일 하러 가자")
+        assertUntouched("응답자 8%만이 걱정 없이 잔다")
+    }
+
+    @Test
     fun `의존명사와 횟수를 띄운다`() {
         // 붙여 친 글 띄어쓰기 자에서 놓치던 것(2026-10-15).
         assertEquals("그냥 쉬는 게 낫지", fix("그냥 쉬는게 낫지"))

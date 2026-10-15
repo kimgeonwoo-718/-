@@ -226,6 +226,23 @@ class Spacer(private val dictionary: SpacingDictionary) {
         return null
     }
 
+    /** [word] 가 사전에 통째로 **고유명사**로만 올라 있는가('이정' — 사람 이름). 일반명사로도 오르면 아니다. */
+    fun isLexiconProperNoun(word: String): Boolean {
+        if (word.isEmpty() || word.length > MAX_SYLLABLES || word.any { it !in HANGUL_SYLLABLES }) return false
+        val jamo = StringBuilder().also { sb -> word.forEach { appendJamo(sb, it) } }.toString()
+        val bytes = jamo.toByteArray(Charsets.UTF_8)
+        val key = dictionary.find(bytes, 0, bytes.size)
+        if (key < 0) return false
+        var proper = false
+        for (morph in dictionary.morphStart(key) until dictionary.morphEnd(key)) {
+            val head = dictionary.headTag(morph)
+            if (dictionary.tailTag(morph) != head) continue
+            if (head == commonNoun) return false
+            if (head == properNoun) proper = true
+        }
+        return proper
+    }
+
     /**
      * [word] 가 사전에 **통째로** 일반명사·고유명사로 올라 있는가('발간', '지바', '허재', '여수'). 조사가 붙은 꼴은 안 본다 — 부르는 쪽이 뗀다.
      *
